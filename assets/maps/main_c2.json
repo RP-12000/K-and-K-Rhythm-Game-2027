@@ -1,0 +1,23 @@
+{
+  "id": "main_c2", "kind": "chapter", "demo": true,
+  "title": "TWILIGHT", "titleZh": "暮光层", "numeral": "02", "route": "MAIN", "routeZh": "主线",
+  "parent": "main", "storyParent": "main_c1", "start": "rise", "depth": 650,
+  "titleAt": [250, 300], "sub": "@progress", "subZh": "主线 · 第 2 层",
+  "pools": [[1100, 560, 600, 0.22], [2000, 480, 420, 0.2]],
+  "spots": [
+    {"id": "rise", "type": "rise", "x": 250, "y": 300, "label": "01 SHORELINE", "labelZh": "浅滩"},
+    {"id": "song4", "song": "Song 4", "x": 720, "y": 400, "r": 112},
+    {"id": "stD", "type": "story", "story": "story04", "x": 1000, "y": 780},
+    {"id": "song6", "song": "Song 6", "x": 1260, "y": 380, "r": 112},
+    {"id": "ics4u", "song": "ICS4U", "x": 1600, "y": 700, "r": 112, "requires": ["song6"]},
+    {"id": "c3", "type": "shaft", "sealed": true, "x": 2080, "y": 460, "r": 162,
+     "label": "03 MIDNIGHT", "labelZh": "午夜层", "sub": "UNCHARTED", "subZh": "未测绘 · 敬请期待", "color": "#4B5BD6"}
+  ],
+  "links": [
+    ["rise", "song4", "main"], ["song4", "song6", "main"], ["song4", "stD", "main"], ["song6", "ics4u", "main"],
+    ["stD", "ics4u", "main"], ["ics4u", "c3", "main"]
+  ],
+  "signs": [
+    {"x": 2080, "y": 460, "label": "03 MIDNIGHT", "labelZh": "午夜层", "sub": "主线", "color": "#4B5BD6"}
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "main_c1", "kind": "chapter", "demo": true,
+  "title": "SHORELINE", "titleZh": "浅滩", "numeral": "01", "route": "MAIN", "routeZh": "主线",
+  "parent": "main", "storyParent": "hub", "start": "rise", "depth": 60,
+  "titleAt": [250, 300], "sub": "@progress", "subZh": "主线 · 第 1 层",
+  "overviewZoom": 2.25,
+  "pools": [[900, 550, 700, 0.35], [1750, 560, 600, 0.25], [1800, -220, 700, 0.18],
+            [1900, 1160, 700, 0.20], [2560, 480, 420, 0.25]],
+  "spots": [
+    {"id": "rise", "type": "rise", "x": 250, "y": 300, "label": "LAUNCH POINT", "labelZh": "起潜点"},
+    {"id": "stA", "type": "story", "story": "story01", "x": 650, "y": 340},
+    {"id": "song1", "song": "Song 1", "x": 740, "y": 700, "r": 112},
+    {"id": "song2", "song": "Song 2", "x": 1120, "y": 420, "r": 112},
+    {"id": "song3", "song": "Song 3", "x": 1580, "y": 660, "r": 112},
+    {"id": "stB", "type": "story", "story": "story02", "x": 2000, "y": 380},
+    {"id": "c2", "type": "shaft", "to": "main_c2", "x": 2560, "y": 480, "r": 162,
+     "label": "02 TWILIGHT", "labelZh": "暮光层", "sub": "LEVEL 2", "subZh": "第 2 层", "color": "#6FA8FF"},
+    {"id": "song4", "song": "Song 4", "x": 1440, "y": -200, "r": 112, "area": "north"},
+    {"id": "song5", "song": "Song 5", "x": 1920, "y": -310, "r": 112, "area": "north", "requires": ["song3", "song4"]},
+    {"id": "sideN", "type": "shaft", "sealed": true, "x": 2440, "y": -230, "r": 140, "area": "north",
+     "label": "S1 ECHO VALLEY", "labelZh": "回声谷 · 下层", "sub": "UNCHARTED", "subZh": "未测绘", "color": "#8F7BFF"},
+    {"id": "song6", "song": "Song 6", "x": 1200, "y": 1090, "r": 112, "area": "south"},
+    {"id": "ics4u", "song": "ICS4U", "x": 1660, "y": 1230, "r": 112, "area": "south"},
+    {"id": "stC", "type": "story", "story": "story03", "x": 2060, "y": 1080, "area": "south"},
+    {"id": "marsh", "song": "marsh mally", "x": 2480, "y": 1210, "r": 112, "area": "south", "requires": ["song3"]}
+  ],
+  "links": [
+    ["rise", "stA", "main"], ["rise", "song1", "main"], ["stA", "song2", "main"], ["song1", "song2", "main"],
+    ["song2", "song3", "main"], ["song3", "stB", "main"], ["stB", "c2", "main"],
+    ["song2", "song4", "side", "north"], ["song4", "song5", "side", "north"], ["song5", "sideN", "side", "north"],
+    ["song1", "song6", "side", "south"], ["song6", "ics4u", "side", "south"], ["ics4u", "stC", "side", "south"],
+    ["stC", "marsh", "side", "south"]
+  ],
+  "areas": [
+    {"id": "north", "name": "ECHO VALLEY", "nameZh": "回声谷", "sub": "SIDE · 支线", "x": 1800, "y": 200, "color": "#8F7BFF"},
+    {"id": "south", "name": "THE WRECK", "nameZh": "沉船区", "sub": "SIDE · 支线", "x": 1975, "y": 780, "color": "#5CE6B0"}
+  ],
+  "signs": [
+    {"x": 1690, "y": -200, "label": "ECHO VALLEY", "labelZh": "回声谷", "sub": "支线", "color": "#8F7BFF"},
+    {"x": 1760, "y": 1160, "label": "THE WRECK", "labelZh": "沉船区", "sub": "支线", "color": "#5CE6B0"},
+    {"x": 2560, "y": 480, "label": "02 TWILIGHT", "labelZh": "暮光层", "sub": "主线", "color": "#6FA8FF"}
+  ]
+}

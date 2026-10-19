@@ -1,0 +1,15 @@
+{
+  "story01": {"number": "01", "title": "TITLE TBD", "titleZh": "标题待定", "minutes": 2,
+    "pages": ["Story text placeholder. The text of this chapter of the story goes here.",
+              "Second paragraph placeholder.", "Third paragraph placeholder."],
+    "pagesZh": ["文案预留 · 这一段剧情的文字放这里。", "第二段文案预留。", "第三段文案预留。"]},
+  "story02": {"number": "02", "title": "TITLE TBD", "titleZh": "标题待定", "minutes": 2,
+    "pages": ["Story text placeholder.", "Second paragraph placeholder.", "Third paragraph placeholder."],
+    "pagesZh": ["文案预留 · 这一段剧情的文字放这里。", "第二段文案预留。", "第三段文案预留。"]},
+  "story03": {"number": "03", "title": "TITLE TBD", "titleZh": "标题待定", "minutes": 2,
+    "pages": ["Story text placeholder.", "Second paragraph placeholder.", "Third paragraph placeholder."],
+    "pagesZh": ["文案预留 · 这一段剧情的文字放这里。", "第二段文案预留。", "第三段文案预留。"]},
+  "story04": {"number": "04", "title": "TITLE TBD", "titleZh": "标题待定", "minutes": 2,
+    "pages": ["Story text placeholder.", "Second paragraph placeholder.", "Third paragraph placeholder."],
+    "pagesZh": ["文案预留 · 这一段剧情的文字放这里。", "第二段文案预留。", "第三段文案预留。"]}
+}

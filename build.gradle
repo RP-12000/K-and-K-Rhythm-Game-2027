@@ -1,0 +1,80 @@
+buildscript {
+  repositories {
+    mavenCentral()
+    gradlePluginPortal()
+    mavenLocal()
+    google()
+    maven { url = 'https://central.sonatype.com/repository/maven-snapshots/' }
+  }
+  dependencies {
+    classpath 'com.android.tools.build:gradle:9.4.1'
+
+  }
+}
+
+allprojects {
+  apply plugin: 'eclipse'
+  apply plugin: 'idea'
+
+  // This allows you to "Build and run using IntelliJ IDEA", an option in IDEA's Settings.
+  idea {
+    module {
+      outputDir = file('build/classes/java/main')
+      testOutputDir = file('build/classes/java/test')
+    }
+  }
+}
+
+configure(subprojects - project(':android')) {
+  apply plugin: 'java-library'
+  java.sourceCompatibility = 11
+
+  dependencies {
+    implementation "com.badlogicgames.gdx:gdx-freetype:$gdxVersion"
+    // Streaming core only: databind's bean introspection needs Android API 26 (profile/PlainJson).
+    implementation 'com.fasterxml.jackson.core:jackson-core:2.17.0'
+    implementation "space.earlygrey:shapedrawer:$shapedrawerVersion"
+  }
+
+  // From https://lyze.dev/2021/04/29/libGDX-Internal-Assets-List/
+  // The article can be helpful when using assets.txt in your project.
+  tasks.register('generateAssetList') {
+    inputs.dir("${project.rootDir}/assets/")
+    // projectFolder/assets
+    File assetsFolder = new File("${project.rootDir}/assets/")
+    // projectFolder/assets/assets.txt
+    File assetsFile = new File(assetsFolder, "assets.txt")
+    // delete that file in case we've already created it
+    assetsFile.delete()
+
+    // iterate through all files inside that folder (minus the dev-run byproducts: the
+    // thumbnail / calibration cache and LWJGL's extracted natives; and the owner notes,
+    // README.txt, which are not packaged)
+    // convert it to a relative path
+    // and append it to the file assets.txt
+    fileTree(assetsFolder).matching { exclude 'cache/**', '.lwjgl/**', '**/README.txt' }.collect { assetsFolder.relativePath(it) }.sort().each {
+      assetsFile.append(it + "\n")
+    }
+  }
+  processResources.dependsOn 'generateAssetList'
+
+  compileJava {
+    options.incremental = true
+  }
+}
+
+subprojects {
+  version = "$projectVersion"
+  ext.appName = 'K & K'
+  // file-safe form of appName (no spaces or '&') for jars, executables, start scripts and bundle ids
+  ext.appFileName = 'KandK'
+  repositories {
+    mavenCentral()
+    // You may want to remove the following line if you have errors downloading dependencies.
+    mavenLocal()
+    maven { url = 'https://central.sonatype.com/repository/maven-snapshots/' }
+    maven { url = 'https://jitpack.io' }
+  }
+}
+
+eclipse.project.name = 'K & K' + '-parent'

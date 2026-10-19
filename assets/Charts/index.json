@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "chapters": [
+    {
+      "id": "c1", "title": "SHORELINE", "titleZh": "浅滩", "subtitle": "Chapter I",
+      "depthMeters": 0, "depthBottom": 200, "uncharted": false,
+      "songs": ["Song 1", "Song 2", "Song 3"]
+    },
+    {
+      "id": "c2", "title": "TWILIGHT", "titleZh": "暮光层", "subtitle": "Chapter II",
+      "depthMeters": 200, "depthBottom": 1000, "uncharted": false,
+      "songs": ["Song 4", "Song 5", "Song 6"]
+    },
+    {
+      "id": "c3", "title": "MIDNIGHT", "titleZh": "午夜层", "subtitle": "Chapter III",
+      "depthMeters": 1000, "depthBottom": 4000, "uncharted": false,
+      "songs": ["ICS4U", "marsh mally"]
+    },
+    {
+      "id": "c4", "title": "BLACKWATER", "titleZh": "黑水层", "subtitle": "Chapter IV",
+      "depthMeters": 4000, "depthBottom": 6000, "uncharted": true,
+      "songs": []
+    },
+    {
+      "id": "c5", "title": "TRENCH", "titleZh": "海沟", "subtitle": "Chapter V",
+      "depthMeters": 6000, "depthBottom": 10935, "uncharted": true,
+      "songs": []
+    }
+  ],
+  "tutorial": "Introduction"
+}

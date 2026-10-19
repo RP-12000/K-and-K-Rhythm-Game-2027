@@ -1,0 +1,23 @@
+{
+  "id": "singles", "kind": "route",
+  "title": "SINGLES", "titleZh": "单曲", "route": "ROUTE", "routeZh": "航线",
+  "parent": "hub", "start": "rise", "depth": 30, "collect": true, "price": 300,
+  "titleAt": [0, 30], "sub": "@progress", "subZh": "单曲航线",
+  "pools": [[0, 0, 700, 0.30], [-560, 220, 560, 0.26], [560, -220, 560, 0.26],
+            [810, 380, 480, 0.2], [810, -380, 480, 0.2]],
+  "spots": [
+    {"id": "rise", "type": "rise", "x": 0, "y": 0, "label": "ROUTES", "labelZh": "航线"},
+    {"id": "song1", "song": "Song 1", "x": -270, "y": -380},
+    {"id": "song2", "song": "Song 2", "x": 270, "y": -380},
+    {"id": "song3", "song": "Song 3", "x": 540, "y": 0},
+    {"id": "song4", "song": "Song 4", "x": 270, "y": 380},
+    {"id": "song5", "song": "Song 5", "x": -270, "y": 380},
+    {"id": "song6", "song": "Song 6", "x": -540, "y": 0},
+    {"id": "marsh", "song": "marsh mally", "x": 810, "y": -380},
+    {"id": "ics4u", "song": "ICS4U", "x": 810, "y": 380}
+  ],
+  "links": [
+    ["song1", "song2"], ["song2", "song3"], ["song3", "song4"], ["song4", "song5"], ["song5", "song6"],
+    ["song6", "song1"], ["song2", "marsh"], ["song3", "marsh"], ["song3", "ics4u"], ["song4", "ics4u"]
+  ]
+}
