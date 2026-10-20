@@ -167,13 +167,16 @@ final class CardChip extends Pressable {
         String name = Theme.DIFFICULTY_NAMES[o];
         float x = centerX() + shakeX(), y = centerY() + 22f * k * s;
         float maxW = (w - 16f * k) * s;
+        // shrinks to fit, at least to .85, and further down to the card's own scale when the least cap would not fit
+        // (a card scaled down for a short screen keeps SURFACE whole on phones)
+        float least = Math.min(0.85f, 20f * k * s / cap);
         if (!missing && label.isBursting(r.time)) {
             float fit = Math.min(cap, cap * maxW / Math.max(1f, r.boldWidth(name, cap)));
-            r.glitch(b, Fonts.Role.UI_BOLD, MapRenderer.R_BOLD, name, Math.max(cap * 0.85f, fit), x, y,
+            r.glitch(b, Fonts.Role.UI_BOLD, MapRenderer.R_BOLD, name, Math.max(cap * least, fit), x, y,
                 Align.center | Fonts.VCENTER, c, alpha, label);
             return;
         }
-        r.boldFit(b, name, cap, x, y, Align.center | Fonts.VCENTER, maxW, 0.85f, c, (missing ? 0.8f : 1f) * alpha);
+        r.boldFit(b, name, cap, x, y, Align.center | Fonts.VCENTER, maxW, least, c, (missing ? 0.8f : 1f) * alpha);
     }
 
     /** NUMBER phase: the constant (slot-rolls in). */

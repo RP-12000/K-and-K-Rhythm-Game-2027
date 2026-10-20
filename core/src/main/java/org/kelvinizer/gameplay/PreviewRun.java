@@ -21,28 +21,32 @@ import java.nio.charset.StandardCharsets;
 import java.util.Random;
 
 /**
- * 「游戏界面」画面里实时预览的那一局：用真正的游戏引擎、判定线、音符、特效和 HUD 自己打一张随机生成的谱，
- * 不接受点击。按键随机落在上下两条线上，双押之后隔 1–6 次下落才再出双押，每 5–12 连击故意漏掉一个；
- * 一局 40 次下落，打完马上换一张新谱。
+ * 「游戏界面」画面里实时预览的那一局：用真正的游戏引擎、判定线、音符、特效和 HUD 自己打一张生成的谱，不接受点击。
+ * 每局 12 组按键（单、单、双，循环四次），每组随机落在上下两条线的随机轨道上；第 5 组打成回响、第 9 组整组迷失、其余都是共鸣，
+ * 所以 FC/AR 指示每局都按 淡蓝 → 紫 → 白 换一遍；打完马上换一张新谱。
  *
  * <p>The run behind the live preview of GAMEPLAY VISUALS (Kelvin 2026-10-18 19:52: the preview plays itself and takes no
- * taps; random notes; the combo breaks every 5–12; after a double, 1–6 drops before the next one; the zone hint of the
- * real ±0.4 zone; COMBO as in a game). It owns a {@link GameEngine} whose clock runs on a simulated time source
- * (frame steps, at most 0.1 s each) and plays a random chart of {@link #DROPS} drops, one a beat at 120 BPM: TAPs on a
- * random line and lane, a double on one line with its lanes at least two apart. Each round plans its own input: a
- * press per note at its judgement ± up to 50 ms (one in six at 85–120 ms early or late, an ECHO), released 70 ms
- * later, and a single left alone whenever the combo reaches this round's target of 5–12 (a LOST). The presses go to
- * the engine as touches at the lane centre on the line, before each update, so the engine judges them as a player's.
- * The screen's renderers draw the run with the active diver's settings, read every frame: {@link FieldRenderer}
- * (lines, the zone hint over {@link Field#zoneHalf}), {@link NoteRenderer} (note size, MULTI-PRESS ASSIST, approach
- * glow), {@link FeedbackLayer}, the shared {@link HitFx} and a {@link GameplayHud} that keeps only the score and the
- * accuracy of its corners ({@link GameplayHud#setScoreOnly}). {@link #draw} works in world units of a full game
- * screen; the caller maps it into the panel with the batch transform and clips it. When a round ends a new chart is
- * generated (allocation per round, none per frame).
+ * taps; the zone hint of the real ±0.4 zone; COMBO as in a game; 2026-10-20 03:20: 「每12组键一个循环，每三组单单双循环，
+ * 每次都是第5组爆echo，第9组爆miss」, so the FC / AR INDICATOR changes every four groups instead of once a 40-drop round).
+ * It owns a {@link GameEngine} whose clock runs on a simulated time source (frame steps, at most 0.1 s each) and plays a
+ * chart of {@link #GROUPS} groups, one a beat at 120 BPM: single, single, double, four times; each group on a random
+ * line, a single in a random lane, a double's lanes at least two apart. Each round plans its own input: a press per
+ * note at its judgement ± up to 50 ms (a RESONANCE), released 70 ms later; group {@link #ECHO_GROUP} is pressed 85–120
+ * ms early or late (an ECHO) and group {@link #LOST_GROUP}, a double, is left alone (two LOSTs). The score is light blue
+ * through group 4, purple from the ECHO and white from the LOSTs, and the next round starts light blue again. The
+ * presses go to the engine as touches at the lane centre on the line, before each update, so the engine judges them as
+ * a player's. The screen's renderers draw the run with the active diver's settings, read every frame:
+ * {@link FieldRenderer} (lines, the zone hint over {@link Field#zoneHalf}), {@link NoteRenderer} (note size,
+ * MULTI-PRESS ASSIST, approach glow), {@link FeedbackLayer}, the shared {@link HitFx} and a {@link GameplayHud} that keeps
+ * only the score of its corners ({@link GameplayHud#setScoreOnly}). {@link #draw} works in world units
+ * of a full game screen; the caller maps it into the panel with the batch transform and clips it. When a round ends a
+ * new chart is generated (allocation per round, none per frame).
  */
 public final class PreviewRun {
-    /** Drops per round, one a beat from {@link #FIRST_BEAT} at 120 BPM (a round is about 21 s). */
-    static final int DROPS = 40;
+    /** Groups per round, one a beat from {@link #FIRST_BEAT} at 120 BPM (a round is about 7 s). */
+    static final int GROUPS = 12;
+    /** The group (1-based) pressed as an ECHO and the double left for two LOSTs, every round. */
+    static final int ECHO_GROUP = 5, LOST_GROUP = 9;
     private static final int FIRST_BEAT = 2;
     private static final float MS_PER_BEAT = 500f;
     private static final int LANES = 8;
@@ -71,11 +75,11 @@ public final class PreviewRun {
     private boolean ready;
 
     /** Planned presses (song ms), sorted by time: down or up, pointer, lane index, line. */
-    private final float[] inAt = new float[DROPS * 4];
-    private final boolean[] inDown = new boolean[DROPS * 4];
-    private final int[] inPointer = new int[DROPS * 4];
-    private final int[] inLane = new int[DROPS * 4];
-    private final Line[] inLine = new Line[DROPS * 4];
+    private final float[] inAt = new float[GROUPS * 4];
+    private final boolean[] inDown = new boolean[GROUPS * 4];
+    private final int[] inPointer = new int[GROUPS * 4];
+    private final int[] inLane = new int[GROUPS * 4];
+    private final Line[] inLine = new Line[GROUPS * 4];
     private int inCount, inNext;
 
     /** Creates the run (no chart until {@link #restart()}). */
@@ -110,6 +114,7 @@ public final class PreviewRun {
         engine.load(chart, false);
         field.begin(chart);
         notes.setStyle(st.noteSizeScale, game.hitFx().quality() == HitFx.QUALITY_HIGH);
+        notes.setHitPoint(st.hitPointPx);
         notes.setSyncHint(st.syncHint);
         notes.begin(chart);
         // as GameplayScreen: the clock starts before the first note can slide in from the screen edge
@@ -127,43 +132,28 @@ public final class PreviewRun {
     }
 
     /**
-     * Writes this round's chart and plans its presses: one drop a beat, a double once 1–6 drops passed since the last
-     * one (unless it would carry the combo past the target), and a single missed once the combo reached the target.
+     * Writes this round's chart and plans its presses: single, single, double, four times, one group a beat; group
+     * {@link #ECHO_GROUP} an ECHO, group {@link #LOST_GROUP} not pressed, the rest RESONANCE.
      */
     private Chart randomChart() {
         inCount = 0;
         inNext = 0;
         json.setLength(0);
-        json.append("{\"formatVersion\":2,\"title\":\"preview\",\"bpm\":120,\"notes\":[");
-        int combo = 0, target = nextTarget(), since = 0, wait = nextWait();
-        for (int i = 0; i < DROPS; i++) {
-            int beat = FIRST_BEAT + i;
+        json.append("{\"formatVersion\":4,\"title\":\"preview\",\"bpm\":120,\"notes\":[");
+        for (int g = 1; g <= GROUPS; g++) {
+            int beat = FIRST_BEAT + g - 1;
             float at = beat * MS_PER_BEAT;
             Line line = random.nextBoolean() ? Line.UPPER : Line.LOWER;
             int a = random.nextInt(LANES);
-            if (combo >= target) {
-                note(line, a, beat);
-                combo = 0;
-                target = nextTarget();
-                since++;
-                continue;
-            }
             note(line, a, beat);
-            press(at, 0, a, line);
-            if (since >= wait && combo + 2 <= target) {
-                int b;
-                do {
-                    b = random.nextInt(LANES);
-                } while (Math.abs(b - a) < 2);
-                note(line, b, beat);
-                press(at, 1, b, line);
-                combo += 2;
-                since = 0;
-                wait = nextWait();
-            } else {
-                combo++;
-                since++;
-            }
+            if (g != LOST_GROUP) press(at, 0, a, line, g == ECHO_GROUP);
+            if (g % 3 != 0) continue;
+            int b;
+            do {
+                b = random.nextInt(LANES);
+            } while (Math.abs(b - a) < 2);
+            note(line, b, beat);
+            if (g != LOST_GROUP) press(at, 1, b, line, false);
         }
         json.setLength(json.length() - 1);
         json.append("]}");
@@ -177,23 +167,15 @@ public final class PreviewRun {
         }
     }
 
-    private int nextTarget() {
-        return 5 + random.nextInt(8);
-    }
-
-    private int nextWait() {
-        return 1 + random.nextInt(6);
-    }
-
     private void note(Line line, int lane, int beat) {
         json.append("{\"type\":\"tap\",\"line\":\"").append(line == Line.UPPER ? "upper" : "lower")
             .append("\",\"lane\":").append(lane < 4 ? lane - 4 : lane - 3).append(",\"judgement\":").append(beat)
             .append("},");
     }
 
-    /** Plans a press of {@code lane} on {@code line} for a note at {@code at} ms: one in six an ECHO. */
-    private void press(float at, int pointer, int lane, Line line) {
-        float dt = random.nextInt(6) == 0 ? (random.nextBoolean() ? 1f : -1f) * (85f + 35f * random.nextFloat())
+    /** Plans a press of {@code lane} on {@code line} for a note at {@code at} ms: an ECHO or a RESONANCE. */
+    private void press(float at, int pointer, int lane, Line line, boolean echo) {
+        float dt = echo ? (random.nextBoolean() ? 1f : -1f) * (85f + 35f * random.nextFloat())
             : (random.nextFloat() * 2f - 1f) * 50f;
         input(at + dt, true, pointer, lane, line);
         input(at + dt + PRESS_MS, false, pointer, lane, line);
@@ -297,6 +279,7 @@ public final class PreviewRun {
         HitFx fx = game.hitFx();
         field.clearApproach();
         notes.setStyle(st.noteSizeScale, fx.quality() == HitFx.QUALITY_HIGH);
+        notes.setHitPoint(st.hitPointPx);
         notes.setSyncHint(st.syncHint);
         notes.prepare(engine, field, st.approachGlow);
         field.drawUnder(engine, st.zoneHint ? 1f : 0f, 1f);

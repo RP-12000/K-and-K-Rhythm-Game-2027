@@ -36,7 +36,7 @@ import java.util.Arrays;
  *
  * <h2>Judging (one tap judges one target, a TIDE group counts as one; plus its sync partner where the zones overlap)</h2>
  * <ul>
- *   <li>A touch is in a line's zone when {@code |y − lineY| ≤ 432·ky} ({@link Field#zoneHalf}: 0.4 of the screen
+ *   <li>A touch is in a line's zone when {@code |y − lineY| ≤ 480·ky} ({@link Field#zoneHalf}: 0.4 of the screen
  *       height, so roughly half the screen per line). Outside both zones it judges nothing. Where the zones overlap,
  *       a touch that judges a note also judges the other line's pending note in the same lane with exactly the same
  *       judgement beat, and that line's TIDE group at that beat ({@code judgeOtherLine}).</li>
@@ -74,8 +74,8 @@ import java.util.Arrays;
  *   <li><b>TIDE STREAMs are held by coverage, not ownership.</b> The head is judged like a TIDE
  *       drop (any tap in the line's zone at any x; keyboard any key of the line's row, Space for the
  *       lower line). While it runs it is "on" whenever any down pointer is in that line's zone
- *       ({@code |y − lineY| ≤ 108·ky}, any x, pointers holding lane STREAMs or other TIDE STREAMs
- *       included) or any key of the row is down. Coverage is evaluated at every input event with
+ *       ({@code |y − lineY| ≤ 480·ky}, {@link Field#zoneHalf}; any x, pointers holding lane STREAMs or
+ *       other TIDE STREAMs included) or any key of the row is down. Coverage is evaluated at every input event with
  *       its timestamp (down, drag, up, cancel, key down / up) and once per frame (resting pointers,
  *       moving lines). A lapse longer than {@link #HOLD_LEAVE_MS} that starts before
  *       {@code end − HOLD_RELEASE_GRACE_MS} breaks it (LOST at the lapse start + 100 ms, also when
@@ -123,7 +123,7 @@ import java.util.Arrays;
  * after {@link #load}.
  */
 public final class GameEngine {
-    /** Half height of a judgement zone in reference units; in the world it is {@link Field#zoneHalf} (432·ky). */
+    /** Half height of a judgement zone in reference units; in the world it is {@link Field#zoneHalf} (480·ky). */
     public static final float ZONE_HALF = Params.JUDGE_ZONE_HALF;
     /** RESONANCE window half width (ms). */
     public static final float TIER1_MS = Params.TIER1_MS;

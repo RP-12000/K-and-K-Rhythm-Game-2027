@@ -17,7 +17,7 @@ import java.util.List;
 
 /**
  * 当前这一层洞穴的世界：按 {@link CaveData} 里的层数据摆好每个点（歌曲洞、剧情入口、竖井、航线洞口），
- * 连好路，记下区域名、路牌、文案和边界；“所有曲目”层按曲包或全部铺开、按当前排序和筛选现排成网格。
+ * 连好路，记下区域名、路牌、文案和边界；“所有曲目”层把所有曲包里的歌按当前排序和筛选平铺（位置由 {@link GridPage} 排）。
  * 换潜水员或成绩变化时刷新上锁、读过、路的实线虚线和进度文字。
  *
  * <p>The world of the current cave level (DESIGN §16): the spots of a {@link CaveData.Level}
@@ -26,8 +26,9 @@ import java.util.List;
  * 2026-10-16); their paths go with them, but they still count for the bounds, and a level that
  * started on one still opens there ({@link #startX}), its arrival ring and wake light from the
  * spot nearest to it, or from the rise spot itself when the camera opens nearer to that (SINGLES,
- * 2026-10-17). The ALL SONGS level is laid out here as a grid, by pack or flat, in the current
- * sort, with only the songs the {@link MapFilter} keeps. Per-diver state (records, locks, read
+ * 2026-10-17). On ALL SONGS this lists the songs of every pack (hidden secret packs left out),
+ * flat, in the current sort, with only the songs the {@link MapFilter} keeps (Kelvin 2026-10-19); {@link GridPage}
+ * places them. Per-diver state (records, locks, read
  * stories, solid / dashed paths, progress texts) is refreshed by {@link #refresh(Profile, float)}
  * on profile changes only.
  *
@@ -37,12 +38,8 @@ final class MapWorld {
     /** Sort orders of the ALL SONGS grid. */
     static final int SORT_DEFAULT = 0, SORT_TITLE = 1, SORT_LEVEL = 2, SORT_BEST = 3, SORT_RECENT = 4;
     static final String[] SORT_NAMES = {"DEFAULT", "TITLE", "LEVEL", "BEST", "RECENT"};
-    /** Grid geometry (data-file units, y down). */
-    private static final float GRID_X0 = 200f, GRID_Y0 = 330f, PACK_PITCH_X = 264f, PACK_PITCH_Y = 336f,
-        FLAT_PITCH_X = 304f, FLAT_PITCH_Y = 400f, GRID_R = 86f;
-    private static final int PACK_COLS = 4, FLAT_COLS = 6;
-    /** Collected songs: hex lattice round the start (pitch, row height) and the clearance a free point keeps. */
-    private static final float COLLECT_PITCH = 540f, COLLECT_ROW = 380f, COLLECT_FREE = 300f;
+    /** Collected songs: the hex lattice of the placed songs (pitch, row height) and the clearance a free point keeps. */
+    private static final float COLLECT_PITCH = 500f, COLLECT_ROW = 230f, COLLECT_FREE = 300f;
     /** Secret states of a song for a diver (special unlock): none, garbled, hidden. */
     static final int SECRET_NONE = 0, SECRET_GLITCH = 1, SECRET_HIDDEN = 2;
 
@@ -71,11 +68,14 @@ final class MapWorld {
     final float minX, maxX, minY, maxY;
     /** Left and top edges of the content (the bounds without the margin): ALL SONGS opens with this corner under the badge. */
     final float contentLeft, contentTop;
-    /** ALL SONGS layout: flat grid and sort order. */
-    final boolean flat;
+    /** ALL SONGS: sort order and whether no song is left to show. */
     final int sort;
-    /** The song card's header, e.g. {@code SINGLES · 单曲} or {@code 01 · SHORELINE}. */
-    final String cardHeader;
+    boolean gridEmpty;
+    /**
+     * The song card's header, e.g. {@code SINGLES · 单曲} or {@code 01 · SHORELINE}, and the same without the Chinese
+     * name for an English screen (Kelvin 2026-10-20: 如果语言选择是英语就不要出现中文).
+     */
+    final String cardHeader, cardHeaderEn;
     /** Stats of this level's songs. */
     int songs, charts, chartsPlayed;
     /** Library-wide stats (hub route plates). */
@@ -83,30 +83,17 @@ final class MapWorld {
     private final SongLibrary library;
     private final CaveData data;
 
-    MapWorld(CaveData data, CaveData.Level level, SongLibrary library, Profile p, int sort, boolean flat,
-             Difficulty lens, MapFilter filter) {
+    MapWorld(CaveData data, CaveData.Level level, SongLibrary library, Profile p, int sort, Difficulty lens,
+             MapFilter filter) {
         this.level = level;
         this.library = library;
         this.data = data;
         this.sort = sort;
-        this.flat = flat;
         List<MapNode> songNodes = new ArrayList<>();
         List<MapNode> other = new ArrayList<>();
         texts = new ArrayList<>(level.texts);
-        float[] frame = null;
         if (CaveData.GRID.equals(level.kind)) {
-            if (filter != null && filter.active()) {
-                // a filtered grid pans like the full one, so it too opens with its top left under the badge
-                List<MapNode> fs = new ArrayList<>(), fo = new ArrayList<>();
-                int t0 = texts.size();
-                layoutGrid(data, level, library, p, sort, flat, lens, null, fs, fo);
-                frame = new float[]{Float.MAX_VALUE, -Float.MAX_VALUE, Float.MAX_VALUE, -Float.MAX_VALUE};
-                fs.addAll(fo);
-                for (MapNode n : fs) grow(frame, n.x - n.r, n.x + n.r, n.y - n.r - 120f, n.y + n.r);
-                for (CaveData.Text t : texts.subList(t0, texts.size())) grow(frame, t.x - 40f, t.x + 400f, t.y - 40f, t.y + 40f);
-                texts.subList(t0, texts.size()).clear();
-            }
-            layoutGrid(data, level, library, p, sort, flat, lens, filter, songNodes, other);
+            layoutGrid(data, level, library, p, sort, lens, filter, songNodes);
         } else {
             for (CaveData.Spot s : level.spots) {
                 int kind = kindOf(s.type);
@@ -155,6 +142,16 @@ final class MapWorld {
             ls.add(new int[]{a.idx, b.idx});
             lc.add(linkColor(k));
             lar.add("main".equals(k.kind) || "side".equals(k.kind));
+        }
+        if (isGrid()) { // a net (Kelvin 2026-10-19 21:18): each song to the songs half a step off it in the next row
+            for (int i = 0; i < nodes.length; i++) {
+                for (int j = (i / 2 + 1) * 2; j < Math.min(nodes.length, (i / 2 + 2) * 2); j++) {
+                    if (Math.abs(GridPage.column(i) - GridPage.column(j)) != 1) continue;
+                    ls.add(new int[]{i, j});
+                    lc.add(Theme.INK1);
+                    lar.add(false);
+                }
+            }
         }
         la = new int[ls.size()];
         lb = new int[ls.size()];
@@ -216,12 +213,6 @@ final class MapWorld {
             y0 = Math.min(y0, t.y - 40f);
             y1 = Math.max(y1, t.y + 40f);
         }
-        if (frame != null) {
-            x0 = Math.min(x0, frame[0]);
-            x1 = Math.max(x1, frame[1]);
-            y0 = Math.min(y0, frame[2]);
-            y1 = Math.max(y1, frame[3]);
-        }
         if (!Float.isNaN(level.titleX)) {
             x0 = Math.min(x0, level.titleX - 300f);
             x1 = Math.max(x1, level.titleX + 300f);
@@ -244,17 +235,10 @@ final class MapWorld {
         StringBuilder h = new StringBuilder();
         if (!level.numeral.isEmpty()) h.append(level.numeral).append(" · ");
         h.append(level.title);
+        cardHeaderEn = h.toString();
         if (!level.titleZh.isEmpty()) h.append(" · ").append(level.titleZh);
         cardHeader = h.toString();
         refresh(p, 0f);
-    }
-
-    /** Grows box {x0, x1, y0, y1} to hold the given extent. */
-    private static void grow(float[] box, float x0, float x1, float y0, float y1) {
-        box[0] = Math.min(box[0], x0);
-        box[1] = Math.max(box[1], x1);
-        box[2] = Math.min(box[2], y0);
-        box[3] = Math.max(box[3], y1);
     }
 
     /** The (unbuilt) rise spot {@code spotId} of {@code level}, or null. */
@@ -308,18 +292,19 @@ final class MapWorld {
     }
 
     /**
-     * Songs no level places go on a "collect" level, on the free points of a hex lattice round its
-     * start ({@link #COLLECT_PITCH} apart, rows {@link #COLLECT_ROW} apart): nearest first, a step
-     * up or down counting 4/3 of a step sideways so they fill a 4:3 tablet screen before spilling
-     * past it, ties counter-clockwise from the right, so they ring the start (Kelvin 2026-10-17
-     * 16:46: 从屏幕正中心开始，四周都有曲子; 17:21: 贴近4：3的平板). A point is free when no spot
-     * of the level and no song placed before lies within {@link #COLLECT_FREE}.
+     * Songs no level places go on a "collect" level, on the free points of the hex lattice its own songs sit on
+     * (through its first song, {@link #COLLECT_PITCH} apart in a row, rows {@link #COLLECT_ROW} apart, each row
+     * half a pitch along; Kelvin 2026-10-19 19:59 put the singles in two such rows round the start): nearest the
+     * start first, a step up or down counting 4/3 of a step sideways, ties counter-clockwise from the right, so
+     * they ring the start (2026-10-17 16:46: 从屏幕正中心开始，四周都有曲子). A point is free when no spot of
+     * the level, no song placed before and not the level's title lies within {@link #COLLECT_FREE}.
      */
     private static void addUnplaced(CaveData data, CaveData.Level level, SongLibrary library, List<MapNode> songNodes) {
         List<SongMeta> songs = new ArrayList<>();
         for (SongMeta s : library.songs()) if (!placed(data, s.id())) songs.add(s);
         if (songs.isEmpty()) return;
         float ox = 0f, oy = 0f;
+        CaveData.Spot first = null;
         List<float[]> taken = new ArrayList<>();
         for (CaveData.Spot s : level.spots) {
             if (s.id.equals(level.start)) {
@@ -327,14 +312,23 @@ final class MapWorld {
                 oy = s.y;
             }
             if (kindOf(s.type) != MapNode.RISE) taken.add(new float[]{s.x, s.y});
+            if (first == null && kindOf(s.type) == MapNode.SONG) first = s;
         }
+        if (!Float.isNaN(level.titleX)) taken.add(new float[]{level.titleX, level.titleY});
+        // lattice offset: the first song is a lattice point (the start, when the level places none)
+        float ax = first != null ? first.x - ox : 0f, ay = first != null ? first.y - oy : 0f;
+        float rowsOff = Math.round(ay / COLLECT_ROW);
+        ay -= rowsOff * COLLECT_ROW;
+        ax -= rowsOff * COLLECT_PITCH * 0.5f;
+        ax -= Math.round(ax / COLLECT_PITCH) * COLLECT_PITCH;
         int rings = 2; // enough points for every song: a spot blocks at most four of them
         while (3 * rings * (rings + 1) < 4 * taken.size() + songs.size()) rings++;
         List<float[]> slots = new ArrayList<>();
         for (int r = -rings; r <= rings; r++) {
             for (int q = -rings; q <= rings; q++) {
-                if ((q == 0 && r == 0) || Math.abs(q) + Math.abs(r) + Math.abs(q + r) > 2 * rings) continue;
-                float dx = COLLECT_PITCH * (q + r * 0.5f), dy = COLLECT_ROW * r;
+                if (Math.abs(q) + Math.abs(r) + Math.abs(q + r) > 2 * rings) continue;
+                float dx = ax + COLLECT_PITCH * (q + r * 0.5f), dy = ay + COLLECT_ROW * r;
+                if (dx * dx + dy * dy < 1f) continue; // never on the start itself
                 float angle = (float) Math.atan2(dy, dx);
                 if (angle < 0f) angle += (float) (2 * Math.PI);
                 slots.add(new float[]{ox + dx, oy + dy, dx * dx + 16f / 9f * dy * dy, angle});
@@ -373,12 +367,12 @@ final class MapWorld {
 
     // ------------------------------------------------------------------ ALL SONGS grid
     /**
-     * Lays the ALL SONGS grid out. With a filter on, only the songs it keeps are placed, packs
-     * with none of them are left out with their placeholders and notes, and an empty result says
-     * so where the grid starts.
+     * Adds the songs of every pack (hidden secret packs left out) to the grid, flat and in the sort order (Kelvin
+     * 2026-10-19 13:14: no grouping; the pack box that checked packs went on 2026-10-20: 选曲包的那个功能去掉吧). With a
+     * filter on, only the songs it keeps are added.
      */
-    private void layoutGrid(CaveData data, CaveData.Level level, SongLibrary lib, Profile p, int sort, boolean flat,
-                            Difficulty lens, MapFilter filter, List<MapNode> songNodes, List<MapNode> other) {
+    private void layoutGrid(CaveData data, CaveData.Level level, SongLibrary lib, Profile p, int sort, Difficulty lens,
+                            MapFilter filter, List<MapNode> songNodes) {
         List<SongMeta> list = new ArrayList<>(lib.songs());
         sortSongs(list, p, sort, lens);
         boolean filtering = filter != null && filter.active();
@@ -389,71 +383,47 @@ final class MapWorld {
             if (sec == SECRET_HIDDEN || (sec == SECRET_GLITCH && filtering)) list.remove(i);
             else if (sec == SECRET_GLITCH) garbled.add(list.get(i));
         }
-        if (filtering) {
-            for (int i = list.size() - 1; i >= 0; i--) if (!filter.accepts(list.get(i), p, lens)) list.remove(i);
-            if (list.isEmpty()) {
-                texts.add(text(96f, 150f, "NO MATCHES · " + MapFilter.LABELS[filter.status()],
-                    "没有符合的歌 · " + MapFilter.LABELS[filter.status()], 22f, Theme.INK1));
-                return;
-            }
-        }
-        if (flat || level.packs.isEmpty()) {
-            for (int i = 0; i < list.size(); i++) {
-                float x = GRID_X0 + (i % FLAT_COLS) * FLAT_PITCH_X, y = GRID_Y0 + (i / FLAT_COLS) * FLAT_PITCH_Y;
-                gridNode(list.get(i), garbled, songNodes, x, y);
-            }
-            texts.add(text(96f, 150f, "ALL SONGS · NO PACKS · " + SORT_NAMES[sort],
-                "全部铺开 · 不分曲包 · 排序 " + SORT_NAMES[sort], 22f, Theme.INK1));
-            return;
-        }
-        // the first pack lists songs on the left; the other packs stack on the right
-        float rightX = GRID_X0 + PACK_COLS * PACK_PITCH_X + 120f;
-        float ry = 150f;
-        boolean first = true;
+        List<String> on = new ArrayList<>();
         for (CaveData.Pack pk : level.packs) {
             int packSecret = pk.secret == null || (p != null && p.hasFlag(packRevealFlag(pk))) ? SECRET_NONE : secret(pk.secret);
-            if (packSecret == SECRET_HIDDEN) continue;
-            List<SongMeta> in = new ArrayList<>();
-            if (pk.songs == null) {
-                in.addAll(list);
-            } else {
-                for (SongMeta s : list) for (String id : pk.songs) if (s.id().equals(id)) in.add(s);
-            }
-            if (filtering && in.isEmpty()) continue;
-            String title = packSecret == SECRET_GLITCH ? garble(pk.title) : pk.title;
-            String titleZh = packSecret == SECRET_GLITCH ? title : pk.titleZh;
-            if (first) {
-                first = false;
-                texts.add(text(96f, 150f, title, titleZh, 22f, Theme.INK1));
-                for (int i = 0; i < in.size(); i++) {
-                    gridNode(in.get(i), garbled, songNodes, GRID_X0 + (i % PACK_COLS) * PACK_PITCH_X,
-                        GRID_Y0 + (i / PACK_COLS) * PACK_PITCH_Y);
-                }
-                continue;
-            }
-            texts.add(text(rightX - 104f, ry, title, titleZh, 22f, Theme.INK1));
-            int slots = (filtering ? 0 : pk.placeholders) + in.size();
-            for (int i = 0; i < slots; i++) {
-                float x = rightX + (i % 2) * PACK_PITCH_X, y = ry + 180f + (i / 2) * PACK_PITCH_Y;
-                if (i < in.size()) {
-                    gridNode(in.get(i), garbled, songNodes, x, y);
-                } else {
-                    other.add(new MapNode(null, MapNode.SLOT, null, -1, x, -y, GRID_R));
-                }
-            }
-            float noteY = ry + 180f + ((slots + 1) / 2) * PACK_PITCH_Y - 150f;
-            if (!filtering && !pk.note.isEmpty() && packSecret == SECRET_NONE) {
-                texts.add(text(rightX + PACK_PITCH_X * 0.5f, noteY, pk.note, pk.noteZh, 18f, Theme.INK2));
-            }
-            ry = noteY + 120f;
+            if (packSecret != SECRET_HIDDEN) on.addAll(packSongs(data, pk, lib));
         }
+        for (SongMeta s : list) {
+            if (!on.contains(s.id()) || (filtering && !filter.accepts(s, p, lens))) continue;
+            MapNode n = new MapNode(null, MapNode.SONG, s, songNodes.size(), 0f, 0f, MapRenderer.SONG_R);
+            n.still = true;
+            if (garbled.contains(s)) markGlitch(n);
+            songNodes.add(n);
+        }
+        gridEmpty = songNodes.isEmpty();
     }
 
-    /** One ALL SONGS hole at data-file (x, y down); garbled when its song is in {@code garbled}. */
-    private static void gridNode(SongMeta s, List<SongMeta> garbled, List<MapNode> songNodes, float x, float y) {
-        MapNode n = new MapNode(null, MapNode.SONG, s, songNodes.size(), x, -y, GRID_R);
-        if (garbled.contains(s)) markGlitch(n);
-        songNodes.add(n);
+    /**
+     * The song ids of pack {@code pk}: its list, every library song ({@code "songs": "all"}), or the songs placed on
+     * its {@code level} and, when that level collects, every song placed on no level.
+     */
+    private static List<String> packSongs(CaveData data, CaveData.Pack pk, SongLibrary lib) {
+        List<String> out = new ArrayList<>();
+        CaveData.Level l = pk.level != null ? data.levels.get(pk.level) : null;
+        for (SongMeta s : lib.songs()) {
+            boolean in;
+            if (pk.level != null) {
+                in = l != null && (onLevel(l, s.id()) || (l.collect && !placed(data, s.id())));
+            } else if (pk.songs == null) {
+                in = true;
+            } else {
+                in = false;
+                for (String id : pk.songs) in |= s.id().equals(id);
+            }
+            if (in) out.add(s.id());
+        }
+        return out;
+    }
+
+    /** True when level {@code l} has a song spot for {@code songId}. */
+    private static boolean onLevel(CaveData.Level l, String songId) {
+        for (CaveData.Spot s : l.spots) if (songId.equals(s.song) && kindOf(s.type) == MapNode.SONG) return true;
+        return false;
     }
 
     /** Makes {@code n} a garbled secret: its label shimmers and bursts now and then. */
@@ -521,6 +491,26 @@ final class MapWorld {
     }
 
     /**
+     * {@code s} without its Chinese parts, for an English screen (Kelvin 2026-10-20: 如果语言选择是英语就不要出现中文): the
+     * parts of a {@code " · "} list that hold a CJK character are left out, e.g. {@code SIDE · 支线} gives {@code SIDE}.
+     */
+    static String latin(String s) {
+        if (s == null || s.isEmpty() || !hasCjk(s)) return s == null ? "" : s;
+        StringBuilder b = new StringBuilder(s.length());
+        for (String part : s.split(" · ")) {
+            if (part.isEmpty() || hasCjk(part)) continue;
+            if (b.length() > 0) b.append(" · ");
+            b.append(part);
+        }
+        return b.toString();
+    }
+
+    private static boolean hasCjk(String s) {
+        for (int i = 0; i < s.length(); i++) if (MapRenderer.units(s.charAt(i)) == 2) return true;
+        return false;
+    }
+
+    /**
      * The names of the unmet requirements of spot {@code s} on {@code l} for diver {@code p}
      * (empty when it is open): spot ids on that level (songs cleared, stories read, the tutorial
      * seen, shafts not sealed) or song ids.
@@ -575,17 +565,6 @@ final class MapWorld {
             }
         }
         return first;
-    }
-
-    private static CaveData.Text text(float x, float yDown, String en, String zh, float size, Color c) {
-        CaveData.Text t = new CaveData.Text();
-        t.text = en;
-        t.textZh = zh.isEmpty() ? en : zh;
-        t.x = x;
-        t.y = -yDown;
-        t.size = size;
-        t.color = c;
-        return t;
     }
 
     private static void sortSongs(List<SongMeta> list, final Profile p, int sort, final Difficulty lens) {

@@ -30,7 +30,7 @@ import org.kelvinizer.ui.Theme;
  */
 final class FieldRenderer {
     /**
-     * @return half height of the visual band around a line in the world ({@link Field#bandHalf}: 108·ky);
+     * @return half height of the visual band around a line in the world ({@link Field#bandHalf}: 120·ky);
      *         the input zone ({@link Field#zoneHalf}) is wider
      */
     static float zone() {

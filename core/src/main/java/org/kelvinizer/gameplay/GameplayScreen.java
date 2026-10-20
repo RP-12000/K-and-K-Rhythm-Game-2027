@@ -230,6 +230,7 @@ public class GameplayScreen extends KkScreen<Main> {
         field.begin(chart);
         // the note size sets how far a turned body reaches, so which notes slide in (DESIGN §5.4)
         notes.setStyle(settings.noteSizeScale, game.hitFx().quality() == HitFx.QUALITY_HIGH);
+        notes.setHitPoint(settings.hitPointPx);
         notes.setSyncHint(settings.syncHint);
         notes.begin(chart);
         startBeforeFirstNote();
@@ -453,6 +454,7 @@ public class GameplayScreen extends KkScreen<Main> {
         // culling + approach state first: a TIDE approach brightens the zone hint of block A
         field.clearApproach();
         notes.setStyle(settings.noteSizeScale, fx.quality() == HitFx.QUALITY_HIGH);
+        notes.setHitPoint(settings.hitPointPx);
         notes.setSyncHint(settings.syncHint);
         notes.prepare(engine, field, settings.approachGlow);
         trails.setQuality(fx.quality());
@@ -712,6 +714,11 @@ public class GameplayScreen extends KkScreen<Main> {
     /** @return the head height of a lane note at the current note size (tutorial demos). */
     protected float noteDemoHeight() {
         return notes.noteHeight();
+    }
+
+    /** @return how far the notes are drawn toward their lines for the VISUAL HIT POINT (tutorial captions follow). */
+    protected float noteHitShift() {
+        return notes.hitShift();
     }
 
     /** @return the head width of a lane note in a lane {@code laneWidth} wide (tutorial demos). */

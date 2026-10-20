@@ -468,6 +468,88 @@ public final class Draw implements Disposable {
         }
     }
 
+    /** Scratch for {@link #convexFill} and {@link #convexStroke}: four offset copies of up to 8 corners. */
+    private final float[] rings = new float[4 * 16];
+
+    /**
+     * Anti-aliased filled convex polygon of {@code n} (3–8) corners, counter-clockwise in {@code xy}: its edges
+     * feathered over one screen pixel ({@code px}, world units per pixel) as {@link #ringArc} feathers its rims.
+     */
+    public void convexFill(float[] xy, int n, Color c, float alpha, float px) {
+        if (alpha <= 0f || n < 3) return;
+        float f = 0.5f * Math.max(px, 1e-3f);
+        offset(xy, n, -f, rings, 0);
+        offset(xy, n, f, rings, 16);
+        float solid = Color.toFloatBits(c.r, c.g, c.b, c.a * alpha);
+        float clear = Color.toFloatBits(c.r, c.g, c.b, 0f);
+        float u = 0.5f * (whiteCore.getU() + whiteCore.getU2());
+        float v = 0.5f * (whiteCore.getV() + whiteCore.getV2());
+        float[] q = verts;
+        // the inner polygon as a fan of quads from corner 0 (the last folds into a triangle when n is odd)
+        for (int i = 1; i + 1 < n; i += 2) {
+            int j = Math.min(i + 2, n - 1);
+            put(q, 0, rings[0], rings[1], solid, u, v);
+            put(q, 5, rings[2 * i], rings[2 * i + 1], solid, u, v);
+            put(q, 10, rings[2 * i + 2], rings[2 * i + 3], solid, u, v);
+            put(q, 15, rings[2 * j], rings[2 * j + 1], solid, u, v);
+            batch.draw(atlasTexture, q, 0, 20);
+        }
+        for (int i = 0; i < n; i++) band(2 * i, 2 * ((i + 1) % n), 0, 16, solid, clear, u, v);
+    }
+
+    /**
+     * Anti-aliased outline of a convex polygon ({@code n} ≤ 8 corners, counter-clockwise in {@code xy}): a band
+     * {@code width} wide centred on its edges, mitred at the corners, both rims feathered over one screen pixel.
+     */
+    public void convexStroke(float[] xy, int n, float width, Color c, float alpha, float px) {
+        if (alpha <= 0f || width <= 0f || n < 3) return;
+        px = Math.max(px, 1e-3f);
+        // a stroke thinner than a pixel keeps a pixel's width and fades instead (as in ringArc)
+        float half = 0.5f * Math.max(width, px), f = 0.5f * px;
+        offset(xy, n, -half - f, rings, 0);
+        offset(xy, n, -half + f, rings, 16);
+        offset(xy, n, half - f, rings, 32);
+        offset(xy, n, half + f, rings, 48);
+        float solid = Color.toFloatBits(c.r, c.g, c.b, c.a * alpha * Math.min(1f, width / px));
+        float clear = Color.toFloatBits(c.r, c.g, c.b, 0f);
+        float u = 0.5f * (whiteCore.getU() + whiteCore.getU2());
+        float v = 0.5f * (whiteCore.getV() + whiteCore.getV2());
+        for (int i = 0; i < n; i++) {
+            int a = 2 * i, b = 2 * ((i + 1) % n);
+            band(a, b, 0, 16, clear, solid, u, v);
+            band(a, b, 16, 32, solid, solid, u, v);
+            band(a, b, 32, 48, solid, clear, u, v);
+        }
+    }
+
+    /** One quad of {@link #rings} between the offset copies at {@code in} and {@code out}, along the edge a → b. */
+    private void band(int a, int b, int in, int out, float cin, float cout, float u, float v) {
+        float[] q = verts, r = rings;
+        put(q, 0, r[in + a], r[in + a + 1], cin, u, v);
+        put(q, 5, r[out + a], r[out + a + 1], cout, u, v);
+        put(q, 10, r[out + b], r[out + b + 1], cout, u, v);
+        put(q, 15, r[in + b], r[in + b + 1], cin, u, v);
+        batch.draw(atlasTexture, q, 0, 20);
+    }
+
+    /**
+     * The corners of the convex counter-clockwise polygon {@code xy} moved {@code d} outward (inward when negative)
+     * along both neighbouring edges' normals, a mitred offset, into {@code out} from {@code at}.
+     */
+    private static void offset(float[] xy, int n, float d, float[] out, int at) {
+        for (int i = 0; i < n; i++) {
+            int p = (i + n - 1) % n, nx = (i + 1) % n;
+            float ax = xy[2 * i] - xy[2 * p], ay = xy[2 * i + 1] - xy[2 * p + 1];
+            float bx = xy[2 * nx] - xy[2 * i], by = xy[2 * nx + 1] - xy[2 * i + 1];
+            float la = (float) Math.sqrt(ax * ax + ay * ay), lb = (float) Math.sqrt(bx * bx + by * by);
+            // outward normals of the edges into and out of corner i (counter-clockwise: (dy, -dx))
+            float n1x = ay / la, n1y = -ax / la, n2x = by / lb, n2y = -bx / lb;
+            float s = d / (1f + n1x * n2x + n1y * n2y);
+            out[at + 2 * i] = xy[2 * i] + (n1x + n2x) * s;
+            out[at + 2 * i + 1] = xy[2 * i + 1] + (n1y + n2y) * s;
+        }
+    }
+
     /** Straight line drawn with the ShapeDrawer. */
     public void line(float x1, float y1, float x2, float y2, float width, Color c, float alpha) {
         float old = shapes.getPackedColor();

@@ -222,9 +222,9 @@ Gameplay note tokens live with the notes: `mine` `#FF3344`, `mineCore` `#2A0610`
 | Grade stamp letter | DISPLAY | 200 (PURE: 104) | GRADE `PURESABCD+` | swaps. "+" drawn at 55 % scale as a superscript. |
 | Countdown | NUMBER | 132 | DIGITS | |
 | Combo | NUMBER | 96 | DIGITS | swaps DISPLAY_SOFT / DISPLAY at milestones |
-| Result score | NUMBER | 80 (wide, aspect < 2.0) / 88 (aspect ≥ 2.0) / 104 (stacked) | DIGITS | fixed cells; swaps at score-land |
-| HUD score | NUMBER | 32 at every aspect (80 % of 40, top-left corner, §5.3). **Replaced 2026-10-12:** 40 (band layout 44). | DIGITS | fixed cells; never glitches |
-| HUD accuracy | NUMBER | `max(19.2·uiScale, 20)` (80 % of 24, never below the playfield minimum 20 of §1.1). **Replaced:** 24. | DIGITS | |
+| Result score | NUMBER | 80 (wide, aspect < 2.0) / 88 (aspect ≥ 2.0) / fit between jacket and stamp, ≤ 112 (stacked; ≈ 108 at 4:3) | DIGITS | fixed cells; swaps at score-land |
+| HUD score | NUMBER | 0.4 of the top band (top edge to the default sky line; top-left corner, §5.3) since 2026-10-20 07:01 (§24.33): 43.2 at 16:9 and 20:9, 48 at 16:10, 57.6 at 4:3. **Replaced:** 0.7 of the band from 06:27 (§24.32: 75.6, 84, 100.8); 40 at every aspect from 05:56 (§24.31; also 05:00–05:31, §24.30); 32 (80 % of 40) from 2026-10-12; 40 before that (band layout 44). | DIGITS | fixed cells; never glitches |
+| ~~HUD accuracy~~ | NUMBER | **Removed 2026-10-20 05:56** (§24.31; first at 05:00, back 05:31–05:56, §24.30). Was `max(19.2·uiScale, 20)` (80 % of 24, never below the playfield minimum 20 of §1.1); 24 before 2026-10-12. | DIGITS | |
 | UI numbers | NUMBER | 20 / 24 / 26 / 30 / 36 / 56 | DIGITS | depth, stats, counts, EXP |
 | Judgement words | NUMBER / DISPLAY_SOFT / DISPLAY_OUTLINE | 32 | WORDS | one face per judgement (§1.2) |
 | DESCEND label | DISPLAY | 40 | WORDS | |
@@ -297,7 +297,7 @@ All glitch goes through `GlitchText`. The jitter seed is `hash(floor(time × 24)
 
 | Level | What it does | Used on | Cost |
 |---|---|---|---|
-| **G0** clean | nothing | body, lists, settings values, live HUD score / accuracy, all notes and lines before judgement | 1× |
+| **G0** clean | nothing | body, lists, settings values, live HUD score, all notes and lines before judgement | 1× |
 | **G1** shimmer | Two extra draws: `glitchC` at (−a, 0) and `glitchM` at (+a, 0), additive α .35, `a = 2.5·I`. Every 2–4 s the copies jitter ±1 px for 2 frames. | logo, chapter names, grade stamp at rest, combo, DESCEND label, RESONANCE word, PURE | 3× glyph quads |
 | **G2** burst | 60–140 ms total:<br>• **font swap** NUMBER → DISPLAY → DISPLAY_SOFT → rest face, one face per 2 frames (only roles that have swap sets)<br>• split `a = 6·I`<br>• 1–3 **sub-UV slices**: bands 12–30 % of cap tall, shifted x ±(4..24)·I<br>• 1–3 **tear bars** over the text box: `glitchC`/`glitchM` rects 4–14 tall, α .25, x jitter ±24 | events: score lands, stamp impact, combo every 100, node select, chip change, title decode end, countdown digit appear | a few quads |
 | **G2-red** (LOST variant) | as G2, but the split uses `#FF5C7A` only (d = 4·I) plus 2 frames of ±4 px jitter; no font swap | LOST word, combo break (combo ≥ 20), grade D landing | a few quads |
@@ -748,8 +748,8 @@ Input uses a small custom recognizer, `map/MapGestures` (as built; it replaces t
 | Fling | velocity = least-squares fit over the last 80 ms, capped 8,000 /s; decay `v *= exp(−4·dt)` (travel ≈ v/4); stop below 20 /s. Any direction: movement is free. |
 | Bounds | view kept inside x ∈ [−200, 3000] (if the view is wider than 3,200, lock x = 1400); view top ≤ +600; view bottom ≥ −8,480 |
 | Rubber band | overscroll `d` displays as `0.55·d·D / (D + 0.55·d)` (D = view dimension); release springs back (camera preset, ≈ 0.4 s). A fling into a bound converts its leftover velocity into overscroll and bounces. |
-| Pinch zoom | about the fingers' midpoint (that world point stays fixed). Range 0.7–2.4, soft beyond (0.6 / 2.6), springs back. |
-| Overview chip and rise (Kelvin 2026-10-17 19:39–19:42) | a pinch that reaches the overview lights `全图 OVERVIEW · 再捏合 ↑ 上浮` at the top while the fingers stay on and 1 s after they lift, then it fades (0.3 s). Once it has faded, a pinch at the overview that pulls 8 % on past it (the soft limit shows it giving and springing back) lights it again and does not rise; a pinch that starts while it is lit rises one level when the fingers lift at the overview, i.e. two pinches within a second. The wheel: one scroll (notches less than 0.25 s apart) is one pinch; reaching the overview lights the chip, a notch past it bumps the zoom (`MapCamera.bump`) and lights it again, and a new scroll that starts while it is lit rises. With a song card open the zoom stops at the overview with no chip and no rise (PAGE UP does not rise either). No rise ring any more (`MapScreen.updateRise`). |
+| Pinch zoom | about the fingers' midpoint (that world point stays fixed). Range 0.7–2.4, soft beyond (0.6 / 2.6), springs back. Every level but the hub opens at 0.7, the closest zoom (Kelvin 2026-10-19 18:46, §24.26). |
+| Overview chip and rise (Kelvin 2026-10-17 19:39–19:42; **replaced 2026-10-19 18:46** by the two-finger rise hold, §24.26) | a pinch that reaches the overview lights `全图 OVERVIEW · 再捏合 ↑ 上浮` at the top while the fingers stay on and 1 s after they lift, then it fades (0.3 s). Once it has faded, a pinch at the overview that pulls 8 % on past it (the soft limit shows it giving and springing back) lights it again and does not rise; a pinch that starts while it is lit rises one level when the fingers lift at the overview, i.e. two pinches within a second. The wheel: one scroll (notches less than 0.25 s apart) is one pinch; reaching the overview lights the chip, a notch past it bumps the zoom (`MapCamera.bump`) and lights it again, and a new scroll that starts while it is lit rises. With a song card open the zoom stops at the overview with no chip and no rise (PAGE UP does not rise either). No rise ring any more (`MapScreen.updateRise`). |
 | Double-tap water | toggles zoom 1.0 ↔ 1.9 about the tap point, 380 ms `exp5Out` |
 | **Snap** | **none**, ever. The camera glides only on intent. |
 | Fly-to | duration `clamp(0.35 + dist/6000, 0.45, 1.1)` s, `pow3`. Zoom hops +0.4 at the midpoint along a `sine` arc, so long jumps hop out and back in. Snow streaks scale with speed. Any touch cancels a glide. |
@@ -792,7 +792,7 @@ The map area is VL..`mapRight`, where `mapRight` = VR when no card is open, or t
 
 | Element | Placement | Spec |
 |---|---|---|
-| Profile badge | TL at (SL, ST − 120), 540×120 panel | • avatar 88 ⌀ at left<br>• row 1: name UI_BOLD 22 (fit 260) plus `LV 12` pill (NUMBER 20, `gold`) right-aligned<br>• row 2: depth `2,560 m` (NUMBER 24) plus rank title (UI_LABEL 20, band accent) with a 24 px emblem<br>• row 3: EXP bar 400×6 (`gold` fill)<br>Tap → Profile. After a level-up it bounces once and the level rolls. |
+| Profile badge (split into a player frame top left and a shell capsule top right since Kelvin 2026-10-19 06:28, §24.19; both larger since 2026-10-20 03:26 and the capsule no longer a control since 03:38, §24.29; the player frame a frameless block since 14:10, §24.34; the capsule beside the depth tag, the depth larger and a band under the name since 15:36, the avatar ring as tall as the band and the tag since 15:46 and 150 across since 16:05, §24.35; the name higher, lined up with the tag's tip and its band deeper since 16:37–16:39, §24.36; no DEPTH label and drawn at 75% since 17:34, §24.37) | TL at (SL, ST − 120), 540×120 panel | • avatar 88 ⌀ at left<br>• row 1: name UI_BOLD 22 (fit 260) plus `LV 12` pill (NUMBER 20, `gold`) right-aligned<br>• row 2: depth `2,560 m` (NUMBER 24) plus rank title (UI_LABEL 20, band accent) with a 24 px emblem<br>• row 3: EXP bar 400×6 (`gold` fill)<br>Tap → Profile. After a level-up it bounces once and the level rolls. |
 | Icon cluster | top-right of the map area: right edge `mapRight − 24`, top ST; 3 × `P` with gap 16 | Filter (funnel) · Tutorial (?) · Settings (gear) |
 | Depth gauge | x `mapRight − 80 .. mapRight − 24` (56 wide), y from `ST − 160` down to `SB + 160` | • linear in world y over +600..−8,280<br>• layer segments as 6 px bars in accent colours; chapter ticks labelled with metres (UI_LABEL 18)<br>• song dots (lens colour if played)<br>• viewport bracket; readout pill 140×52 left of the bracket: `1,240 m` (NUMBER 22)<br>• **YOU marker:** a gold diamond 20 px plus the two signal dots at the player's depth<br>• drag the bracket to scrub; tap a tick to fly to it |
 | Recentre | `(mapRight − 24 − P, SB)` | crosshair → flies to the K&K node. **Removed 2026-10-16** (Kelvin: 「那个定位的也去掉」), with the rise plate under it; ALL SONGS' SORT button takes this corner (§16.4). |
@@ -913,7 +913,7 @@ TransitionLayer styles are defined in Appendix A: `CURTAIN`, `DIVE`, `ASCENT`, `
 20:9 (2400×1080), card open — map area 1640 wide, focus x ≈ 580
 ┌──────────────────────────────────────────────── 2400 ───────────────────────────────────────────────┐
 │[(av) NAME   LV12 | 2,560 m ECHO HUNTER I ▬▬▬]        (⏷)(?)(⚙)  ┃┌────────── SONG CARD 760 ─────────┐│
-│                                                     1,240 m ◂─┃│ ‹ ›  02 · TWILIGHT           ×   ││
+│                                                     1,240 m ◂─┃│ ‹        02 · TWILIGHT         › ││
 │   02  TWILIGHT  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~  ┃│ ┌──────┐ BEST                     ││
 │              ◉ selected  ●● (K&K motes)                    ◆YOU│ │jacket│ 09,812,345  [S+] FC      ││
 │        ○─ ─ ─ ─ ─ ─ ─ ─ ─ ○                                   ┃│ └──────┘ RATING 15.84 · TOP10 #4  ││
@@ -960,32 +960,31 @@ TransitionLayer styles are defined in Appendix A: `CURTAIN`, `DIVE`, `ASCENT`, `
 
 Content is laid out top-down except the action row, which is anchored to the bottom. Any extra height goes into the gap above the action row.
 
-### 4.2 Side card content, 20:9 (760 wide; padding 40; content x 40..720; y measured from the top inner edge)
+### 4.2 Side card content (round 5, Kelvin 2026-10-19 06:41–07:01; blueprint 1920 × 1200, y measured from the top)
+
+The card is 700 wide (760 at aspect ≥ 2.0) with padding 40, so on 16:10 the content runs x 1260–1880. Everything below is at scale 1 (16:10); §4.3 says how other screens differ. The decisions behind it are in §24.20.
 
 | y (from top) | Element |
 |---|---|
-| 24–112 | header: ‹ › icon buttons (`P` hits; 64 visuals) step through songs in path order, wrapping round at the ends (› on the last song opens the first; Kelvin 2026-10-17) · layer chip `02 · TWILIGHT` (UI_LABEL 20, accent) · × close at right |
-| 136–456 | **jacket 320×320**: radius 16 (masked at load), ±6 float on a 7 s sine, ±3° tilt while dragging the card [P2], scanline reveal on enter. To its right, a column x 384..720 (336 wide): |
-| 140 | `BEST` UI_LABEL 20 `ink2` |
-| 176 | best score: NUMBER 30, fixed cells (291 wide) |
-| 228–300 | mini stamp: grade letter (DISPLAY 40 in a 72 ⌀ ring, grade colour) + clear badge pill (`FULL COMBO` / `ALL RESONANCE`, UI_BOLD 20) |
-| 316 | `ACC 99.12%` UI 20 |
-| 352 | rating line (§4.6) UI 20 |
-| 388 | `LOCAL #1 / 3` UI 20, shown only when ≥ 2 local profiles have a record [P1] |
-| 424 | `PLAYS 12` UI 20 `ink2` |
-| 488 | **title**: UI_BOLD 38, `drawFit` 680 down to min 0.7, then ellipsis |
-| 548 | artist UI 22 `ink2` |
-| 584 | meta UI 20 `ink3`: `BPM 182`, or the range `BPM 140-400` when the song changes tempo (lowest and highest of `bpm` and `bpmList`). The charter and illustrator show on the DIVE instead (Kelvin 2026-10-13 16:18) |
-| 616–720 | **difficulty chips**: 4 × 158×104, gap 16 (§4.5) |
-| 744–784 | recent sparkline (6 bars, 168×40) left · micro-goal right-aligned (§4.6) |
-| bottom 24..152 | **action row**: AUTO toggle 112×128 · gap 24 · **DESCEND** 544×128 (§4.7) |
+| 100 (centre) | header: ‹ at the left, flush with the jacket's left edge (x 1260), and › at the right, flush with its right edge (x 1880): icon buttons (`P` hits; 76 visuals, 64 until 2026-10-19 13:37) that step through songs in path order, wrapping round at the ends (› on the last song opens the first; 2026-10-17) · between them, centred, the layer chip `SINGLES · 单曲` (UI_LABEL 26, accent; 20 until 13:37). No × since 2026-10-19 13:37 (§24.22) |
+| 177–526 | **jacket** 16:9 across the content width (620 × 349, centre crop), radius 14, no float or tilt; a 1.2 stroke (140, 200, 255) α .31 over it and a soft glow of its own colours under it (the jacket blurred over 1.16 × 1.24 of its size, α .47 at the middle, feathered to 0 at the edges, as on the result screen) |
+| 546–660 | **title band** across the whole panel: (8, 13, 38) α .59, a 1.2 line (120, 200, 255) α .27 at each edge |
+| 602 (baseline) | **title** UI_BOLD 34 from x 1260, one line; shrinks to fit, down to 29. Past 30 characters, or too wide even at 29 (CJK titles can be with fewer), it is 29 and scrolls (`ui/Marquee`, §24.20) |
+| 642 (baseline) | artist UI 22 `ink2` from x 1260 · `BPM 182` UI 20 `ink3` right-aligned at x 1880 (the range `BPM 140-400` when the song changes tempo) |
+| 674–822 | **grade ring** at the right: centre (1806, 748), outer diameter 148, stroke 4 in the grade colour, purple (`FULL_COMBO`) once the chart has a full combo (R and R+ stay light blue, §24.21), no fill; the letter in RubikGlitch 78 in the middle (superscript − / +; R and R+ sweep). No FULL COMBO / RESONATED ribbon since 2026-10-19 |
+| 742 (baseline) | **best score** UI_BOLD 42 from x 1260, letter spacing .02, dim leading zeros (`LEADING_ZERO`); no BEST label |
+| 790 (baseline) | `DEPTH` (UI 13, letter spacing .12, `ink3`) 10 `-2,076 / -5,760 m` (UI_BOLD 17, `ink2`) 32 `PLAYS` 10 `2` (or `2 · LOCAL #1 / 3`); the row shrinks as one to stay 16 off the ring |
+| 838–954 | **difficulty chips**: 4 × 143×116, gap 16 (§4.5) |
+| 984–1024 | micro-goal centred on the content, x 1570 (§4.6; right-aligned at x 1880 until 2026-10-19 16:36, §24.24; the recent sparkline left of it went the same day, §24.21). With AUTO on, `AUTOPLAY · NOT RECORDED` takes this row (left-aligned at x 1260) |
+| 1048–1176 | **action row** on SB: AUTO toggle 104×128 · gap 24 · **DESCEND** 492×128 (§4.7) |
 
-### 4.3 Variants for 16:9 and 16:10 (700 wide; content 620)
+When there is no record the score, the ring and the DEPTH row give way to `NOT YET DIVED` (UI_BOLD 26) with `FIRST DIVE · +40 SHELLS` (UI 17, accent) under it. The tutorial's card shows `LEARN THE TWO LINES` and `START HERE` / `COMPLETED · REPLAY ANYTIME` there instead.
 
-- Jacket 300; right column 296 wide. Best score at NUMBER 28 (272 wide).
-- Chips 4 × 143×104, gap 16. Labels use `drawFit` min .85.
-- AUTO 104×128; DESCEND 492×128.
-- On 16:10 the extra 120 of height goes above the action row.
+### 4.3 Other aspects
+
+- The card scale is `min(uiScale, safe height / need)`, never below 0.8, where need is the blueprint's height: 1,152 (1,186 at aspect ≥ 2.0, whose jacket is taller). A shorter screen (16:9, 20:9 phones) scales the whole card down like the result screen: about .9 on 16:9 and .87 on a 20:9 phone at UI scale 1.15. Text keeps the §1.1 least sizes (`MapUi.cap`); the chip names may shrink further, to the card's own scale, so they stay whole.
+- A taller screen (4:3) keeps scale 1 and shares the extra height evenly between the four gaps: header → jacket, band → ring, DEPTH row → chips, chips → micro-goal (39 / 14 / 48 / 30 on 16:10; the first is measured from the arrows' foot, 38 under the header's centre). A screen too short even at 0.8 closes them towards 16 / 6 / 44 / 12.
+- At aspect ≥ 2.0 the card is 760 wide, so the jacket and the title band are 680 wide and the jacket 382 high.
 
 ### 4.4 Bottom sheet content (TALL)
 
@@ -996,7 +995,7 @@ All rows are measured upward from SB.
 | SB .. +128 | peek and full | chips 4 × 184×104 (gap 16) from SL + 40 · AUTO 112×128 · DESCEND 480×128 right-aligned at SR − 40 |
 | baseline +156 | peek and full | artist UI 20 `ink2` |
 | baseline +190 | peek and full | title UI_BOLD 34 (`drawFit` 900) · right-aligned: BEST NUMBER 28 + grade pill |
-| +292 .. +592 | full only | jacket 300×300 at SL + 40; to its right, two columns: (layer chip, meta, record block: ACC / rating line / LOCAL / PLAYS) and (sparkline, micro-goal) |
+| +292 .. +592 | full only | jacket 300×300 at SL + 40; to its right, two columns: (layer chip, meta, record block: ACC / rating line / LOCAL / PLAYS) and (micro-goal) |
 
 ### 4.5 Difficulty chips and lens [P0]
 
@@ -1020,14 +1019,14 @@ All rows are measured upward from SB.
 
 ### 4.6 Record, rating line and micro-goal
 
-**Record block:** best score, mini stamp, badge, accuracy and plays for the current difficulty. When there is no record: `NOT YET DIVED` (UI 20, `ink2`).
+**Record block:** best score, mini stamp, badge, accuracy and plays for the current difficulty. When there is no record: `NOT YET DIVED` (UI 20, `ink2`). The side card shows it the round 5 way (§4.2): the score, the DEPTH / PLAYS row and the grade ring, no accuracy. Since 2026-10-19 (§24.21) the clear badge is the grade's colour: purple once the chart has a full combo, no ribbon.
 
 **Rating line** (one of):
 - `RATING 15.84 · TOP 10 #4`
 - `RATING 12.30 · NOT IN TOP 10`
 - first play: `FIRST DIVE · +40 EXP`
 
-**Recent sparkline:**
+**Recent sparkline** (removed 2026-10-19, §24.21: 「最近6次成绩就不要再显示了，太挤了」):
 - 6 bars, 20 wide with gap 8, height ∝ `clamp((score − 8M)/2M, 0.05, 1)`.
 - Newest at the right and brightest.
 - Empty slots are hidden (no fake zeros).
@@ -1067,6 +1066,7 @@ All rows are measured upward from SB.
 ## 5. Gameplay
 
 Fixed geometry from the charts:
+- **As built 2026-10-19 (owner 03:51 「坐标系我们现在修改为1920*1200」):** the charts' reference space is **1920×1200** (format v3, 16:10 is the blueprint; `gameplay/Field` stretches it to every screen, `ky = worldH / 1200`, 0.9 on 16:9). Every y below is in the old 1920×1080 space, which is what a 16:9 screen shows, unchanged: in the new space the lines are at 133.33 / 1066.67, the input zones ±480, the drawn band ±120 and the default spawn 1080. Format v1 / v2 charts are converted on load (×10/9), so they look and play exactly as before. **Since 2026-10-19 14:55 (owner 「我觉得换成1080/120」)** the charts are format v4: lines at 1080 / 120 (972 / 108 on 16:9), the default fall still 1080 over 2 beats (owner 15:19); the zones stay ±480, so the two zones meet at 600 instead of overlapping, and the band ±120 reaches the frame edges. v1–v3 charts have their lines moved on load (`ChartMapper.toLines1080`); their notes keep their numbers and still reach the lines on their beats.
 - reference space 1920×1080
 - ground line y 120; sky line y 960
 - zones ±108: **y 12–228** and **852–1068** (drawn band; since 2026-10-12 19:09 the input zones are ±432, roughly half the screen each, see CHANGES §7.11)
@@ -1084,7 +1084,7 @@ As built 2026-10-12 (`GameplayScreen`):
 4. **Normal block B** (atlas): judgement line cores and lane ticks, TIDE STREAM bands and LANE MINE columns (§20.2), afterimage copies, notes (TIDE heads first, then lane notes and mines), hold ribbons
 5. **Additive block** (atlas, one blend switch, `setEmittersCleanUpBlendFunction(false)`): line glows, approach glow, line flashes, note glows, lane columns, contact rings, hit FX and the water rings (§20.5)
 6. **HUD-over:** tutorial captions, start intro card, countdown, end banner
-7. **Top layer:** pause scrim (while paused) → the corner HUD shapes (progress hairline, chip plate, pause icon with its double-tap hint) → the pause menu's buttons → one recorded text pass for the corner text (score, accuracy, chip, title, time, live counters) and the menu labels
+7. **Top layer:** pause scrim (while paused) → the corner HUD shapes (progress hairline, chip plate, pause icon with its double-tap hint) → the pause menu's buttons → one recorded text pass for the corner text (score, chip, title, time, live counters) and the menu labels
 
 **Replaced 2026-10-12:** "The persistent HUD is drawn **under** the notes". The corner HUD is drawn **last** (owner: lane glows and held bodies must never cover it); only the combo, the judgement word, the hit error meter and the glint stay under the notes. The top layer costs two draw calls per running frame (corner shapes and corner text each need their own flush after the additive block).
 
@@ -1092,12 +1092,12 @@ As built 2026-10-12 (`GameplayScreen`):
 
 ### 5.2 HUD placement rule [P0]
 
-**As built 2026-10-12 (owner decision; replaces the first rule and §21.5's preview K3 where they differ).** At every aspect the persistent HUD sits in the four screen corners, each element anchored to the `Ui.safe*()` edges: **score + accuracy top-left, pause control top-right, difficulty chip + song title bottom-left, time remaining bottom-right**, and the progress hairline along the top edge. Combo, judgement word and hit error meter stay in the middle band. The corners are drawn last (§5.1).
+**As built 2026-10-12 (owner decision; replaces the first rule and §21.5's preview K3 where they differ).** At every aspect the persistent HUD sits in the four screen corners, each element anchored to the `Ui.safe*()` edges: **score top-left, pause control top-right, difficulty chip + song title bottom-left, time remaining bottom-right** (the accuracy under the score until 2026-10-20, §24.31; the score's x leaves the cutout inset out since 05:56, and its size and height come from the top band since 06:27, §5.3), and the progress hairline along the top edge. Combo, judgement word and hit error meter stay in the middle band. The corners are drawn last (§5.1).
 
 - **Band layout** when `VT − 1068 ≥ 104` (3:2, 4:3, tall desktop windows): the corners as above, and the live counters [P1] centred in the bottom band (§5.4).
 - **Middle-band layout** otherwise (16:10, 16:9, 19.5:9, 20:9): the corners as above, no live counters.
 
-**Replaced:** "In the middle band, HUD rects stay above y 252 and below y 828 … Nothing persistent is placed inside a zone." At 16:9 and 20:9 the corners lie inside the outer judgement zones by the owner's decision (the lines are only 120 units from the edges). Score, accuracy, chip, title and time are **display-only**: they have no hit rect and every touch on them reaches gameplay. The pause control's box also passes every touch to gameplay first (§5.12). At 4:3 and 3:2 the corners are clear of the zones.
+**Replaced:** "In the middle band, HUD rects stay above y 252 and below y 828 … Nothing persistent is placed inside a zone." At 16:9 and 20:9 the corners lie inside the outer judgement zones by the owner's decision (the lines are only 120 units from the edges). Score, chip, title and time are **display-only**: they have no hit rect and every touch on them reaches gameplay. The pause control's box also passes every touch to gameplay first (§5.12). At 4:3 and 3:2 the corners are clear of the zones.
 
 ### 5.3 Corner layout (16:9 shown; every aspect anchored to the safe edges) — as built 2026-10-12
 
@@ -1105,13 +1105,13 @@ As built 2026-10-12 (`GameplayScreen`):
 
 ```
 y1080 ┌──────────────────────── progress hairline y 1074–1077 ────────────────────────┐
- 1056 │ 000,812,345  (score, cap 32)                                        ( Ⅱ )     │
- 1012 │ 99.12%  (accuracy, cap 20)                                   pause ⌀64 at     │
-      │                         sky zone 852–1068                     (1862, 1030)    │
+ 1048 │ 000,812,345  (score, cap 43.2)                                      ( Ⅱ )     │
+      │                                                              pause ⌀64 at     │
+      │                         sky zone 852–1068                     (1862, 1026)    │
   960 │━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ SKY LINE (#F2F7FF) ━━━━━━━━━━━━━━━━━━━━━━━━━━│
   852 ├ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┤
   636 │                                  1,204  (combo cap 96, α .30)                │
-  504 │                                  COMBO                                        │
+  504 │                                  COMBO  (AUTOPLAY in an autoplay run)         │
   444 │                           RESONANCE  LATE                                     │
   380 │                           [hit error meter, optional]                         │
   228 ├ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┤
@@ -1122,13 +1122,13 @@ y1080 ┌───────────────────────�
 
 | Element | Anchor | Style |
 |---|---|---|
-| **Score** | top-left: left-aligned at SL, cap top at ST (16:9: 1056, baseline 1024) | NUMBER **32** (80 % of 40), `drawDigits` **9 digits** grouped (`000,000,000`, §18.1), `ink1 @ .80`, leading zeros `ink3 @ .40`. Changed cells pop (scale 1.08 → 1, 90 ms). No glitch. |
-| **Accuracy** | left-aligned at SL, cap top 12 under the score's baseline (16:9: 1012) | NUMBER `max(19.2·k, 20)` `99.12%`, α .60, updates per judgement. Autoplay: replaced by `AUTOPLAY` (UI_LABEL 20, `auto`), and the score is tinted `auto`. |
-| **Pause** | top-right. With SR′ = SR + 24 and ST′ = ST + 24 (the visible edge less the cutout inset and the Settings edge padding): ring centre (SR′ − 26k − 32k, ST′ − 50k). 16:9 (1862, 1030) = (W − 58, 50 below the top); 20:9 (2102, 1030); 4:3 (1862, 1210); 16:10 (1862, 1090) | ring ⌀ 64·k (r 32, 3 px stroke) with two 6×22 bars 7 off centre, `ink1 @ .55`; cyan (`btnTop`) while paused. **Touch box:** `max(P, P·k)` on each side and never less than the ring plus 8 of slack, anchored at the cutout-safe top-right corner and extended to the screen edges (16:9: x 1808–1920, y 968–1080). Input, hint and the other modes: §5.12. |
+| **Score** | top-left: left-aligned 24 from the visible left edge VL plus the Settings edge padding, whatever the cutout (`GameplayHud.SCORE_LEFT`; SL until 2026-10-20 05:56, so a phone's cutout inset pushed it in, 134 from the edge with a 110 inset; §24.31), cap top 0.3 of the top band under the top edge (0.15 from 06:27 to 07:01), the band running from the pause control's top edge (VT less the cutout inset and the edge padding) to the default sky line (16:9: cap top 1047.6, baseline 1004.4; 1063.8 from 06:27; at ST, 1056, before 2026-10-20 06:27) | NUMBER **0.4 of the top band** (`SCORE_BAND_TOP` 0.3, `SCORE_BAND_CAP` 0.4; Kelvin 2026-10-20 07:01, §24.33): 43.2 at 16:9 and 20:9, 48 at 16:10, 57.6 at 4:3, whatever the UI scale, never under `Ui.minEssentialCap()` (0.7 of the band from 06:27, §24.32; 40 × k from 05:56, §24.31; 32, 80 % of 40, before), `drawDigits` **9 digits** grouped (`000,000,000`, §18.1), `ink1 @ .80`, leading zeros `ink3 @ .40`. Changed cells pop (scale 1.08 → 1, 90 ms). No glitch. In an autoplay run tinted `auto`. |
+| ~~Accuracy~~ | **Removed 2026-10-20 05:56** (§24.31; first at 05:00, back 05:31–05:56, §24.30) | was NUMBER `max(19.2·k, 20)` `99.12%`, α .60, left-aligned at SL with its cap top 12 under the score's baseline; `AUTOPLAY` (UI_LABEL 20, `auto`) stood in its place in an autoplay run, under the combo since 05:57 (Combo row). |
+| **Pause** | top-right. With SR′ = SR + 24 and ST′ = ST + 24 (the visible edge less the cutout inset and the Settings edge padding): ring centre x SR′ − 26k − 32k; y halfway between ST′ and the default sky line (1080 of the 1920×1200 frame, a tenth of the world height under the visible top; Kelvin 2026-10-20 05:25, §24.30), the ring's outer edge never closer than 10 to ST′ (`TOP_CLEAR`; only a large EXTRA EDGE PADDING reaches it). 16:9 (1862, 1026) = (W − 58, halfway down the band 1080–972); 20:9 (2102, 1026); 4:3 (1862, 1188); 16:10 (1862, 1080). Until 05:25 the centre was ST′ − 50k (16:9 1030, 4:3 1210, 16:10 1090, 1022.5 on a phone at k 1.15) | ring ⌀ 64·k (r 32, 3 px stroke) with two 6×22 bars 7 off centre, `ink1 @ .55`; cyan (`btnTop`) while paused. **Touch box:** `max(P, P·k)` on each side and never less than the ring plus 8 of slack, anchored at the cutout-safe top-right corner and extended to the screen edges (16:9: x 1808–1920, y 968–1080). Input, hint and the other modes: §5.12. |
 | Difficulty chip + title | bottom-left: chip at (SL, SB), 40 tall | chip: UI_BOLD 18 name + NUMBER 18 constant on the difficulty fill at α .70, radius 10. Title: UI 20 α .60, 16 after the chip, max 560 and never closer than 32 to the time, ellipsis. |
 | Time remaining | bottom-right: right-aligned at SR, centred on the chip row | NUMBER 20 `1:52`, α .50 |
 | Progress | along the top edge: 6 below ST′, 3 thick (16:9: y 1074–1077), VL..VR | track `ink1 @ .12`, fill `groundSig @ .60` |
-| **Combo** | centre (960, baseline 540) | NUMBER 96, α .30, shown from combo ≥ 3 (§5.5). Label `COMBO` UI_LABEL 18, α .40, baseline 504. |
+| **Combo** | centre (960, baseline 540) | NUMBER 96, α .30, shown from combo ≥ 3 (§5.5). Label `COMBO` UI_LABEL 18, α .40, baseline 504. In an autoplay run the label is `AUTOPLAY` instead (UI_LABEL 20, `auto` #9CF5B0, α .70, centred on baseline 504), from the first frame, with or without a combo (Kelvin 2026-10-20 05:57: 「然后autoplay放到中间。」, §24.31). |
 | **Judgement word** | centre (960, baseline 444) | cap 32 (§5.6); EARLY/LATE tag to its right |
 | Hit error meter (optional, off) | centre (960, 380), 320×24, at every aspect | §5.6 |
 
@@ -1145,7 +1145,7 @@ y1080 ┌───────────────────────�
 
 **Replaced 2026-10-12:** the top-band row (pause at the left centred on yb, chip + title right of it, accuracy + score NUMBER 44 on one row at the right), the progress hairline at y 1084–1087, and the time and the meter in the bottom band.
 
-- **Note entry** (as built 2026-10-12, `gameplay/EdgeEntry`; owner 12:42 「第0刻的音符会露出一点在屏幕里面。我想要整个谱面出现得更自然」). A note **slides in from the screen edge**, at any aspect, when its first movement (its first movement event, or the default approach) moves toward its line at an average speed `v > 0`, its spawn `sp` (its distance when that movement starts) lies outside the 16:9 reference frame (ground `lineY + sp ≥ 1080`, sky `lineY − sp ≤ 0`, with the line's y at that beat), and the body it would draw at that spawn, in the pose of that beat and at the current note size, reaches inside the visible area. The body is the turned head (a mine's body with its studs), a tail turned toward the line, a LANE MINE column, a TIDE's pearls or wave, or a TIDE STREAM's bar and band; soft glows do not count. So the default spawn 972 (y 1092 / −12) slides in on 16:10, 3:2 and 4:3, where it lies inside the screen; on every screen, 16:9 and 20:9 included, a turned note whose corner would show inside on its first frame slides in; an upright note spawning just beyond a 16:9 edge keeps its body off screen and draws as before. Before its first movement it is drawn at `sp + v·(start − beat)`, at full opacity and with the angle, opacity and tail of the start beat, so it crosses the edge and joins its authored path at the start beat. Its slide begins with its leading edge 60 units beyond the screen edge (`EdgeEntry.MARGIN`, the largest draw-cull margin; every glow reaches less far), plus what a turned body reaches, with the line at its nearest to that edge on the way; before that it is not drawn. Its trail copies (§17) stream in from the edge behind it. Spawns inside the reference frame (deliberate on-screen appearances) and first movements that do not approach the line keep the fade-in over the first 80 units of travel. Drawing only: judging is untouched. The song clock starts before the first slide (§5.11).
+- **Note entry** (as built 2026-10-12, `gameplay/EdgeEntry`; owner 12:42 「第0刻的音符会露出一点在屏幕里面。我想要整个谱面出现得更自然」). A note **slides in from the screen edge**, at any aspect, when its first movement (its first movement event, or the default approach) moves toward its line at an average speed `v > 0`, its spawn `sp` (its distance when that movement starts) lies outside the 16:9 reference frame (ground `lineY + sp ≥ 1080`, sky `lineY − sp ≤ 0`, with the line's y at that beat), and the body it would draw at that spawn, in the pose of that beat and at the current note size, reaches inside the visible area. The body is the turned head (a mine's body with its studs), a tail turned toward the line, a LANE MINE column, a TIDE's pearls or wave, or a TIDE STREAM's bar and band; soft glows do not count. So the default spawn 972 (y 1092 / −12) slides in on 16:10, 3:2 and 4:3, where it lies inside the screen; on every screen, 16:9 and 20:9 included, a turned note whose corner would show inside on its first frame slides in; an upright note spawning just beyond a 16:9 edge keeps its body off screen and draws as before. Before its first movement it is drawn at `sp + v·(start − beat)`, at full opacity and with the angle, opacity and tail of the start beat, so it crosses the edge and joins its authored path at the start beat. Its slide begins with its leading edge 60 units beyond the screen edge (`EdgeEntry.MARGIN`, the largest draw-cull margin; every glow reaches less far), plus what a turned body reaches, with the line at its nearest to that edge on the way; before that it is not drawn. Its trail copies (§17) stream in from the edge behind it. Spawns inside the reference frame (deliberate on-screen appearances) and first movements that do not approach the line keep the fade-in (as built: over the first 150 ms after the first event, `NoteRenderer.FADE_IN_MS`, not over 80 units of travel). Drawing only: judging is untouched. The song clock starts before the first slide (§5.11).
 - **Replaced 2026-10-12:** every note fading in over its first 80 units of travel whenever its spawn point was visible (`VT > 1052` or `VB < 28`), so on 16:10, 3:2 and 4:3 the notes appeared inside the screen, at y 1092 / −12.
 
 ### 5.5 HUD behaviour [P0]
@@ -1209,6 +1209,7 @@ y1080 ┌───────────────────────�
 - **Pivot (Kelvin 2026-10-16 13:50, 13:52, approved 14:15; CHART_FORMAT §6.1.1).** A note turns about its pivot: `Note.pivotX/Y`, in reference units from its origin in its own frame (+y away from its line; a sky note's frame is turned 180° with it), stretched by `kx`/`ky` but not by note size. Origin: the centre of a DROP or MINE, of a STREAM head, of a LANE MINE's leading 32 units (its base; the column left out), of a TIDE STREAM head bar; for a TIDE, the middle of the on-screen part of its bar, halfway up the 18-unit bar. Default = the origin (charts without `pivot` turn about the centre); `(0, −20)` (a MINE or LANE MINE `(0, −16)`) is the old turn about the leading edge, exact at note size 1.0 on 16:9. `NoteShapes.pivotShiftX/Y` place lane notes and mines, trail copies and `EdgeEntry` follow. TIDE and TIDE STREAM turn too (`NoteRenderer.tideTurn`: one transform about the pivot), drawn as if infinitely long: the bar is stretched by `1/cos` (|cos| ≥ 0.2) so that, turned, it still crosses the window, each lane's pearls and wave staying above that lane; a turned band takes no part in the sky/ground overlap knock-out.
 - **Size.** `laneWidth × 5/6 × min(noteSize, 1.15)` × `40 × noteSize`, where `noteSize` is the Settings value (0.8–1.3, default 1.0). At default that is 200×40.
 - **Anchor (Kelvin 2026-10-13: a row of sky keys and a row of ground keys at the same distance from their lines must line up at any note size and screen ratio).** A chart distance is measured to the near edge of the reference body (note size 1.0, 16:9; 40 tall, a MINE 32). Away from the line the drawn body is centred on that reference body's centre after the playfield stretch, so a DROP, STREAM head, MINE or LANE MINE moves by `refH/2·k − h/2` along its own axis (`k` = `ky` along the travel, `kx` across); within 300 units of the line this eases back (smoothstep), so the near edge still touches the line at the judgement time. Nothing moves at note size 1.0 on a 16:9 screen; TIDE notes are not affected. `NoteShapes.centreShiftX/Y`; trail copies follow.
+- **VISUAL HIT POINT 目押校准 (Kelvin 2026-10-20 03:20, §24.29).** `Settings.hitPointPx` (−100..+100, default 20) is the distance from a TAP or HOLD key's midline to its line at the judgement time, in units of note size 1.0: the default 20 is the near edge on the line, as before; 0 puts the line through the key's middle (「有些人目押的时候习惯等判定线横穿音符的时候判定」). Every note is drawn `(20 − hitPointPx) × noteSize` further along its path (`NoteRenderer.hitShift`, taken off `drawPos`): DROPs, STREAMs (a held head stays that far past the line), MINEs, LANE MINEs, TIDEs and TIDE STREAMs alike, with their trail copies (`TrailGeometry.setShift`) and the tutorial's TIDE caption, so every note still reaches its own hit point at the same moment as the others. Drawing only: judging, sounds and the song clock are untouched. Set on VISUAL (§9.2) or measured on its own screen (§9.7).
 - **Fill.**
   - line colour, α .92 at the leading edge → .55 trailing
   - 3 px white leading edge
@@ -1259,7 +1260,7 @@ y1080 ┌───────────────────────�
   | Low | sparks × 0.5, no core, no echo ring, hold 12/s, bead instead of ripple |
   | Off | no HitFx; line bead and flash remain |
 
-- **Auto-drop.** If quality is High and average fps < 55 over 3 s of play, switch to Low silently for the rest of the session. Persist it, and show "EFFECTS SET TO LOW FOR SMOOTHER PLAY" on the result screen (中文 「为了更流畅，粒子质量已自动调低」 since Kelvin 2026-10-18 21:37, §24.17).
+- **Auto-drop.** If quality is High and average fps < 55 over 3 s of play, switch to Low silently for the rest of the session. Persist it; only Settings tells (the particle quality description turns gold, §9.2). The result screen's "EFFECTS SET TO LOW FOR SMOOTHER PLAY" (中文 「为了更流畅，粒子质量已自动调低」 since 2026-10-18 21:37) was removed by Kelvin 2026-10-19 02:24 (§24.18).
 - **Budget.** RESONANCE is 12 quads, ECHO 8. The worst case (12 hits/s + 4 holds) is under 100 live quads, versus about 1,650 today.
 
 **FX tuning (as built, binding; replaces the table above where they differ).** Tuned at 1920×1080, 2400×1080, 2048×1536 and 1280×800; the `.p` files in `assets/ParticleEffects/` hold these values (Theme recolours them at load). The budget is unchanged: RESONANCE 12 quads, ECHO 8. Pools are pre-filled (ARCHITECTURE §9: 18 pools, 224 warmed instances) instead of "initial 8".
@@ -1273,7 +1274,7 @@ y1080 ┌───────────────────────�
 8. **LOST ×:** four `streak` arms at 45°, 135°, 225° and 315°, each 48 × 6, life 220, no motion, `#FF5C7A`, α .8 → 0 (4 quads). The spec's two streaks rotated ±45° made a lopsided × because the `streak` region is bright at one end. A missed hold head gets no stream and no seal (`holdStart` returns −1).
 9. **Low quality** also drops the RESONANCE halo: RESONANCE Low is 6 quads, ECHO Low 4.
 10. **Mine shock** is drawn by gameplay's `FeedbackLayer` in the same additive block, at every quality level (FX's duplicate `HitFx.mineShock` was removed at integration): one `ring_soft` tinted `mine`, r 30 → 150 over 220 ms `pow2Out`, α .7 → 0 (as §5.15), at every MINE touch and every LANE MINE contact. **Replaced:** the TIDE sweep (two bars running from the touch x to the window ends). A TIDE hit has no point effect at all; its effect is the tide wash of §19.2 (`gameplay/TideWash`, normal block A), which never calls `HitFx`.
-11. **Auto-drop:** ignores the first 1 s after `clear()` (`AUTO_DROP_WARMUP_SEC`; song-start hitches never count), then averages consecutive 3 s windows of frames with delta > 0 against 55 fps. It is **not re-armed** in the same session if the player sets High again. `Main` persists LOW and `particlesAutoDropped` without a toast; the result screen shows the notice once (`consumeAutoDropNotice()`).
+11. **Auto-drop:** ignores the first 1 s after `clear()` (`AUTO_DROP_WARMUP_SEC`; song-start hitches never count), then averages consecutive 3 s windows of frames with delta > 0 against 55 fps. It is **not re-armed** in the same session if the player sets High again. `Main` persists LOW and `particlesAutoDropped` without a toast; nothing else shows it (the result screen's notice and `consumeAutoDropNotice()` went on 2026-10-19).
 12. **Water rings (as built 2026-10-12, §20.5):** DROP and STREAM heads add the water rings to the bursts above (`fx/WaterRings`, one quad per ring, drawn by `HitFx` in the same additive block, no new draw call). `HitFx.tap` adds them to a DROP's burst (and to every other caller's tap: Settings live preview, calibration, the tutorial's grade demos); `HitFx.ripple` plays them alone for a STREAM head, whose burst is the hold stream. A completed lane STREAM still gets the seal (item 6); a TIDE STREAM end gets no seal. The hold stream rate has one source, `HitFx.holdRate(quality)` (22 / 12 / 0 per s), which the TIDE STREAM light bands share (§20.3). Rings have their own budget (5 ring quads per RESONANCE hit at High, about 30 live in the worst case; a RESONANCE set steps down to the Low pair, then to ring 0, when more than `RING_GUARD` = 60 rings are alive). The FX-lab worst case (12 taps/s + 4 streams + chords) is particles < 100 plus up to 33 ring quads.
 
 ### 5.10 Lane touch feedback [P0]
@@ -1395,7 +1396,7 @@ Model and judging rules are in ARCHITECTURE §13. Visual rules:
 - **Hit (replaced by §19.2):** no point effect at the touch x (no burst, ring, ripple or contact ring); the tide wash floats a band of light off the line and the line swells. **Replaced:** "the normal tap FX of the judgement at the touch x, plus a tide sweep … the line ripple uses A = 6 px".
 - **Sync rule (replaced 2026-10-12):** a lane note on the same line and beat as a TIDE is **judged with it** by one tap (joint judging, ARCHITECTURE §20), so that pair needs no mark and shows no square; the gold square of §5.8 appears only when a second finger is needed. **Replaced:** "a lane note at the same time on the same line gets the gold outline and a connector to the nearest point of the tide bar".
 
-**Result.** When `minesTotal > 0`, the stats block (§6.2) adds one row `MINES` with `minesTouched / minesTotal` in `mine` when > 0, else `ink3` "0 / n". A LANE MINE counts as one mine, touched if it had at least one contact. It never affects grade, FC or score display.
+**Result.** The stats block (§6.2) has a `MINES` row with `minesTouched / minesTotal` in `mine` when > 0, else `ink3` "0 / n"; on a chart without mines too, as `0 / 0` (Kelvin 2026-10-19 02:40: 「没有水雷也表0/0」; until then the row showed only when `minesTotal > 0`). A LANE MINE counts as one mine, touched if it had at least one contact. It never affects grade, FC or score display.
 
 ---
 
@@ -1419,6 +1420,8 @@ Shown on screen:
 The extra fields are requested in Appendix A.
 
 ### 6.2 Layouts
+
+> **Since Kelvin 2026-10-19 06:28 there is one layout, built from the 16:10 blueprint: §24.19**, changed by round 8 (15:2x, §24.25: no clear badge, the chip in the jacket's corner, three columns on screens wider than 16:8.5). The tables below are the layouts it replaced.
 
 **Layout choice.** If the visible height is ≥ 1,360 (4:3), use **Stacked**. Otherwise use **Three-column**.
 - In Three-column, the middle block is designed as a 1,080-tall block centred on y = 540; the header anchors to ST and the strip to SB.
@@ -1465,16 +1468,17 @@ The extra fields are requested in Appendix A.
 - The strip spans SL..SR, and its blocks spread proportionally.
 - The gutters show a ghost layer numeral (DISPLAY_OUTLINE 460, α .05) in the left gutter [P2].
 
-**Stacked, 4:3 (1920×1440, y −180..1260):**
+**Stacked, 4:3 (1920×1440, y −180..1260):** laid out again by Kelvin 2026-10-19 01:42 from Kelvin's colour marks on the 4:3 gallery (结算 pages 1–2, PDF pages 80–81: 「每一个颜色对应某一个物件应该被移动到哪里」), then 02:24 (§24.18). Everything under the top row keeps to the left half; the lower right is left empty (Kelvin's hatched area: 「未来白色区域会有人物角色」).
 
 | Band | Content |
 |---|---|
-| y 1180–1236 | header |
-| y 860–1180 | jacket 320 at x 96; title, artist and chip at x 456–1240 (title cap top 1170); stamp ring 300 ⌀ at (1600, 1010), letter cap 176 |
-| y 700–840 | score NUMBER 104, centred on x 960 (baseline 720); best line centred at baseline 670 |
-| y 300–640 | left (x 96–1000): judgement rows (baselines 600 / 540 / 480), early/late (426), echo trace y 300–400. Right (x 1080–1824): clear badge at y 580; tiles 2 × 360×120 at y 380–500. |
-| y 40–240 | strip (profile + EXP left, depth right) |
-| y SB..SB+112 (≈ −156..−44) | RETRY 400×112 at x 520–920, CONTINUE 440×112 at x 960–1400 |
+| y 1180–1236 | header (meta line at the right) |
+| y 849–1160 | jacket 300 at x 96 (y 860–1160); score centred between the jacket and the stamp (x 919, NUMBER fit to the gap, ≤ 112, ≈ 108; baseline ≈ 993); under it the best line (NEW BEST pill ≈ 919–965) and under that the clear badge 320×56 (centre y 877; after the tutorial, which has no best line, in the best line's place, centre ≈ 942); stamp ring 300 ⌀ at (1600, 1010), letter cap 176 |
+| y 654–820 | title (cap top 820), artist (762) and chip (654–706) under the jacket at x 96; beside them the tiles, 2 × 250×120 at x 436 and 710, y 677–797 |
+| y 90–625 | left half (x 96–960), spread down to the strip: judgement rows (RESONANCE baseline 596, then ECHO 526, LOST 466 and MINES 406; MINES shows `0 / 0` on a chart without mines), RESONANCE CHAIN, early/late, echo trace (y 178–278; tapped, its card grows 30 up over the early/late line and down to 60 above the strip), then the offset hint (baseline 100) centred on the trace's 0-ms line |
+| y SB..SB+200 (≈ −156..44) | strip x 24–984: player and shells left, depth block from x 560 (the `before → after` line shrinks, never below 0.7, to end inside the strip) |
+| y SB..SB+112 (≈ −156..−44) | bottom right: RETRY 380×112 at x 1064–1444, CONTINUE 420×112 at x 1476–1896 |
+| x 988–1896, y −44..828 | empty |
 
 **Background.** Gameplay depth with menu intensity, plus the jacket 16×16 aura at α .35 and motes. `ResultPage.png` at α .20.
 
@@ -1508,6 +1512,8 @@ The extra fields are requested in Appendix A.
 | max(4.40, end of E + 0.10) | Buttons | rise y −40 → 0 (`SwingOut(1.4)`), stagger 80; interactive as soon as visible |
 | idle | — | jacket breathes ±1 % (4 s); stamp G2 every 2.5–4 s; heartbeat ping from the stamp (2.4 s); trace sweep every 4 s; EXP bar glint every 6 s; CONTINUE glow α .3 ↔ .6 at 0.8 Hz |
 
+> Since Kelvin 2026-10-20 18:45 the depth (phase D, 3.20–5.70 when the depth went deeper) and the shells (phase E, after it) run as in §24.40.
+
 ### 6.4 Skip and input [P0]
 
 - **First tap** (anywhere except buttons, after the input guard):
@@ -1522,10 +1528,12 @@ The extra fields are requested in Appendix A.
 
 ### 6.5 Idle interactions [P1]
 
+> Since 2026-10-19 06:28 (§24.19) the depth, the echo trace and the shells open from the player frame, the EARLY / LATE / AVG line and the shell capsule, and the jacket no longer tilts; the echo trace card was dropped at 17:48 (§24.25). The offset hint below is unchanged.
+
 - **Tap the stamp:** it re-stamps with a small impact (4 px kick) plus a ping.
 - **Tap the jacket:** it tilts ±3° with a 0.97 bounce.
 - **Tap the echo trace:** it expands (spring) to show its bins in detail, with a line `PEAK n  ·  MEAN +31 ms` at the top (峰值 / 平均 in 中文 since 2026-10-18 20:34: 「点开下面的early/late柱状图出现的也是中文，early late不必那，peak改为"峰值"，mean改为平均」; its `EARLY` / `LATE` labels stay English).
-- **Offset hint.** If `|meanOffsetMs| > 25` over ≥ 50 non-LOST hits, a link appears under the trace, centred on its 0-ms line, as is the auto-drop notice under it (§5.9; centred since Kelvin 2026-10-18 21:56: 「就是居在那个柱状图0ms那里」; on the stacked tablet layout both sit centred under the tiles):
+- **Offset hint.** If `|meanOffsetMs| > 25` over ≥ 50 non-LOST hits, a link appears under the trace, centred on its 0-ms line (since Kelvin 2026-10-18 21:56: 「就是居在那个柱状图0ms那里」; the stacked tablet layout too since 2026-10-19, when the hint moved from under the tiles to under the trace). The auto-drop notice that sat under it (§5.9) was removed on 2026-10-19 02:24 (§24.18):
   - Copy: `YOU'RE HITTING LATE (+38 ms) · ADJUST`; in 中文 `你打得偏晚（+38 ms） · 调整` (偏早 when early) since Kelvin 2026-10-18 21:37 (§24.17).
   - It opens a confirm sheet: `Shift audio offset for SPEAKER from +12 to +50 ms?` with **APPLY**, **CALIBRATE** and **CANCEL**.
   - The new offset = old + mean (convention in §9.4). The sheet does not print this formula (Kelvin 2026-10-17 14:50: the small line under the question was removed).
@@ -1533,6 +1541,8 @@ The extra fields are requested in Appendix A.
 - **Drag the background:** ripples and bubbles.
 
 ### 6.6 Variants [P0]
+
+> Since 2026-10-19 06:28 (§24.19) the strip note shows in the offset hint's place.
 
 | Case | Behaviour |
 |---|---|
@@ -1732,10 +1742,12 @@ The extra fields are requested in Appendix A.
 
 The **visual offset is gone** (Kelvin 2026-10-18 00:24: 「visual offset感觉跟audio offset有点重合，去掉」). Gameplay and the calibration screen use 0; `DeviceSettings.visualOffsetMs` is still read and written so older `device.json` files round-trip, but nothing uses it.
 
-**VISUAL** (2026-10-18 04:06: 「实施预览里的放在"画面中"一个和calibrate类似的那种点进去才显示的东西……其余的9~12，19~21留在"画面"中」): a GAMEPLAY VISUALS row first (LIVE PREVIEW until 14:29), whose ADJUST… opens the GAMEPLAY VISUALS page, then the rest.
+**VISUAL** (2026-10-18 04:06: 「实施预览里的放在"画面中"一个和calibrate类似的那种点进去才显示的东西……其余的9~12，19~21留在"画面"中」): a GAMEPLAY VISUALS row first (LIVE PREVIEW until 14:29), whose ADJUST… opens the GAMEPLAY VISUALS page, then the rest. Since 2026-10-20 03:20 VISUAL HIT POINT comes before it (「加在游戏画面预览之前，和谱面延时类似的一个结构」, §24.29).
 
 | Setting | Default | Scope | Notes |
 |---|---|---|---|
+| Visual hit point | 20 px | diver | `VISUAL HIT POINT` / `目押校准`, the first row of VISUAL since 2026-10-20 03:20: −100..+100 px, slider plus [−10][−1][+1][+10], laid out like CHART OFFSET with three description lines, `FROM A TAP OR HOLD KEY'S MIDDLE TO THE LINE AT THE HIT` / `判定时 TAP、HOLD 按键中线到判定线的距离`, `20 = BOTTOM EDGE ON THE LINE (DEFAULT)` / `20 = 按键下边缘碰线（默认）` and `0 = THE LINE THROUGH THE KEY'S MIDDLE` / `0 = 判定线横穿按键中间`. `Settings.hitPointPx`; how notes are drawn by it: §5.8 |
+| CALIBRATE… (hit point) | — | — | `CALIBRATE…` / `校准…` left of the hit point's nudges, under its label, as on CHART OFFSET (`SliderRow.setLead`); opens the VISUAL HIT POINT screen (§9.7) |
 | GAMEPLAY VISUALS → ADJUST… | — | — | `GAMEPLAY VISUALS` / `游戏界面` (`游玩界面视觉参数` from 14:29 to 2026-10-18 19:52, 「"游玩界面视觉参数"改成"游戏界面"」; `LIVE PREVIEW` / `实时预览` until 14:29), description `GLITCH, PARTICLES, NOTE SCALE, JUDGEMENTS, MULTI-PRESS` / `故障、粒子、按键缩放、判定和多押，边调边看` (TOUCHES / 触控 until 19:52, when SHOW TOUCHES left the screen and MULTI-PRESS ASSIST came in); a PRIMARY button like CALIBRATE… that opens the GAMEPLAY VISUALS screen (§9.3; a page of the list from 04:06 to 15:17) |
 | Reduce motion | Off | diver | |
 | Background detail | High | device | Low / High; auto-fallback (§2.4) |
@@ -1804,7 +1816,7 @@ Kelvin 2026-10-18 15:17: 「我其实倾向于你重新设计游玩界面视觉�
 
 - **Layout** (× UI scale): under the header a 24 gap, then three columns between the safe edges. Left `SCREEN` / `画面` and right `NOTES & JUDGEMENTS` / `音符与判定` (headers UI_LABEL 18 `ink2` with a hairline to the column's end, in a 44 band), each column as wide as leaves the preview the screen's shape, within 380–500 (460 at least in English, whose labels are longer) and so the preview keeps 320; 40 between columns. The rows of a column share its height (`SettingsPage.setSpread`), so both columns reach the bottom; they never scroll: when the rows need more than the height (a phone at a large UI scale) the column is laid out at a smaller scale, down to 0.7 of the UI scale.
 - **Centre**: the live preview fills the column from the top of the side columns down to the JUDGEMENT WORDS strip (170 tall, 24 above it, a dark rounded panel with a hairline outline). The strip's caption `JUDGEMENT WORDS` / `判定字样` sits centred at its top; under it `ECHO`, `RESONANCE` and `LOST` (RESONANCE in the middle since 16:17) in their dive faces and colours at cap 46 (smaller when they do not fit), with equal space between and around them, each bursting every 1.5 s in turn (G2, LOST G2-red; RESONANCE keeps its G1 shimmer) at the glitch intensity being set. Under everything one line, UI_REGULAR 18 `ink3`: `CHANGES APPLY AT ONCE` / `改动马上生效` (`TAP THE PREVIEW TO TRY A HIT · ` / `在预览里点一下就能试打 · ` in front of it until 2026-10-18 19:52, when the preview stopped taking taps).
-- **Live preview** (`screens/shell/LivePreview` + `gameplay/PreviewRun`; rewritten on 2026-10-18 19:52, Kelvin: 「现在的实时预览界面失真很严重，combo没有出现，然后判定区提示还在之前的那种0.1倍屏幕高度的旧版判定区。重写那一段的逻辑」, 「live preview就不要支持点击了，只看就行了。按键随机出现，每5~12combo断一次连击」): a whole game screen at the screen's own shape, scaled into the panel (centred, nothing stretched) and clipped to it. `PreviewRun` plays it on the game's own engine and renderers with the diver's settings, read every frame: the depth gradient under the BACKGROUND BRIGHTNESS scrim, both lines with the zone hint over the real ±0.4 zone (§5.7), the notes at NOTE SCALE with MULTI-PRESS ASSIST, the hit effects at PARTICLE QUALITY, the judgement word where JUDGEMENT POSITION puts it (glitch intensity, reduce flashing), COMBO, and the score at the top-left with FC / AR INDICATOR. Each round is a random chart of 40 drops, one a beat at 120 BPM: DROPs on a random line and lane, and doubles on one line with their lanes at least two apart, 1–6 drops after the previous double (「出现双押后随机等待1~6次下落后再出现双押」). The run presses every note itself, as a touch at its lane on its line within ±50 ms (one in six 85–120 ms off, an ECHO), and lets one note pass whenever the combo reaches the round's target of 5–12 (a LOST); a new chart follows 0.7 s after the last note. It takes no taps. The caption `LIVE PREVIEW` / `实时预览` sits at the bottom-right (UI 18 × UI scale, `ink2`; 「预览的Live Preview放在右下角，分数放在左上角」), and of the corner HUD only the score and the accuracy show (no progress hairline, pause control, title or time). Until 19:52 the panel drew its own mini playfield (§24.15): a fixed loop of six notes, a 9-digit score at the top-right and the caption at the top-left, a zone hint still over the ±0.1 band, no COMBO, and a tap judged as in a dive that fired a hit effect on the lane it fell in.
+- **Live preview** (`screens/shell/LivePreview` + `gameplay/PreviewRun`; rewritten on 2026-10-18 19:52, Kelvin: 「现在的实时预览界面失真很严重，combo没有出现，然后判定区提示还在之前的那种0.1倍屏幕高度的旧版判定区。重写那一段的逻辑」, 「live preview就不要支持点击了，只看就行了。按键随机出现，每5~12combo断一次连击」): a whole game screen at the screen's own shape, scaled into the panel (centred, nothing stretched) and clipped to it. `PreviewRun` plays it on the game's own engine and renderers with the diver's settings, read every frame: the depth gradient under the BACKGROUND BRIGHTNESS scrim, both lines with the zone hint over the real ±0.4 zone (§5.7), the notes at NOTE SCALE with MULTI-PRESS ASSIST, the hit effects at PARTICLE QUALITY, the judgement word where JUDGEMENT POSITION puts it (glitch intensity, reduce flashing), COMBO, and the score at the top-left with FC / AR INDICATOR. Each round (since 2026-10-20 03:20: 「FC / AR指示切换的频率太慢了。预览部分每12组键一个循环，每三组单单双循环，每次都是第5组爆echo，第9组爆miss」) is 12 groups, one a beat at 120 BPM from beat 2: single, single, double, four times; each group on a random line, a single in a random lane, a double's lanes at least two apart (`PreviewRun.GROUPS`). The run presses every note itself, as a touch at its lane on its line within ±50 ms (a RESONANCE), presses group 5 85–120 ms early or late (an ECHO, `ECHO_GROUP`) and leaves group 9, a double, alone (two LOSTs, `LOST_GROUP`); a new chart follows 0.7 s after the last note, about every 7.2 s. So the score is light blue (ALL RESONANCE) until group 5 at about 3 s, purple (FULL COMBO) until group 9 is missed at about 5.2 s, then white, and light blue again with the next round. Until 03:20 a round was 40 random drops, one a beat, with a double 1–6 drops after the previous one (「出现双押后随机等待1~6次下落后再出现双押」), one press in six an ECHO and a LOST whenever the combo reached the round's target of 5–12, so the colour changed about once in 21 s. It takes no taps. The caption `LIVE PREVIEW` / `实时预览` sits at the bottom-right (UI 18 × UI scale, `ink2`; 「预览的Live Preview放在右下角，分数放在左上角」), and of the corner HUD only the score shows (no accuracy since 2026-10-20, §24.31; no progress hairline, pause control, title or time). Since 2026-10-20 03:20 (「手机上的实时预览分数位置不对」) those corners sit the minimum margin (24) from the screen's edges, without the device's cutout insets and EXTRA EDGE PADDING, which, scaled into the panel with the rest of the screen, pushed the score in from the panel's corner on phones (`GameplayHud.setScoreOnly`; inferred from the code, not seen on Kelvin's phone). Since 06:27 the score's size and height follow the top band as in a game (§24.32, §24.33), measured from the screen's own top edge. Until 19:52 the panel drew its own mini playfield (§24.15): a fixed loop of six notes, a 9-digit score at the top-right and the caption at the top-left, a zone hint still over the ±0.1 band, no COMBO, and a tap judged as in a dive that fired a hit effect on the lane it fell in.
 - Changes apply at once (`Main.applySettings`) and leaving marks the diver and the device dirty and saves, as in Settings.
 - Until 15:17 the preview was a 600×340 panel beside the GAMEPLAY VISUALS page of the list (below it on 4:3), and on the VISUAL tab before 04:06 (on TIMING until that tab went away).
 
@@ -1847,6 +1859,15 @@ On the second tab of the calibration screen, a ring flashes on each click. The p
 
 See §6.5.
 
+### 9.7 VISUAL HIT POINT calibration [P1]
+
+Kelvin 2026-10-20 03:20: 「下面的校准会单独弹出来一个界面」 (§24.29). `screens/HitPointScreen`, a shell screen like calibration (header with BACK and the glitch title `VISUAL HIT POINT` / `目押校准`, CURTAIN in and out), opened by CALIBRATE… on VISUAL's first row; BACK returns to VISUAL. No music plays on it (the menu music and any preview stop as it opens).
+
+- **Intro**: `TAP WHEN A KEY REACHES THE LINE` / `看到按键到线就点` (UI_BOLD 44); `NO SOUND · TAP ANYWHERE THE WAY YOU PLAY BY EYE` / `全程没有声音 · 按你平时目押的习惯点屏幕任意位置` and `4 WARM-UP KEYS, THEN 16 MEASURED` / `先落 4 个练习，再测 16 个` (UI_REGULAR 24, `ink2`); a diagram of a key at the judgement time at its real size (200 × 40) on a panel 600 × 220: the line labelled `LINE` / `判定线` at its left end on the side away from the key, the key, its dashed midline labelled `MIDDLE` / `按键中线` left of the key and never on the line, and the gold distance between them in px beside it, or above it when they are under 40 apart (to scale for −60..+80, clamped beyond); `CURRENT · 20 px` / `当前 · 20 px`; START (PRIMARY, 440 wide, also SPACE or ENTER); at the bottom `20 = THE KEY'S BOTTOM EDGE ON THE LINE (DEFAULT) · 0 = THE LINE THROUGH ITS MIDDLE` / `20 = 按键下边缘碰线（默认）· 0 = 判定线横穿按键中间` (`ink3`), or `RUN INTERRUPTED · TAP START TO TRY AGAIN` / `校准被打断 · 点「开始」再试一次` in gold after the app went to the background mid-run.
+- **Run**: silent on purpose (a sound would make it the audio calibration, §9.4). 20 keys, 4 warm-up then 16 measured, one every 600 ms from 1.5 s, fall onto a ground line at y 120 at 1.08 units a ms (the default approach: 1080 in 2 beats at 120 BPM), in four lanes 240 apart in a fixed order, drawn like DROPs at NOTE SCALE with the current hit point. A tap anywhere (or any key) counts for the nearest key within ±250 ms, once per key, timed by the touch event's own clock; a ripple marks it and nothing says early or late, which would bias the taps. At the left: `WARM-UP` / `练习`, then `KEEP TAPPING` / `继续点`, `TAP WHEN A KEY REACHES THE LINE`, 16 progress dots and `VALID TAPS · n / 16` / `有效点击 · n / 16`. BACK during the run returns to the intro.
+- **Result**, 0.6 s after the last key: the median lateness `t` (ms) of the measured taps moves the hit point by what a key travels in that time, `new = current − 1.08 · t / noteSize`, rounded and clamped to −100..+100. A player who taps when the line crosses a key's middle taps about 18.5 ms after its near edge touched the line, so from 20 the result is 0. Shown: the value (NUMBER 96) and `px`, `YOUR TAPS LAND 19 ms AFTER THE HIT` / `你的点击比判定晚 19 ms` (or `… BEFORE …` / `早`, or `YOUR TAPS LAND RIGHT ON THE HIT` / `你的点击正好落在判定上`), `SPREAD ±4 ms · 16 OF 16 TAPS` / `偏差 ±4 ms · 有效 16 / 16 次`, the diagram at the new value, APPLY / 应用 and RETRY / 重试, and the −150..+150 ms strip of the taps with their median (`TapStrip`, as in §9.4). Fewer than 12 valid taps: `NOT ENOUGH TAPS` / `有效点击不够`; a spread (median absolute deviation) over 35 ms: `INCONSISTENT · TRY AGAIN` / `不稳定 · 再试一次`; both offer RETRY only. APPLY stores the value for the active player, saves, shows the toast `VISUAL HIT POINT · 0 px` / `目押校准 · 0 px` and marks the result `APPLIED` / `已应用`.
+- The value is a distance, so on a chart or speed faster than the default the same value is a shorter time.
+
 ---
 
 ## 10. First run and tutorial
@@ -1875,7 +1896,7 @@ See §6.5.
 | # | Lesson | Captions | Notes | Content |
 |---|---|---|---|---|
 | — | Opening | 0–32 | — | `WELCOME TO`, `Kelvinizer and Kathlina` and the three story lines |
-| T0 | HUD tour | 32–40.5 | — | one label per beat beside its corner: `SCORE & ACCURACY · TOP LEFT`, the pause label worded for Settings → PAUSE INPUT (integ 9867298): `DOUBLE-TAP HERE TO PAUSE` / 双击这里暂停 (the default), `HOLD HERE TO PAUSE` / 按住这里暂停 or `TAP HERE TO PAUSE` / 点击这里暂停; only in double-tap mode the control plays a demo double tap every 1.6 s from 34 to 39.5, never pausing; `COMBO · CENTRE` with a ghost combo, `SONG & DIFFICULTY · BOTTOM LEFT`, `TIME · BOTTOM RIGHT` |
+| T0 | HUD tour | 32–40.5 | — | one label per beat beside its corner: `SCORE · TOP LEFT` / 分数 · 左上 (`SCORE & ACCURACY · TOP LEFT` until 2026-10-20, §24.31), the pause label worded for Settings → PAUSE INPUT (integ 9867298): `DOUBLE-TAP HERE TO PAUSE` / 双击这里暂停 (the default), `HOLD HERE TO PAUSE` / 按住这里暂停 or `TAP HERE TO PAUSE` / 点击这里暂停; only in double-tap mode the control plays a demo double tap every 1.6 s from 34 to 39.5, never pausing; `COMBO · CENTRE` with a ghost combo, `SONG & DIFFICULTY · BOTTOM LEFT`, `TIME · BOTTOM RIGHT` |
 | T1 | Judgements | 40.5–52.5 | — | RESONANCE ±66 ms, ECHO ±133 ms, LOST, and the EARLY / LATE line; demo hits beside the words (five cyan water rings, one violet ring); a demo ECHO with EARLY or LATE at the centre every 1.5 s |
 | T2 | Lines and zones | 52.5–64 | — | `NOTES FALL TO THE BOTTOM OR RISE TO THE SURFACE` with ghost DROPs falling and rising in the outer lanes and the two line labels; `HALF THE SCREEN EACH` / `UPPER HALF: SURFACE JUDGEMENT · LOWER HALF: BOTTOM JUDGEMENT` with the zone hint pulse and the stray-touch dot demo |
 | L1 | Ground DROPs | 64–73.5, centred | 76–80 | `TAP THE LOWER HALF WHEN THEY LAND`; lanes +3, +2, then −2 and +1 together |
@@ -2216,6 +2237,7 @@ A dark sonar-console scene over the Backdrop at the diver's depth.
 - Camera, lens and selection are persisted **per route**.
 
 ### 16.4 ALL SONGS browser
+**Superseded 2026-10-19 by §24.24** (a pack box over a grid of five or four to a row, the card always open; since §24.27 two to a row as a net, and since §24.28 without the pack box). The notes below are the earlier versions.
 - Full-screen, draggable vertical browser over the Backdrop (inertia + rubber band, not a static list): songs grouped under sticky headers by route then chapter (`SINGLES`, `MAIN STORY · SHORELINE`, …), each row 132 tall with jacket thumb 104, title, artist, the four difficulty chips with constants, best grade and score.
 - Top bar: search field (ui.TextField), sort segmented control (`DEFAULT / TITLE / LEVEL / BEST / RECENT`), and the §3.10 status filter chips.
 - Tapping a row opens the song card (§4, side card WIDE / bottom sheet TALL) with chips, preview audio, AUTO and DESCEND (DIVE transition from the row). Result CONTINUE comes back here with the row selected.
@@ -2231,8 +2253,8 @@ Kelvin 21:58 / 22:14 (circled preview) / 22:39, approved 22:43 (preview v2 in `p
 - **Hub (`hub.json`, renamed `CAVE MOUTH · 洞口`)**: SINGLES left, MAIN enlarged in the centre (r 230), COLLAB right (`COMING SOON`). MAIN has no sub-line since 2026-10-18 20:17 (`DEMO · 7 CHAPTERS` / `演示 · 7 章` before; 「主线底下的"演示 · 7章"不要了」). COLLAB is an empty shaft like MAIN behind the iron grate of a sealed hole since 20:18 (`"art": "shaft"`, sealed; a ring of cover art before; 「Collab里面暂时不要填充曲绘，就一个和主线一样空的洞，然后装上那种网」). No SIDE hole (side stories live in MAIN), no ALL SONGS hole, no `ROUTES · 航线` plate. The hub takes no zoom: pinch only pans, the wheel, `+` / `-` and double-tap do nothing (`MapCamera.zoomLocked`), and it always opens centred at zoom 1.
 - **ALL SONGS button**: the hub's bottom-right corner (256×88, `panel`, `ALL SONGS` UI 22 over `所有曲目` UI 16 and a chevron, no icon). It is the only way into ALL SONGS, which still rises back to the hub.
 - **Story mode (default)**: MAIN goes straight into chapter 1 (`storyTo`); chapter 1 rises to the hub and each later chapter to the one before it (`storyParent`).
-- **Chapter mode**: MAIN goes to `main.json` (`LAUNCH POINT · 起潜点`): every chapter shaft and side-story entrance on one layer, at the size of the hub's SINGLES (r 132–140) and spaced out; chapters 3–7 are sealed placeholders. A side entrance opens chapter 1 on its own spot (`at`). Every chapter rises to this layer; a rise lands on the entrance taken down.
-- **Mode toggle**: left of Settings on the hub (252×64 pill: a path icon and `STORY MODE` / `故事模式 · 点一下切换`, or four tiles and `CHAPTER MODE` / `章节模式 · 点一下切换`). It shows once every unsealed shaft on the chapter-mode layer is open (sealed placeholders are not chapters yet, so the demo shows it). The choice is saved per diver (`Profile.mainChapterMode`).
+- **Chapter mode**: MAIN goes to `main.json` (`LAUNCH POINT · 起潜点`, a title no longer drawn since §24.28): every chapter shaft and side-story entrance on one layer, at the size of the hub's SINGLES (r 132–140) and spaced out; chapters 3–7 are sealed placeholders. A side entrance opens chapter 1 on its own spot (`at`). Every chapter rises to this layer; a rise lands on the entrance taken down.
+- **Mode toggle**: left of Settings on the hub (252×64 pill: a path icon and `STORY MODE` / `故事模式 · 点一下切换`, or four tiles and `CHAPTER MODE` / `章节模式 · 点一下切换`; in English the second line is `TAP TO SWITCH`, §24.28). It shows once every unsealed shaft on the chapter-mode layer is open (sealed placeholders are not chapters yet, so the demo shows it). The choice is saved per diver (`Profile.mainChapterMode`).
 - **Light pools**: the pools that marked the old rise holes are gone; levels that started on a rise spot now start on their title (`titleAt`), so the camera opens on the level name. Arriving there, the ring and the wake light start from that spot when the camera opens nearer to it than to the hole nearest it (SINGLES and LAUNCH POINT open centred on it; Kelvin 2026-10-17 20:20 「点进Singles的入口的圆圈闪的一下的那个动画怎么还是在左上角」: on SINGLES the ring had opened on Song 1); the chapters, whose title sits by the left edge, keep the hole nearest it.
 - **ALL SONGS locks**: a song is locked there when every spot that places it is locked; it shows the gold padlock. Tapping it still opens the card (difficulties and constants readable); AUTO is greyed (α .4, a tap shakes it) and DESCEND becomes a dark plate with a gold padlock and the condition, `先通关 X` / `CLEAR X FIRST` (UI_BOLD 24). Several conditions take turns: each holds 3 s, then fades out 0.5 s while the next fades in 0.5 s. DESCEND and Enter only shake it.
 - **Secret songs** (special unlock, flow TBD): a song spot or a pack marked `secret`. `hidden`: not shown at all; `glitch`: a disc of re-rolling noise cells with a dashed grey rim, a garbled shimmering name and a `??` chip; a tap only flickers it (no card), and the filters, TAB, card prev / next and long-press skip it. The profile flags `reveal:<song id>` and `reveal:pack:<title>` lift it.
@@ -2425,8 +2447,8 @@ See §19.2 v3.
 
 ### 21.5 Gameplay HUD in the corners (Kelvin 22:54; final decisions 2026-10-12) — built
 **Final (owner 2026-10-12; built by hud, merged in `integ` bb199e0; the rules now live in §5.1–§5.4 and §5.12):**
-- Corners at every aspect, anchored to the `Ui.safe*()` edges: **score + accuracy top-LEFT** (score 80 % of its §1.3 size, the 9-digit score, glint and meter kept; accuracy 80 % but never below 20), **pause top-RIGHT** (00:58: 「右上角双击暂停」), difficulty chip + song title bottom-left, time remaining bottom-right, progress hairline along the top edge. The HUD is drawn last.
-- 04:04 approved the layout and asked for a smaller, higher pause control: 「游玩界面的布局不错，暂停键可能要稍微缩小一点，上移一点即可。保持暂停键在右上角的状态」. Ring ⌀ 80 → 64 (r 32·k, stroke 3·k), bars 8×28 → 6×22 at ±7, centre (safe right − 26k − r, safe top − 50k) = (W − 58, 50 below the top) at 1920×1080; the touch box does not shrink.
+- Corners at every aspect, anchored to the `Ui.safe*()` edges: **score + accuracy top-LEFT** (score 80 % of its §1.3 size, the 9-digit score, glint and meter kept; accuracy 80 % but never below 20; since 2026-10-20 no accuracy and the score at full size, a fixed distance from the screen's left edge, §24.31, sized and placed by the top band since 06:27, §24.32, §24.33), **pause top-RIGHT** (00:58: 「右上角双击暂停」), difficulty chip + song title bottom-left, time remaining bottom-right, progress hairline along the top edge. The HUD is drawn last.
+- 04:04 approved the layout and asked for a smaller, higher pause control: 「游玩界面的布局不错，暂停键可能要稍微缩小一点，上移一点即可。保持暂停键在右上角的状态」. Ring ⌀ 80 → 64 (r 32·k, stroke 3·k), bars 8×28 → 6×22 at ±7, centre (safe right − 26k − r, safe top − 50k) = (W − 58, 50 below the top) at 1920×1080; the touch box does not shrink. Since 2026-10-20 05:25 the centre is halfway between the top edge and the sky line (§24.30).
 - Pause = **double tap** on the control by default (two downs within 300 ms; the second triggers; first-tap hint 300 ms); every touch in the box also reaches gameplay first; a touch that judges, re-grabs or covers a hold, or touches a mine (lead 05e3a58), neither counts nor cancels. Hold 0.35 s and Single tap stay as options under the same rule. BACK, Esc and the Pause key pause at once; **P is not a pause key** (accepted by the lead: it is an upper-row lane key).
 - Score, accuracy, chip, title and time are display-only.
 
@@ -2566,7 +2588,7 @@ The DIVE without cover art (RETRY, the tutorial) shows nothing on the closed wal
 - **STATS** (`StatsTab`):
   - Row one: four difficulty toggles (112 tall, gap 24) with only the name (UI_BOLD 30, vertically centred; `6/9 PLAYED` dropped at 15:25). Lit: tinted card, border and lamp in the difficulty colour. Unlit: plain card, ring lamp, grey text. All four start lit (kept while the app runs). Any combination can be lit, but at least one: tapping the last lit toggle only shakes it.
   - Row two (140 tall), summed over the lit difficulties, with a stripe of their colours: CHARTS CLEARED (best score D or better) out of the lit difficulties' charts (`13/31`, the `/31` in `ink3`; 15:25), FULL COMBOS and ALL RESONANCE (`RESONATED` since 2026-10-18 14:29, English in both languages, §24.13).
-  - **BEST SCORES** fills the rest of the tab down to the bottom (at least 300 tall; the tab scrolls only when it is shorter). It is the lit difficulties' best scores as a histogram drawn like the result screen's `EchoTrace`: 41 mirrored bins of 1,000,000 from 60,000,000 (lower scores in the first bin, 100,000,000 and up in the last). Bins from 96,000,000 (`Depth.BONUS_FROM`, where a chart counts exactly 40 × c²: lower scores take from the constant, higher ones add; marked by a 2 px line) are RESONANCE cyan, lower ones ECHO purple. Ticks 60M, 70M, 80M, 90M, 96M, 100M; a caret `μ 87.23M` at the mean best score. The tallest bin counts at least 3 charts. The bins rise as a sweep crosses (0.8 s, starting 0.3 s after a show or a toggle); an idle sweep repeats every 4 s. Nothing played: `NO CHARTS PLAYED YET` (`NO SHALLOW CHARTS PLAYED YET` with one lit).
+  - **BEST SCORES** fills the rest of the tab down to the bottom (at least 300 tall; the tab scrolls only when it is shorter). It is the lit difficulties' best scores as a histogram drawn like the result screen's echo trace (`EchoTrace`, dropped 2026-10-19 17:48, §24.25): 41 mirrored bins of 1,000,000 from 60,000,000 (lower scores in the first bin, 100,000,000 and up in the last). Bins from 96,000,000 (`Depth.BONUS_FROM`, where a chart counts exactly 40 × c²: lower scores take from the constant, higher ones add; marked by a 2 px line) are RESONANCE cyan, lower ones ECHO purple. Ticks 60M, 70M, 80M, 90M, 96M, 100M; a caret `μ 87.23M` at the mean best score. The tallest bin counts at least 3 charts. The bins rise as a sweep crosses (0.8 s, starting 0.3 s after a show or a toggle); an idle sweep repeats every 4 s. Nothing played: `NO CHARTS PLAYED YET` (`NO SHALLOW CHARTS PLAYED YET` with one lit).
 - **TOP 10** (`TopTab`): the DIVE PROFILE (moved from STATS, 200 tall) is pinned on top (14:41); only `YOUR DEPTH IS THE AVERAGE OF THESE TEN` and the rows under it scroll. **Since 2026-10-18 the tab is DST 10, the sentence is gone and DEEPEST 10 / OVERFLOW list the charts (§24.4).**
 - **RECENT** (`LogTab`): the LOG tab, renamed (14:47); content unchanged.
 - **Rename** (14:55): tapping the name renames in place (`TextField.Mode.KEYBOARD`). On a phone only the soft keyboard comes up (`Input.openTextInputField`; Android shows its own one-line field above the keyboard) and the name is underlined while it is open; DONE renames, BACK cancels. On desktop the name turns into an inline field: Enter renames, Esc cancels. An empty name is rejected with a shake. The DIVERS tab's RENAME and naming a new diver still use the rename dialog (§8.3).
@@ -2654,7 +2676,7 @@ The DIVE without cover art (RETRY, the tutorial) shows nothing on the closed wal
 - Removed: BACKGROUND ART, HIT SOUND MODE, SONG PREVIEW and MENU MUSIC. Their features stay on (hit sound on judgement only), and `Settings.sanitize` turns them back on in older saves, which would otherwise have no way back.
 - Descriptions: CHART OFFSET has two lines, `EARLY 较多 → 点击减少（–）` / `LATE 较多 → 点击增加（+）` (`MOSTLY EARLY → TAP – TO DECREASE` / `MOSTLY LATE → TAP + TO INCREASE`), which replace the output name and the gold not-calibrated note; AUDIO PRESET `点击切换预设项目` / `TAP TO SWITCH THE PRESET`; HIT SOUND VOLUME `调整音符的打击音效音量` / `ADJUSTS THE NOTES' HIT SOUND VOLUME`; VISUAL's BACKGROUND BRIGHTNESS, which Kelvin left open, `菜单和曲目背景插画的亮度` / `BRIGHTNESS OF THE MENU AND SONG ARTWORK`. LANGUAGE, TUTORIAL and OPEN-SOURCE LICENSES have none.
 - PROFILE: the Chinese title is 账号与统计 (档案 before; English PROFILE, also on the map button's curtain and the welcome screen's way in). The tabs read `STATS`, `DST 10`, `RECENT`, `PLAYER` and the STATS tiles `CHARTS CLEARED`, `FULL COMBOS`, `RESONATED` in both languages. RECENT tags a run `FC` or `AR` in both languages.
-- The map (English only) says `RESONATED` for `ALL RESONANCE`: the card's clear badge and the filter chip. The result screen's badge and the end banner keep `ALL RESONANCE` (全共鸣 on the result screen in 中文 until 16:45, §24.15).
+- The map (English only) says `RESONATED` for `ALL RESONANCE`: the card's clear badge (removed 2026-10-19, §24.21) and the filter chip. The result screen's badge and the end banner keep `ALL RESONANCE` (全共鸣 on the result screen in 中文 until 16:45, §24.15).
 
 ### 24.14 UI SOUND VOLUME, GAMEPLAY VISUALS as its own screen, FC / AR INDICATOR (15:17–16:19, before the 14:29 round was delivered)
 15:17: 「音频那里加一个界面音效音量，和打击特效一样暂时还没有install。然后我其实倾向于你重新设计游玩界面视觉参数这一档，把它做成类似谱面延时校准那样的独立界面。」 15:53 (on two mock-ups: a centred preview between two columns, or the full dive with a side panel): 「方案1可以但是我感觉下半部分很空」. 16:17 (on the revised mock-up, colour-coded): 「红色：交换两者的位置。蓝色：剧中放置。绿色：删掉。黑色：加一行小字说明。然后再加一个"FC/AR指示"开关，开启以后，如果是AR分数显示为淡蓝色，如果爆了echo但还是FC分数变为紫色，如果FC都不是了就变成白色。」 16:19: 「加到右侧，把接近光晕去掉，感觉效果不明显」
@@ -2691,9 +2713,275 @@ The DIVE without cover art (RETRY, the tutorial) shows nothing on the closed wal
 - **玩家**: every Chinese text that said 潜水员 says 玩家 (the PLAYER tab's cards and counts, 新建玩家, import, rename, the switcher, the first run and welcome, settings descriptions). The English keeps DIVER.
 - **Hub**: MAIN without its sub-line; COLLAB an empty sealed shaft with the grate (§16.5).
 - **Result in 中文**: the score breakdown reads 准度分 / 共鸣链 / 完美共鸣 / 总计 and the expanded trace `峰值 n  ·  平均 +31 ms` (its EARLY / LATE labels stay English, §6.5, §18.2); RETRY / CONTINUE (重开 / 继续) are drawn at cap 34 instead of 26 in 中文 only.
-- **Result lines in 中文** (21:37): the offset hint reads `你打得偏晚（+31 ms） · 调整` (偏早 when early) and the auto-drop notice `为了更流畅，粒子质量已自动调低`; the strip note of the same kind follows too: `下一步 · 在地图上选一首歌` after the tutorial, `AUTOPLAY · 不记录成绩` after autoplay (`ResultModel.hintText`, `fxNoticeText()`, `stripNote`). English unchanged. Since 21:56 both lines are centred on the trace's 0-ms line (the middle of the trace; under the tiles, centred, on the stacked layout), the notice's dot moving with its text (`ResultScreen.drawHint`).
+- **Result lines in 中文** (21:37): the offset hint reads `你打得偏晚（+31 ms） · 调整` (偏早 when early) and the auto-drop notice `为了更流畅，粒子质量已自动调低`; the strip note of the same kind follows too: `下一步 · 在地图上选一首歌` after the tutorial, `AUTOPLAY · 不记录成绩` after autoplay (`ResultModel.hintText`, `fxNoticeText()`, `stripNote`). English unchanged. Since 21:56 both lines are centred on the trace's 0-ms line (the middle of the trace; on the stacked layout under the tiles until 2026-10-19), the notice's dot moving with its text (`ResultScreen.drawHint`). The notice was removed on 2026-10-19 02:24 (§24.18).
 - **Credits**: the transition's chart credit reads 谱师 in 中文 (谱面 before).
 - **Holds** (20:56): releasing a STREAM up to 0.25 s before its end already completes it (`Params.HOLD_RELEASE_GRACE_MS` = 250 since 2026-10-12; a release earlier than that breaks it). Asked whether to widen it further or the 100 ms a finger may leave its lane, Kelvin chose to keep it as it is (21:20). No change.
+
+### 24.18 The 4:3 result screen laid out again from Kelvin's marks (2026-10-19 01:42)
+01:42, with colour marks on the result pages of the 4:3 gallery (PDF pages 80–81): 「粗略过了一遍，问题特别多。着重看80和81页结算界面上我做的标记，每一个颜色对应某一个物件应该被移动到哪里。我要你先把结算界面的内容完成修改，然后只截结算界面的图给我看。」 Kelvin's note on page 81: 「未来白色区域会有人物角色」.
+- **Stacked layout** (§6.2): the score moves up between the jacket and the stamp; the clear badge lies across the foot of the stamp's ring (on an opaque backing, drawn after the stamp); the title block goes under the jacket with the tiles beside it; the judgement rows, the early/late line and the trace move down, with the offset hint and the auto-drop notice under the trace (§6.5); the strip keeps to the left half (its depth line shrinks to fit, never below 0.7) and RETRY / CONTINUE go to the bottom right. Everything under the top row stays left of the screen's middle, so the lower right is empty for the character Kelvin plans there.
+- Kelvin's yellow mark put the tiles where the score had been (x ≈ 490–1480); they stop at the middle (x 436–960) because the right part of that band lies in the white area Kelvin marked.
+- Only the stacked layout (visible height ≥ 1,360) changed.
+- **02:24**, on the new 4:3 shot: 「黑色：删掉，然后整个左半侧稍微再拉长一点，间距宽一点。蓝色：想办法把clear/full combo/all resonance和new best都放在分数下面那一片去。」
+  - Black (the auto-drop notice): removed on every layout, phones too. The drop itself stays (§5.9); Settings still shows it in the particle quality description (§9.2).
+  - The left half: the top row moves up 16 (jacket 860–1160) and everything under it follows; the rows spread wider (gaps 80 / 70, or 70 / 60 / 60 with MINES; were 70 / 58 and 62 / 50 / 50) and the trace grows (130, or 100 with MINES; was 100 / 84); the offset hint takes the notice's place, nearer the strip.
+  - Blue: the clear badge leaves the stamp for the place under the NEW BEST pill, both under the score (§6.2), without its opaque backing; after the tutorial, which has no best line, it sits in the best line's place.
+- **02:40**: 「没有水雷也表0/0。蓝色圈起来的部分偏低了一点」 (blue: the bottom of the tapped trace, its tick labels).
+  - The MINES row shows on every result, `0 / 0` on a chart without mines (§5.15), on phones too; the three-row layouts are gone.
+  - The tapped trace's card (§6.5) ends 60 above the strip instead of 40 and grows 30 up over the early/late line it hides; its tick labels sit 12 inside the card's bottom edge (they hung 2 below it, on phones too).
+
+### 24.19 One result layout from the 16:10 blueprint; the HUD in two corners (Kelvin 2026-10-19 03:16–06:28)
+> Round 8 (15:2x, §24.25) moves the chip into the jacket's bottom-right corner and the stamp, best line and score to the jacket's bottom left, drops the clear badge, and gives screens wider than 16:8.5 three columns. The table below is round 7.
+
+Asks, in order: 03:16 / 03:19 on the phone layout (the stamp beside the score, no ACCURACY / MAX COMBO tiles, so accuracy is no longer shown, MAX COMBO beside RESONANCE CHAIN); 03:47 「先改一版成熟的16: 10作为蓝本，然后所有剩下的都通过16：10进行拉伸/压缩高度即可」; then, on the design thread's mock-ups: titles up to 50 characters in full on one line, centred from the start (04:55, 04:58, 05:12 「曲绘一致用16：9的长方形，然后我要不论长短曲名都要歌名一开始就居中」), a larger jacket and less on screen (05:25 「是不是要适当减少一点显示的信息啊…别人的界面感觉就很整洁」), 05:58 「把A的深色标题外框加在b上」, 06:04 「如果说average太高了就在early late avg下面显示建议调整。重开/继续稍微小一点。然后主界面的depth，用户名和贝壳也这样子分开到屏幕左上角和右上角」 (「就是地图界面上也这样分开到两个角落」), and 06:28 「好的先这样。把原来的那种贝壳和profile的小的边界加上」.
+
+**One layout** (`ResultLayout`) replaces Three-column and Stacked (§6.2). Blueprint 1920 × 1200, world y up, safe edges 24 in:
+
+| Element | Position and size | Style |
+|---|---|---|
+| Player frame | x 24, y 1076–1160 (84 high), as wide as its text + 22 | `draw.panel` (PANEL α .78, 1 px white α .14, radius 18, top highlight); avatar 60 at x 36; name UI_BOLD 22, baseline 1124, from x 112 (shrinks past 420); `DEPTH` UI_LABEL 13 `ink2` + `-2,698 m` NUMBER 17, baseline 1088, then `▼ 212` (metres deeper, NUMBER 17, `resonance`). Tap → depth breakdown. |
+| Shell capsule | right x 1896, centre y 1118, 44 high | `gold` α .16 pill on a deep gold fill (#443A2B α .88, `Theme.SHELL_CAPSULE`, since 2026-10-19 13:59, §24.23); shell icon 28, count NUMBER 22 `gold`, then `+151` NUMBER 17 `ink1`. Tap → shells breakdown. |
+| Title band | full width, y 900–1060 | fill (8, 13, 38) α .43, a 1 px line (120, 200, 255) α .27 at each edge; title UI_BOLD 48 centred on x 960, baseline 988, shrinks only past 1,728 wide; a title of up to 50 characters always shows whole, a longer one keeps its size and scrolls (04:55); artist UI 24 `ink2`, baseline 932; chip x 96, y 920–968 (UI_BOLD 22, pad 22, superscript − / +) |
+| Jacket | x 96–1136, y 279–864 (1040 × 585, 16:9, centre crop) | radius 18, 1 px stroke; a soft glow of its own colours behind it (never above the band); its lower 58 % darkens to (6, 10, 32), 86 % at the bottom |
+| Over the jacket | stamp ring r 84 at (234, 407); score NUMBER 66 from x 366, baseline 337 (dim leading 0); best line pill 30 high from x 366, top 453; clear badge 168 × 40 at x 932–1100, y 418–458 | badge fill (32, 41, 98) α .92, UI 18 |
+| Under the jacket | RESONANCE CHAIN / MAX COMBO x 96–600 (line y 193, bars 16, labels baselines 219 / 143); early / late line baseline 97; offset hint baseline 53 | as before; the hint keeps its rule (§6.5) |
+| Counts | labels x 676, values right-aligned at 1036; RESONANCE 219, PERFECT n 191 (UI 14), ECHO 153, LOST 111, MINES 69 | MINES always shown, `0 / 0` in `ink3` when nothing was touched (02:40 「没有水雷也表0/0」 overrides the mock-up's note), LOST colour when one was |
+| Buttons | 96 high at the bottom right: CONTINUE 360 wide ending at 1896, RETRY 326 wide, gap 28 | |
+| Character area | x 1176–1896, y 148–864 | empty (the AUTO watermark is fitted into it after autoplay) |
+
+- **Other aspects**: shorter than 16:10 (16:9, phones) scale everything by safe height / 1,152; taller ones (4:3) keep the sizes and put half the extra height above the jacket and half under it. The left column keeps to the safe left edge, the capsule, buttons and character area to the right one, the title to the middle; extra width goes to the character area.
+- **Taken off the screen, shown on tap** (popover cards, opaque since text runs under them, `Panel.cardSolid`): the player frame → depth before → after, the chart's depth and its DST 10 place; the EARLY / LATE / AVG line → the echo trace card (its sweep runs when it opens, then every 4 s; dropped at 17:48, §24.25); the shell capsule → the shells breakdown; PERFECT n → its early / late split, sliding out to the right; the score → the score breakdown. The strip, the CHART DEPTH line, the inline trace, the bars after the counts and MINES' TOUCHED are gone; the jacket no longer tilts on a tap.
+- **Timing** (§6.3): the frame and the capsule drop in from 40 above at the strip time (3.00 s); the depth counts in the frame (3.20–4.00) and `▼ n` pops after it; the shells count in the capsule (3.40–4.30) and `+n` pops. The offset hint fades in 0.3 s after the early / late line; after autoplay (`AUTOPLAY · NOT RECORDED`) and the tutorial (`NEXT · PICK A SONG ON THE MAP`) the hint's place shows the strip note.
+- **The map** (§3, `MapHud`): the profile badge splits the same way. The player frame (avatar, name, `DEPTH -2,698 m`, no gain) is at the top left, the shell capsule 24 left of Settings, or of the story / chapter toggle when the hub shows it; both open the Profile (the capsule not since 2026-10-20 03:38; both larger since 03:26, §24.29). The ALL SONGS grid still starts under a 120 band.
+- **Song card at 16:10** (03:47, §4): the phone's right-side card stays on tablets, taller; its header-to-chips and chips-to-sparkline gaps take 96 of every 120 units of extra height. No bottom sheet any more. (Its content was laid out again in round 5, §24.20.)
+
+### 24.20 The song card, round 5; titles that scroll (Kelvin 2026-10-19 06:41–07:01)
+Asks, on the design thread's mock-ups of the 16:10 card: 06:41 「best去掉。分数挪到左边，等级挪到右边，稍微放大一点。depth放在分数下面，plays也放在分数下面。」, 07:00 「图标放圆圈这么大。depth/plays稍微往下挪一点，选歌难度往下挪，然后next那一行也往下挪，现在太挤了点」, 07:01 「然后这里最多显示30个字符，太长了就滚动显示，滚动到最后以后停顿2秒，然后空一段距离再接着播放，循环播放。」 (with 04:55: the result screen shows titles of up to 50 characters whole, the song card up to 30; 04:58 one line only; 05:12 jackets 16:9).
+
+- **Layout**: §4.2 (positions) and §4.3 (other screens). Compared with the card of §24.19: a 16:9 jacket across the content width with a stroke and a glow, a full-width title band like the result screen's, the score at the left without BEST, DEPTH and PLAYS under it, the grade letter as large as its ring at the right, the chips, the micro-goal row and the action row lower (the action row stands on SB, 24 above the screen's bottom like the result screen's buttons). Accuracy and the ACC line are no longer on the card.
+- **Not on the mock-ups, chosen in code** (the ribbon and the sparkline went on 2026-10-19, §24.21): FULL COMBO / RESONATED is a ribbon across the ring's foot; an unplayed chart shows `NOT YET DIVED` and `FIRST DIVE · +40 SHELLS` where the score and DEPTH row would be; with AUTO on, `AUTOPLAY · NOT RECORDED` takes the micro-goal's row; the small bars left of NEXT are the recent sparkline (one bar per recent play, §4.6), not a missing glyph.
+- **Scrolling titles** (`ui/Marquee`, shared by the card and the result screen): rest 1 s with the start at the window's left edge; scroll left at 80 / s until the end reaches the right edge; rest 2 s; keep scrolling: the end leaves, a gap of 160 follows and the next copy comes in, passing the left edge without a stop, up to its end and the next 2 s rest; loop. The window fades over up to 24 at each edge, less as a copy's start nears the left edge or its end the right one, so the first letter is crisp while the title rests at its start and the last one while it rests at its end. A title that is past the limit but fits (a card title of 31 characters at 29) rests with its start at the left edge instead. Card: the window is the content (x 1260–1880 on 16:10), the clock restarts when the song changes but not on a difficulty change. Result screen: past 50 characters, window x 96–1824, the clock starts with the title's fade-in.
+- **Not changed**: the header, the chip sizes, DESCEND and AUTO, the map HUD (the mock-ups' combined player box is the older HUD; §24.19's two corners stay).
+
+### 24.21 A full combo paints the grade purple; no ribbon and no recent bars on the card (Kelvin 2026-10-19 13:09)
+「修改几点：1. 选歌界面的full combo/resonanted去掉。如果一首歌full combo了那么它对应的等级直接显示紫色。比如说第一遍是full combo A，那么结算界面和以后选歌界面就显示紫色的A。如果后面打了不是full combo的S，则结算界面还是金色的S但是以后选歌界面变成紫色的S。2. 最近6次成绩就不要再显示了，太挤了。」
+
+- **Select screen** (the card's ring and letter; the grade pill and letter under a hole at close zoom): the chart's best grade is drawn in `FULL_COMBO` purple #B49CFF once the chart has a full combo (`ChartRecord.fullCombo`, sticky, so a later best without one stays purple). R and R+ need ALL RESONANCE and stay light blue. The FULL COMBO / RESONATED ribbon across the ring's foot is gone (`Theme.gradeColor(int, boolean, Color)`).
+- **Result screen**: the stamp (letter, rings, impact rings, sparks and the sonar ping) is purple when this play is a full combo (`ResultModel.fullCombo`), otherwise the grade colour. The FULL COMBO / ALL RESONANCE badge stayed until round 8 (§24.25).
+- **Recent sparkline** removed from the card; the micro-goal row stays where it was (right-aligned at x 1880, 984–1024).
+- **Not changed**: the RECENT tab's FC / AR tags and grade pills, the STATS tiles, the ALL SONGS filter chips.
+
+### 24.22 The card header: no ×, ‹ and › at its two ends, a little larger (Kelvin 2026-10-19 13:37)
+「选歌卡片右上角的叉不要了，把左侧/右侧调节放在两边，然后这两个箭头和"singles · 单曲"这个标题可以稍微大一点」
+
+- ‹ sits flush with the jacket's left edge and › with its right edge; the level's name is centred between them.
+- The arrows grow from 64 to 76 and the name from 20 to 26. The header row's half height becomes 38 and the gap under it 39 (they were 32 and 45), so the jacket and everything below it stay where they were.
+- Without the ×, the card still closes by a tap on the map, a swipe or fling to the right, or Back (Esc on a computer).
+
+### 24.23 A deeper shell capsule (Kelvin 2026-10-19 13:59)
+「贝壳数的那个光晕加深一点盖过单曲」
+
+- With the card open on 16:10 the map's shell capsule moves left onto the level's big title (`单曲` under `SINGLES`), which showed through its `gold` α .16 wash. The wash now lies on a deep gold fill (#443A2B α .88, `Theme.SHELL_CAPSULE`), so nothing behind the capsule shows through; the shell icon, the count and the hit area are unchanged.
+- The result screen's capsule (§24.19) gets the same fill, so the two stay alike.
+
+### 24.24 ALL SONGS: a pack box, five or four to a row, the card always open; map titles of 15 / 20 characters (Kelvin 2026-10-19 12:40–14:01)
+Asked over five rounds of mock-ups on the design thread: 12:40 the card always open on the right, five songs to a row, no free zoom, two pinch-outs within 1 s rise; 13:14 the packs as multi-select toggles, all on by default, the checked packs shown flat, SORT without its pack grouping; 13:15 no headings; 13:19 a dark frame around the packs; 13:26 「改成多行…先预留6个的位置（现在只放3个，“全部”站最左侧两行（一个1*2的区域），然后单曲/第一章）…下面的歌曲能显示两行，可以放大到每行4个或者缩小到每行5个，没有别的选项。每行四个就显示分数等级信息。」; 13:40 「然后每排4个的状态标题最多20个字符，5个的最多15个。在其他的地图中也是这样。放到最大的话在地图内最多显示20个字符，后面的滚动（选歌卡片不变）。」; 14:00 「每行5个也要循环滚动」; 14:01 CHAPTER 1 right of SINGLES, 「就可以交给写代码那边处理了」.
+
+**The grid and its gestures below gave way on 2026-10-19 21:18 to §24.27** (two to a row, staggered, at the maps' default size, linked into a net, no zoom); the card, the bottom row and the titles stand, and the pack box went on 2026-10-20 (§24.28).
+
+Blueprint 1920 × 1200, **y measured down from the top**; shorter screens shrink the page with their height (never grow), x follows the room left of the card (`map/GridPage.layout`).
+
+- **Pack box** (gone since 2026-10-20, §24.28): x 24–1194, y 146–348, corner 18, fill #0A1033 α 205/255, white stroke α 40 width 1, a white α 20 hairline inside its top edge (18 in at each end). Inside, padding 16, gaps 12 across and 10 down, cells 80 tall with corner 12. `ALL` / `全部` takes the first column over both rows (x 40–254, y 162–332): solid cyan with ink #010E1F when every pack is on (a tap turns every pack on), else drawn like an unchecked cell. Pack cells: three columns of 296 (x 266–562, 574–870, 882–1178) filled row by row in data order (SINGLES, then CHAPTER 1). Checked: fill #152B4B α 215, cyan stroke α 200 width 2, the name in cyan at x + 24 (Noto Sans SC Medium / Chakra Petch SemiBold 27), a cyan dot r 7 at x + 296 − 28. Unchecked: fill #0A1033 α 120, `ink3` stroke α 140, the name in `ink3`, an `ink3` ring r 7. Several may be on; the last one on cannot be turned off (it shakes). The choice is kept in `Profile.gridPacksOff`. With more than six packs more rows follow and the cells drag up and down inside the box (ALL stays), fading over the box's bottom 24 while more lie below.
+- **Grid**: the songs of the checked packs, each once, flat, in the SORT order; two rows on screen.
+
+  | Level | Node scale | Column centres x | Row centres y | Name baseline | Chip top |
+  |---|---|---|---|---|---|
+  | Five to a row (default) | 1.0 (r 68.8, the old grid's zoom-1.25 size) | 177 + 216 i | 449, 724 | centre + 103 | baseline + 15 |
+  | Four to a row | 1.25 | 204 + 270 i | 464, 800 | centre + 124 | baseline + 15 |
+
+  Only the nodes scale; names (Chakra Petch SemiBold 25), chips (72 × 36) and prices stay the same size. Four to a row adds a score row, baseline at the name's + 85, centred on the column: the best score's 9 digits (SemiBold 22, `ink1`, leading zeros `ink1` α 60/255), a gap of 10, then the grade pill (28 tall from 24 over the baseline to 4 under, padding 13, `Theme.gradeColor` with full combo purple, fill α 50, stroke α 210 width 2), or a cyan `NEW` pill alone when unplayed; songs for sale keep their price and get no score row. The selected song's dashed outer ring becomes a solid cyan ring at the outer radius + 1 (84 / 105), width 3, α 240, with a soft glow; no leader line. The grid is clipped at the box's bottom (348) and fades out from y 1006 to 1066, above the lens row (a mask shader on what the grid draws).
+- **Gestures**: pinch apart switches to four, together to five (`MapScreen.updateGridPinch`, a ratio of 1.12); at five, closing by 1.08 counted as a zoom-out and two within 1 s rose to the hub (until 2026-10-19 18:46; now two fingers held still rise, §24.26). The wheel: up four, down five (at five one continuous scroll counted as one pinch until §24.26). `+` / `−` switch too. A switch keeps the selected song (or the first one under the box) in the upper or lower row it was nearer and glides every song to its new place over 0.25 s; the level is kept in `Profile.gridFour`. With more than two rows the grid drags up and down with inertia and a rubber band; a scroll bar x 1177–1183 on a track y 370–1062 (white α 26, thumb `ink2` α 170, as long as the track × 2 / rows).
+- **Card**: always open (`SongCard.pinned`), on the last played song when the page opens, else the first one; a tap on a song switches it, ‹ › step through the grid order and loop; Back rises to the hub. A lens the selected song lacks moves the card to the first song in the grid that has it.
+- **Bottom**: the lens row as before; SORT at x 1016–1194, y 1096–1176; its panel keeps ORDER and FILTER only and opens above it (x 458–1194, y 569–1080).
+- **Titles on every map** (the card's 30 and the result's 50 unchanged): characters count in half widths, a full-width (CJK) one as 2. Five to a row, and every other map away from its closest zoom: up to 15; four to a row, and the closest zoom (`MapStyle.LOD_DETAIL`, scores shown): up to 20. A title within the limit is centred; a longer one loops inside a window as wide as its first 15 / 20 characters, on the card's `Marquee` timing at the 25 px name's size: 50 / s, a gap of 100, edge fades of 16. Each title keeps its own clock; a level switch, a lens change and a pack change restart them.
+- **Chosen in code**: the overview chip moved into the top row between the player frame and the shell capsule on this page, clear of the box (gone since §24.26); a save with no pack on shows every song.
+- **Micro-goal centred** (16:36, her OK on the six-aspect shots: 「可以，先这样。MAXED和推分建议移到同一水平线居中位置即可」): the card's NEXT / MAX goal and MAXED keep their row above the action row but are centred on the content (`SongCard.goalRight`), on every map's card; `AUTOPLAY · NOT RECORDED` keeps its place.
+
+### 24.25 Result screen, round 8: no clear badge, the chip in the jacket's corner, three columns on phones (Kelvin 2026-10-19 14:15–17:48)
+Asked on the design thread's mock-ups (its notes 结算第八版排版参数): 14:15 「你看一下别的游戏的这种手机端的截图，稍微重拍一下20：9的andriod手机结算界面屏幕比例」 (three columns chosen from two drafts); 14:38 「能不能把分数和等级移动到这里？我想尽可能让手机和平板的排版差别不要那么大」; 14:43 「绿色框垂直拉伸一点到蓝色框的位置。结算界面的“clear/full combo/all resonance”也去掉吧」; 14:59 「…顺便把shallow10-这类等级信息移动到曲绘的右下角」; 15:16 「算了，平板还是保留原来那种，只是把等级信息移动到曲绘右下角」; 15:17 「改完后交给写代码那边处理」; 15:24 「调整一下吧，把蓝框的移动带绿框」 (the stamp, best line and score as one group into the jacket's bottom left, left of the chip). On the real screenshots: 17:21 「18：9中间那一栏宽了，窄一点。其他的都还行」; 17:22 「划分点是16：8.5，小于8.5就用手机排版，大于等于8.5就用平板」; 17:48 「早晚的那个柱状图不要了，延伸到人物那边去了。16：8.5和更窄的屏幕中较宽的一批（16：10以下），改成像我之前展示的那个arcaea的截图一样，两边留出空间，中间适当留一点空间但不要多。你要确保的是20：9的角色区域比例和16：10的角色区域比例要一样」.
+
+Coordinates are **y measured down from the top**, as in the notes.
+
+- **Every aspect**: no CLEAR / FULL COMBO / ALL RESONANCE badge (a full combo shows in the stamp's purple, §24.21; ALL RESONANCE in the R / R+ grade). The difficulty chip leaves the title band for the jacket's bottom-right corner, 16 in from its right and bottom edges, the same look and size (48 high, UI_BOLD 22, pad 22), over a soft shadow ((0, 0, 12) α .47 blurred by 6 and 3 down; six stacked round rects, `JacketBlock.drawChip`); it pops at 0.60 s, when the jacket has landed (`Choreo.CHIP_T`; it popped with the artist before). The band keeps the title and the artist, centred; the artist no longer leaves room for the chip. After autoplay the AUTOPLAY pill (round 7's badge look: fill (32, 41, 98) α .92 tinted `auto` α .10, `auto` stroke and text, the expand, decode and shine at 2.50 s) takes the best line's place, its left on the best line's x and its bottom on the best line's bottom; the grey `BEST n` line autoplay showed there is gone. Unchanged: the player frame, the shell capsule, the band, RETRY / CONTINUE and the end banner. The echo trace card is gone (17:48): the EARLY / LATE / AVG line opens nothing (`EchoTrace`, `ResultModel.histogram` and `Choreo.TRACE_*` removed). The character area has the blueprint's shape on every aspect, 720 : 716 (`ResultLayout.CHAR_ASPECT`; 4:3 still adds half its extra height to it).
+- **The blueprint** (16:8.5 and taller: 16:10; 16:9 shrinks it and 4:3 splits its extra height as in §24.19): the jacket and everything under it as round 7. The chip is x 877–1120 (its width follows the text), y 857–905, on the jacket x 96–1136, y 336–921. The stamp, the best line and the score move to the jacket's bottom left, smaller: stamp ring r 66 (was 84) centred (190, 830); NEW BEST pill 27 high (was 30) from x 296, top 789; score NUMBER 60 (was 66) from x 296, baseline 892 (the chip text's), its dim leading zero as before; the AUTOPLAY pill from x 296 with its bottom at 816. The jacket's shade stays. Wider than 16:10 (16:9, 16:8.5; 17:48, like her Arcaea screenshot) the width past the scaled blueprint's goes 40 % to each side and 20 % between the jacket and the character area (`ResultLayout.SIDE_SHARE`): the jacket, the rows under it, the character area and the buttons move in, the player frame, the capsule and the band stay at the safe edges. 16:9 (1920 × 1080): 78 a side, the gap 75 (was 231); 16:8.5 (2032 × 1080): 123 a side, the gap 97 (was 343).
+- **Wider than 16:8.5** (20:9, 19.5:9, 18:9; Kelvin 17:22 「划分点是16：8.5，小于8.5就用手机排版，大于等于8.5就用平板」, the split was 2:1 before; `ResultLayout.columns`): three columns on the notes' 2400 × 1080 frame, scaled by safe height / 1,032; the corners, the band and the buttons stay as on the blueprint (scaled by safe height / 1,152).
+
+  | Element | Position and size |
+  |---|---|
+  | Jacket | x 88–1018, y 304–826 (930 × 522), whole: no shade; the 1-unit stroke (140, 200, 255) α .31 and the glow as round 7 |
+  | Chip | its bottom-right corner, 14 in (218 × 43 at 20:9) |
+  | Best line | NEW BEST 36 high from x 88, top 856 (the jacket's bottom + 30); the AUTOPLAY pill in the same place; with no new best the row shows the grey `BEST n` line (FIRST DIVE on a first play) as on tablets, and the score does not move up |
+  | Score | NUMBER 70 from x 88, baseline 980 |
+  | Stamp | ring r 82 centred (923, 945): the jacket's right − 95, the score's middle |
+  | Middle column x 1090–1650 | RESONANCE CHAIN / MAX COMBO × 1.15 (line y 418, MAX COMBO baseline 475.5, the note count UI 16.1); EARLY / LATE / AVG × 1.1, baseline 539.5; the offset hint UI 18.7, baseline 585.5, its rule 9 under it; a divider at y 641.5, white α 40, 1.2 wide, across the column; the counts × 1.25 (labels 21.3 from x 1090, values 32.5 right-aligned at 1650, PERFECT 17.5): RESONANCE 723.5, PERFECT 758.5, then ECHO 832.3, LOST 906.2 and MINES 980 (the score's baseline) evenly |
+  | Character area | y 304–945, as wide as the blueprint's shape at that height: x 1731.5–2376 at 20:9 (644.5 wide; it was 1710–2376, a little flatter than 16:10's); the buttons under it |
+
+  Narrower than 20:9 (Kelvin 17:21 「18：9中间那一栏宽了，窄一点」) the left column stays and the middle column, its gap and the character area share the width right of x 1090 as at 20:9 (560 : 81.5 : 644.5), the character area's height shrinking with its width from its top: at 18:9 (2160 wide) the middle column is 1090–1545.5 and the character area x 1611.8–2136, y 304–825; just past 16:8.5 the middle column is about 400 wide. Wider than 20:9 the width past the frame's goes 40 % to each side and 20 % between the middle column and the character area, as on 16:9. The text keeps its size; an early / late line wider than the middle column shrinks to fit it (`ResultLayout.earlyLateMaxW`).
+- **Chosen in code**: narrower than 20:9 the buttons narrow with the character area (524 wide at 18:9; their height stays), or RETRY would cover MINES' value; at 20:9 they keep their size. With three columns the score breakdown has no room under the score and opens above it, its pointer down. The stamp letter's fit scales with the ring (round 7's 2 × 84 − 44 at r 84), so a wide letter such as SS+ keeps its size relative to the smaller ring; the tutorial seal's COMPLETE (18 at r 84) scales the same way and stays inside the ring. The mock-ups leave open what the best row shows without a new best; the columns keep the grey BEST line (or FIRST DIVE) like the blueprint.
+
+### 24.26 Map: the closest zoom on arrival, a two-finger hold rises, the maps re-laid, faint titles (Kelvin 2026-10-19 18:46–20:50)
+Asked with a 20:9 SINGLES screenshot at the closest zoom, 18:46: 「我要初始大小就有这么大，也就是默认最大状态。选歌界面图标也全部大一点，至少要达到这个大小。然后上浮规则修改：双指静止不动长按1.5秒上浮，这样缩到最小也不用出现"全图"这个小的弹窗了」 and 「所以你也要重新设计地图」; on the first mock-ups, 19:59: 「"上浮"和rise根据中英文选择。然后主线的标题字太大了点，做成半透明的，这种标题都做成半透明的，不要抢镜，把乐曲都放中间一点，特别是16：10现在的主线怎么只能看到一首歌呢。」; on the second, 20:50: 「可以先推到我电脑上了，我再看看有哪些要改的」.
+
+- **Opening zoom**: every level but the hub (which does not zoom) opens at `MapStyle.ZOOM_MIN` 0.7, the closest zoom (`MapScreen.startCamera`; it was 1). The opening screen shows 1,344 × 840 of the map at 16:10, 1,680 × 756 at 20:9 and 1,344 × 1,008 at 4:3.
+- **Rise hold** (`MapGestures`; `MapStyle.RISE_HOLD` 1.5 s, `RISE_RING` 0.3 s): two fingers that both stay within 2 × `Ui.slop()` of where they were when the second one landed rise one level after 1.5 s (`MapScreen.mapRiseHold` → `rise`). A finger moving further cancels it for that touch, and the pinch goes on as before. From 0.3 s a ring shows between the fingers (`MapHud.setRiseHold`): a `panel` disc of radius 90 × k at α .88, a 10-wide track (`ink1` α .16) at radius 70, a `groundSig` arc filling clockwise from the top over 0.3–1.5 s, a chevron 14 above the centre and `RISE` / `上浮` by the language (UI 18, 26 below the centre); it fades in over its first eighth. No ring and no rise where nothing rises (`MapScreen.riseTarget`: the hub, a song card open outside ALL SONGS, a transition or a dive running). BACK, Esc and PAGE UP still rise.
+- **Gone**: the overview chip (`全图 OVERVIEW · 再捏合 ↑ 上浮`), the double-pinch rise and the wheel's rise at the overview (the map still gives a little there, `MapCamera.bump`); on ALL SONGS the pinch and the wheel only switch five / four (§24.24; since §24.27 they do not zoom there at all).
+- **Bigger icons**: a story hole's default radius 76 → 96 (`CaveData`), as wide as a song hole's ring; the hub's SINGLES and COLLAB 140 → 170, at (430, 560) and (1490, 560).
+- **Faint titles** (`MapRenderer`): the level title UI_BOLD 34 (was 54) at `titleY + 10` and its Chinese UI 20 (was 30, `ink2`) at `titleY − 24`, both `ink1` at α `TITLE_ALPHA` .45 (was .85). Area names UI_BOLD 44 / UI 26 / UI 18 (were 64 / 34 / 22) at α .2 close up, .45 at the overview (was .8).
+- **Layouts** (map coordinates, y down): songs in two staggered rows at y −120 and 110, 500 apart in a row and offset 250 between the rows, the title above them at y −318, so the opening screen holds both rows whole at 16:10, 20:9 and 4:3, clear of the HUD corners.
+  - SINGLES: one zigzag chain ICS4U, Song 1–6, marsh mally (x −970..1030); Song 1–5 on the opening screen.
+  - LAUNCH POINT (its title not drawn since §24.28): the chapters 01 (−450, 10), 02 (0, 50), 03 (450, 90) and on rightwards; the side entrances at (−1000, −230) and (−1000, 300).
+  - 01 SHORELINE: story 01, Song 1–3 and story 02 in the rows; the shaft to 02 at (900, −20); ECHO VALLEY up and right (y ≈ −760), THE WRECK down and right (y ≈ 540), their area names outside them.
+  - 02 TWILIGHT: Song 4, story 04, Song 6 and ICS4U in the rows; the shaft to 03 at (720, −20).
+- **Songs placed nowhere** (`MapWorld.addUnplaced`): the free points of the hex lattice through the level's first song, pitch 500 and rows 230 (`COLLECT_PITCH`, `COLLECT_ROW`), nearest the start first (vertical distance × 4/3, ties counter-clockwise from the right), at least 300 (`COLLECT_FREE`) from every spot, the title and each other. Aleph-0 lands under the two rows at (30, 340), the next ones at (−470, 340) and (530, 340).
+- **Chosen in code**: a path's alpha is capped at 1 (a cleared path's 1.02 wrapped round when packed, so solid cleared paths drew nearly invisible); edge signs keep their whole pill on screen and fade out over the last 40 units before a hole or the label under it (`MapRenderer.holeClear`).
+
+### 24.27 ALL SONGS as a net: two to a row, staggered, at the maps' default size, no zoom (Kelvin 2026-10-19 21:16–21:53)
+Asked at 21:16, 「感觉非常好！全部歌曲的图标也用默认大小，那种大号一点的，然后一排改为3首曲目」 and 「先不支持缩小吧」, then at 21:18 with a screenshot of the singles map at its default zoom: 「等一下，改成这样：观察这个图片现在的这种一排两个错开的样式，我要你这样子排列所有的曲目，然后不支持缩小，每一行之间像网格一样用线连起来」; at 21:53, on the mock-ups: 「16：10的稍微小一点吧，平板会放大这个大小的，这里手机端观感可以但是平板太大了」. It replaces §24.24's grid and gestures; the card, the bottom row and the titles stay (the pack box went on 2026-10-20, §24.28).
+
+HUD units on a phone (`map/GridPage`). A tablet, as on the result screen any screen no wider than 16 : 8.5 (16:10, 16:9, 4:3), draws the songs, their labels, the links and the spacing 0.8 as big (`GridPage.TABLET`, `size`); the page's edges and the box keep theirs.
+
+- **Size**: a map's look at its default zoom 0.7 (`GridPage.LOOK` = 1 / 0.7): song r 154.3 (108 / 0.7; 123.4 on a tablet) with its rings, the dashes at 178.6; the name at cap 26 with its top 10 under the dashes, the chip (72 × 36) 15 under the name's baseline. The score row has §24.24's four-to-a-row size: 9 digits at cap 19.25, a gap of 12, the grade pill 35 tall (its top 30 over the baseline, padding 16; the NEW pill 30 wider than its text), its baseline 93 under the name's, so the pill sits 12 under the chip.
+- **Places**: two songs to a row on four half steps, the even rows on half steps 1 and 3 and the odd ones on 0 and 2 (`GridPage.column`), as the singles map's two rows lie. The half step is the singles map's 357 (250 / 0.7) where the room left of the card allows, else as much as puts the outer rings 10 in from the page's left and 26 (× the box scale) in from its right (about 283 at 16:10 and 4:3, against a tablet's 286, which 16:9 has room for), centred in that room. Rows lie the singles map's 329 (230 / 0.7) apart (263 on a tablet), or further where a score row (131 either side of its song) would come within 4 of the next row's score rings, which no screen so far needs. So 20:9 has the singles map's spacing and a tablet nearly 0.8 of it. The first row's dashes sit 22 under the box (under the grid's top since §24.28).
+- **Links** (`MapWorld`): every song to the songs a half step either side of it in the next row, in `ink1` and without arrows; solid when both ends are cleared, dashed otherwise, as a map's paths; straight, and as wide as a map's at 0.7. A link breaks off where it passes its upper song's name (the name's width and 12 either side, from 12 under its baseline to 8 over its cap), so a long name is never crossed (`MapRenderer.drawPaths`).
+- **No zoom**: no five / four levels; pinches do nothing, the wheel scrolls (120 a notch), `+` / `−` do nothing. A two-finger hold still rises (§24.26). The grid drags as before and scrolls until the last row's labels clear the fade; the scroll bar's thumb is the band's share of the whole. Titles take the 20-character limit. `Profile.gridFour` is unused (kept so that older saves load).
+- **Taps** take the nearest song whose dashes (+ 10) or labels (the score row's 131, + 20, either side, down to the score row) hold the point.
+
+### 24.28 English shows no Chinese on the map; no LAUNCH POINT; ALL SONGS without the pack box (Kelvin 2026-10-20 01:34–01:49)
+Asked at 01:34, 「main一点进去那个launch point字样就不要了」; at 01:35, 「然后如果语言选择是英语就不要出现中文。」; at 01:49, 「然后把全部歌曲上面选曲包的那个功能去掉吧，现在在那里很突兀而且曲包很少。」.
+
+- **No LAUNCH POINT**: the chapter-mode MAIN layer (`assets/maps/main.json`, the chapters 01–03 in a row) draws no title: its `title` and `titleZh` are empty strings (an absent `title` would read as the id in capitals). `titleAt` stays, so the camera bounds do not change. Story mode's MAIN opens on 01 SHORELINE, whose title stays.
+- **English shows no Chinese**: the map (`map` package) does not use `ui/Lang` and drew both languages whatever the setting; that was all the Chinese an English screen still showed, apart from the language picker. Now `MapScreen.zh` / `MapRenderer.zh` decide: Chinese draws as before, English draws no CJK character. Data's `…Zh` fields are skipped; mixed texts such as a sign's `SIDE · 支线` lose the parts of their ` · ` list that hold a CJK character (`MapWorld.latin`); strings in code read `zh ? "中文 ENGLISH" : "ENGLISH"`. Texts drawn every frame are built in `MapRenderer.refreshLabels` (`signText`, `areaSub`), which runs again when the language changes.
+
+  | Place | Chinese (as before; English drew this too) | English now |
+  |---|---|---|
+  | Hub | `SINGLES` / `单曲`, `MAIN` / `主线`, `COLLAB` / `联动`; `ALL SONGS` over `所有曲目`; the mode toggle's `故事模式 · 点一下切换` / `章节模式 · 点一下切换` | the English names alone; `ALL SONGS` alone, centred; `TAP TO SWITCH` |
+  | Levels | titles and chapter holes with their Chinese line (`浅滩`, `第三章`); area names with theirs (`回声谷`) and the sub `SIDE · 支线` under it | the English lines; the sub as `SIDE`, on the Chinese name's line (y − 22) |
+  | Edge signs | `ECHO VALLEY 回声谷 · 支线` | `ECHO VALLEY` |
+  | Fall flash | `01 SHORELINE  浅滩`, `第 1 层 · LEVEL 1` | `01 SHORELINE`, `LEVEL 1` |
+  | Tips | `未开放 SEALED · 敬请期待 COMING SOON`, `敬请期待 · COMING SOON`, `未解锁 LOCKED · 先通关 X 才能打开`, `剧情待定 · STORY COMING SOON` | `SEALED · COMING SOON`, `COMING SOON`, `LOCKED · CLEAR X FIRST`, `STORY COMING SOON` |
+  | Return | `首次通关 FIRST CLEAR · S`; the toast `新解锁 n 首 · n UNLOCKED` | `FIRST CLEAR · S`; `n UNLOCKED` |
+  | Story card | `STORY 01 · 2 MIN · 剧情`, `标题待定  TITLE TBD`, `pagesZh`, `DONE · 完成` | `STORY 01 · 2 MIN`, `TITLE TBD`, `pages` (no fall-back to `pagesZh`; `……` without them), `DONE` |
+  | Song card header | `SINGLES · 单曲`, `01 · SHORELINE · 浅滩` | `SINGLES`, `01 · SHORELINE` (`MapWorld.cardHeaderEn`) |
+  | Sort panel | `排序 SORT`, `顺序 ORDER`, `筛选 FILTER`, `默认 DEFAULT` … `最近 RECENT` | `SORT`, `ORDER`, `FILTER`, `DEFAULT` … `RECENT` (relabelled by `TextChip.setLabel`) |
+
+  The one exception is the language picker's `中文` in Settings, so that an English screen still shows the way back. Player names and song titles show as written.
+- **ALL SONGS without the pack box**: the box (ALL and the pack cells, §24.24) is gone with its taps, drag and saved choice (`GridPage.Listener`, `MapWorld.GridPack` and `packs` removed). The grid shows the songs of every pack in `all.json` (hidden secret packs left out), each once, in the SORT order. Its top is where the box's top was (blueprint y 146, 24 under the player frame, `GridPage.gridTop`): the first row's dashes 22 under it, the clip at it (none since 16:37, §24.36), the scroll bar's track y 168–1062. `Profile.gridPacksOff` is unused (kept so that older saves load).
+
+### 24.29 VISUAL HIT POINT, a 12-group preview round, the preview's score on phones, a larger player frame and shell capsule (Kelvin 2026-10-20 03:20–03:38)
+Asked at 03:20, 「FC / AR指示切换的频率太慢了。预览部分每12组键一个循环，每三组单单双循环，每次都是第5组爆echo，第9组爆miss。然后手机上的实时预览分数位置不对。最后在视觉里面加一个功能：目押校准，按px来，指的是tap和hold底部按键中线（矩形横的对称轴）在判定时距离判定线的距离。目前是按键下边缘碰到判定线就判定，但有些人目押的时候习惯等判定线横穿音符的时候判定，就会出现眼耳不协调。加在游戏画面预览之前，和谱面延时类似的一个结构，下面的校准会单独弹出来一个界面」; at 03:26, with a 16:10 map marked with two green boxes, 「然后名字+深度框大一点，现在特别小的名字和低的depth就在角落缩成一团了，参考我给你的图片的绿框大小」; at 03:38, 「然后贝壳就不要再包括通往存档的跳转了」.
+
+- **VISUAL HIT POINT** / 目押校准: the first row of VISUAL (§9.2), how every note is drawn by it (§5.8), and its calibration screen behind CALIBRATE… (§9.7).
+- **The preview's round**: 12 groups, single, single, double, four times; group 5 an ECHO, group 9 two LOSTs, so the FC / AR colour goes light blue → purple → white every 7.2 s (§9.3).
+- **The preview's score on phones**: the preview's HUD corners no longer take the device's cutout insets or EXTRA EDGE PADDING (§9.3).
+- **Map player frame** (`MapHud.Badge`, × UI scale): 160 high (84 before) with its top at the safe top (it was centred on the Settings row), at least 460 wide (`MapStyle.FRAME_MIN_W`) or as wide as its text: avatar 114 centred 80 from its left; the name UI_BOLD cap 35 from x 163, its baseline 7 over the centre, shrinking past 560; `DEPTH` cap 21 `ink2` and the depth NUMBER cap 27, 16 apart, baseline 42 under the centre; right padding 40, radius 26. On 16:10 that is x 24–484 and 24–184 from the top, about Kelvin's box (x 8–476, y 14–178). The ALL SONGS grid starts 24 under it (`MapHud.frameBottom`).
+- **Map shell capsule** (`MapHud.ShellCapsule`): 88 high (44 before), at least 200 wide (`CAPSULE_MIN_W`), the shell icon 45 and the count NUMBER cap 35 centred in it, still 24 left of Settings (or the mode toggle) on its row; about Kelvin's box (214 × 96 at x 1578–1792). Since 03:38 it is not a control: no tap, no press tint; only the player frame opens the Profile.
+- Not changed: the result screen's player frame and capsule (§24.19), and the capsule's tap there (shells breakdown).
+
+### 24.30 The HUD score and accuracy kept; the pause control centred in the top band (Kelvin 2026-10-20 05:00–05:31)
+Asked at 05:00, 「acc的显示指标干脆不要再出现了（计分还是要），现在除了打歌的时候有其他时候都没了。把分数可以再放大一点。」, built and delivered (no accuracy on the HUD or in the GAMEPLAY VISUALS preview, the score at cap 40). Then at 05:25, 「如果是autoplay，autoplay标识改到combo那里，淡绿色标出来，然后分数还要再往下移动一点吗，再放大一点，高度要接近整个上沿，始终靠左角落居中。暂停键也要剧中一点，始终靠右角落并居中于上沿。这种属于小改动，直接修改就行了」; at 05:27, 「我想了想还是改回原来那样的acc和autoplay的位置吧。因为acc还是有用的，能帮助玩家提前判断自己的情况」; and at 05:31, 「分数还是改回原样，就是说原来的分数/acc排版不要动了，autoplay排版也不要动了。暂停键还是改」.
+
+- **Score, accuracy and AUTOPLAY as before 05:00** (§5.3; until 05:56, §24.31): the score NUMBER 32 (80 % of 40), the accuracy under it at `max(19.2·k, 20)`, `AUTOPLAY` in its place after an autoplay run. The GAMEPLAY VISUALS preview shows the score and the accuracy again (§9.3), and the tutorial's tour says `SCORE & ACCURACY · TOP LEFT` / 分数与准确率 · 左上 again (§10.2).
+- **Pause control** (`PauseControl.layout`, §5.3): still in the right corner (x unchanged); its centre is now halfway between the top edge and the default sky line, so the band above the sky line has the ring in its middle: 16:9 and phones 1026 (band 1080–972), 16:10 1080 (1140–1020), 4:3 1188 (1260–1116). It was 50·k under the top edge before (1030, 1090, 1210; 1022.5 on a phone at k 1.15). The ring's outer edge keeps 10 clear of the top edge, under the progress hairline (`TOP_CLEAR`), which only a large EXTRA EDGE PADDING reaches (48 at 16:9: 988.5 instead of 1002). The touch box still holds the ring plus 8 and reaches the screen edges, and the tour's pause label follows the icon.
+
+### 24.31 No accuracy after all; the score at full size, a fixed distance from the left edge; AUTOPLAY in the middle (Kelvin 2026-10-20 05:56–05:57)
+Asked at 05:56, 「还是去掉准确率吧。改回原来那版大一点的分数。分数始终距离屏幕左侧一个固定距离」, and at 05:57, 「然后autoplay放到中间。」
+
+- **No accuracy** on the HUD or in the GAMEPLAY VISUALS preview, as at 05:00 (§9.3); the tutorial's tour says `SCORE · TOP LEFT` / 分数 · 左上 (§10.2). The accuracy still counts in the score, its breakdown on the result screen, records and ratings.
+- **The score** is NUMBER cap 40 × k again (the 05:00 size; until 06:27, §24.32), its cap top at the safe top as before. Its left edge is 24 from the visible left edge plus the Settings edge padding (`SCORE_LEFT`), without the device's cutout inset, so it keeps the same distance from the screen's left edge on every screen: on a phone with a 110 px cutout inset on the left it moved from 134 to 24. The live preview's score was already 24 from its corner (§9.3). The difficulty chip and title at the bottom-left, the time and the pause control still keep clear of a cutout.
+- **AUTOPLAY** is no longer under the score: in an autoplay run the label under the combo reads `AUTOPLAY` in `auto` light green (UI_LABEL 20, α .70) instead of `COMBO`, from the first frame of the run, with or without a combo (§5.3). The score keeps its `auto` tint.
+
+### 24.32 The score sized by the top band: 0.15 / 0.7 / 0.15 (Kelvin 2026-10-20 06:26–06:27)
+Asked at 06:26, 「分数还要往下移动一点，16：10的还是太高了」, then at 06:27, 「上沿->分数上沿->分数下沿->上判定线default位置的三短距离比例为0.15，0.7，0.15」.
+
+- **The top band** runs from the top edge as the pause control has it (the visible top less the cutout inset and EXTRA EDGE PADDING; in the live preview the screen's own top) down to the default sky line, a tenth of the world height under the visible top (`PauseControl.sky()`). It splits 0.15 above the score's cap, 0.7 for the cap and 0.15 under it (`GameplayHud.SCORE_BAND_TOP`, `SCORE_BAND_CAP`), so the score is centred on the pause control's height and its size follows the screen's shape: cap 75.6 at 16:9 and 20:9 (band 108), 84 at 16:10 (band 120), 100.8 at 4:3 (band 144), whatever the UI scale, never under `Ui.minEssentialCap()`. Before, it was NUMBER 40 × k with its cap top 24 under the top edge (§24.31): 16 higher than now at 16:10.
+- **The left edge** stays 24 from the screen's left edge plus EXTRA EDGE PADDING (§24.31).
+- **The time and the chip constant** keep the NUMBER raster at the §5.3 score cap 40 × k (`numRaster()`); the score is drawn from a raster at its own cap, prewarmed with the others, so the small text is not drawn shrunk from the large one (§14).
+
+### 24.33 The top band split 0.3 / 0.4 / 0.3 (Kelvin 2026-10-20 07:01)
+Asked at 07:01, on the 0.7 cap of §24.32: 「太大了太大了！改回0.3+0.4+0.3」.
+
+- **The top band** of §24.32 now splits 0.3 above the score's cap, 0.4 for the cap and 0.3 under it (`GameplayHud.SCORE_BAND_TOP`, `SCORE_BAND_CAP`): cap 43.2 at 16:9 and 20:9, 48 at 16:10, 57.6 at 4:3 (75.6, 84 and 100.8 from 06:27). The split is still even above and under, so the score stays centred on the pause control's height and only its size changes; at 16:9 its cap top moves from 1063.8 down to 1047.6.
+- **The left edge, the live preview and the rasters** stay as in §24.32.
+
+### 24.34 The map's player block without a frame (Kelvin 2026-10-20 13:22–14:10)
+Asked at 13:22: 「个人profile的那个稍微高了一点，以及观感不佳试着重新设计一下，我始终对这个细节不满意」, and handed to the design thread at 13:24. It drew four plans after Kelvin's four references (13:38), then a fifth after 「方案3的圆形头像框加在方案2里吧，或者想办法把2，3结合一下」 (14:07), which Kelvin chose at 14:10. Measures below are × UI scale and at 16:10 (y from the top).
+
+- **No panel** (`MapHud.Badge`): the block is 100 high (`MapStyle.FRAME_H`; the frame of §24.29 was 160) with its top on the shell capsule's top (36) and its left edge 12 further in than the frame's (36). It is anchored to the screen's left edge, 24 plus EXTRA EDGE PADDING plus 12, so a cutout no longer pushes it in (Kelvin 14:39: 「手机20：9的往左侧移动一点，锚定左侧屏幕边缘」); the capsule and Settings keep the safe right edge.
+- **Avatar**: a disc of radius 50 (`AV_R`, fill #05091C) with a white ring 3 wide at radius 47 (alpha 0.92) and a soft shadow 3 under it; the avatar, 58 wide (`AV_ART`), sits 1 under the disc's centre.
+- **Name**: UI_BOLD cap 31, 118 from the block's left edge, baseline 42 under its top, over a soft shadow about 2 under it; at most 560 wide (shrinking to 0.8 as before) and never within 24 of the capsule.
+- **Depth tag**: a hexagon pointed at both ends (tips 15 deep) from 116, 42 high with its bottom on the block's, fill #080D26 at 0.9, a 1.6 cyan edge (#38B6FF, 0.9) and a shadow 3 under it. Inside, `DEPTH` (UI cap 15, tracking 0.12 of the font size, INK2) and the depth (NUMBER cap 24, INK1) share a baseline 91 under the block's top, 10 apart, with 10 of padding inside each tip; the tag grows with the number.
+- **Tap**: only the avatar opens Profile (Kelvin 14:40: 「然后现在就只保留点击头像进入profile界面」), a circle at least a touch target across; a touch on the name or the tag reaches the map. The block's bounds, from the avatar to the end of the name or the tag, still fade the map's labels under it.
+- **ALL SONGS** still starts 24 under the block, so its grid top moves up from 208 to 160.
+- **New helpers**: `Draw.convexFill` and `Draw.convexStroke` (anti-aliased convex polygons, feathered over one pixel like `ringArc`) and `MapRenderer.uiTracked` (UI text with tracking).
+- **Not changed**: the result screen's player frame and capsule (`CornerHud`, §24.19), the map's shell capsule, Settings and the other map controls.
+
+### 24.35 The map's shell capsule beside the depth tag, the depth larger, a band under the name, a larger avatar (Kelvin 2026-10-20 15:10–16:27)
+Asked at 15:10 with a phone screenshot: 「我感觉贝壳有点太大了，喧宾夺主了，我觉得深度才应该有那么大，但我不想把深度单独放出来，除非你有更好的设计。反正贝壳肯定是要小一点」. After shots of three depth sizes, at 15:36: 「之前的号方案的那种光带加在名字上吧，然后把贝壳移动到depth旁边」 and 「用最下面一版的深度大小我看看」. At 15:46: 「头像圈再放大一点，直径跟名字区域+深度高度加在一起相等」 and the depth number 「稍微小一点」. At 16:05: 「把头像圈直径扩大1.5倍我看看」, and at 16:27, after the full-screen shot, 「可以，推送吧」. Measures below are × UI scale and at 16:10.
+
+- **Depth tag** (`MapHud.Badge`): 62 high (42 before), tips 22 deep (15), 14 of padding (10); `DEPTH` UI cap 17 (15) and the depth NUMBER cap 36 (24; 40 at 15:36, a little smaller at 15:46), centred in the tag on a baseline 87 under the column's top (see Column).
+- **Name**: UI_BOLD cap 24 (31) on a baseline 29 under the column's top (42 under the block's top before).
+- **Name band** (the band of the design thread's plans 3 and 6): navy #080D26 at 0.84 from the avatar's centre (the disc covers its start), 0 to 36 under the column's top; solid to 0.6 of the name's width, then fading out to nothing 140 past the name's end, and never within 24 of Settings or the mode toggle.
+- **Shell capsule** (`MapHud.ShellCapsule`): 16 right of the depth tag's right tip, centred on the tag, 46 high (88) and at least 110 wide (200); the shell icon 26 and the count NUMBER cap 22 (45 and 35), paddings 14 / 7 / 16. It no longer sits left of Settings, so the top right holds only Settings (and the hub's mode toggle), and the name may run up to 24 short of them.
+- **Avatar**: at 15:46 the white ring's outer edge went from 97 to 100 across, exactly the name band's top to the depth tag's bottom; at 16:05 the circle grew 1.5 times to 150 across: the disc's radius 75 (50), the white ring's 73.5 (47) at width 3, its outer edge the disc's, and the avatar inside it 90 (58).
+- **Column**: the name band and the depth tag, 100 high together and unchanged in size, sit centred against the circle, their top 25 under the block's top (`COL_Y`, `COL_H`); the name starts at 168 (118) and the tag's left tip at 166 (116), 50 further right with the wider circle.
+- **Block**: its top is the top of Settings (still 36 at 16:10), no longer the capsule's top; it is 150 high (100, `MapStyle.FRAME_H`), so ALL SONGS, which starts under it, starts 50 lower.
+- **Not changed**: the avatar-only tap, the capsule's lack of a tap and the result screen's `CornerHud`.
+
+### 24.36 ALL SONGS without a hard top, the name higher and lined up with the depth tag, a deeper band (Kelvin 2026-10-20 16:37–16:39)
+Asked at 16:37 with a screenshot of ALL SONGS scrolled down: 「这个顶上不要做成有边界的。然后玩家名称稍微往上挪一点，现在离depth太近了」, and at 16:39: 「然后那个banner稍微深一点，名字左对齐depth六边形左端点」. Measures below are × UI scale and at 16:10.
+
+- **ALL SONGS top** (`GridPage`): nothing clips the grid at its top any more (a straight line 24 under the player block cut it before); it scrolls on under the player block, Settings and the top of the screen as a map does. The fade above the lens row is unchanged. A song showing beside or under the player block takes a tap (`inBand` keeps only the faded bottom), after the HUD's own controls. `reveal` still brings the selected song and its labels below the block (`gridTop`), and the scroll bar is unchanged.
+- **Name** (`MapHud.Badge`): its baseline 21 under the column's top (29), its band moving with it, −8 to 28 (0 to 36), so 10 lie between the band and the depth tag (2).
+- **Name's left**: 165 (168), so that its first stroke lines up with the depth tag's left tip at 166 (the glyphs carry about 1 of side bearing).
+- **Band**: alpha 0.95 (0.84).
+- **Not changed**: the avatar, the depth tag, the shell capsule and the result screen's `CornerHud`.
+
+### 24.37 The map's player block without the DEPTH label, at 75% (Kelvin 2026-10-20 17:34)
+Asked at 17:34 in the design thread: 「depth那个字不要了，然后整体等比例缩小到原来的75%」. Measures below are × UI scale and at 16:10.
+
+- **Depth tag** (`MapHud.Badge`): only the number, e.g. `-2,211 m`, in both languages. It starts where the DEPTH label started (a tip and a padding in from the left tip), and the tag is the tips, the paddings and the number wide, so it is narrower and the shell capsule beside it moves left with it (a fixed room with the number centred since §24.38). `MapRenderer.uiTracked`, which only drew that label, is gone.
+- **Scale** (`MapHud.BLOCK_K` 0.75): the block and the capsule are drawn at 0.75 of their measures (§24.34–§24.36): the circle 112.5 across (150), the avatar 67.5 (90), the name's cap 18 (24) and its band, the tag 46.5 high (62) with the number's cap 27 (36), the capsule 34.5 high (46) and at least 82.5 wide (110) with the count's cap 16.5 (22), and every gap, offset and shadow between them; `FRAME_H` is drawn as 112.5. The caps go through `MapUi.cap` at their scaled size, so on the smallest screens the name and the count keep their legible minimums.
+- **Not changed**: the block's top left corner (`BLOCK_IN` in from the screen's left margin, its top at the top of Settings), the name's room up to 24 short of Settings and `NAME_MAX`, the 24 between the block and ALL SONGS (so the grid starts 37.5 higher), the avatar-only tap and the result screen's `CornerHud`.
+
+### 24.38 The depth tag keeps room for a minus sign and five digits, the number centred (Kelvin 2026-10-20 17:58)
+Asked at 17:58: 「预留5位数的空间加一个负号的空间啊，然后预留了空间以后，如果没有填满数字就剧中」.
+
+- **Room** (`MapHud.depthRoomU`): the tag is the tips, the paddings and the width of `-88,888 m` in the NUMBER font's widest digit (the grouping comma and the unit included), whatever the depth, so it and the shell capsule beside it no longer move as the depth changes. A longer number (six digits) still widens the tag (`tagW` takes the larger).
+- **Number**: centred between the tips (`Badge.numberX` is the tag's centre, drawn `Align.center`), so `-2,211 m`, `-36 m` and `0 m` sit in the middle and a five-digit depth about fills the room.
+
+### 24.39 ALL SONGS: the player block over the songs, the card through a rise (Kelvin 2026-10-20 18:45)
+Asked at 18:45: 「1. 全部歌曲界面歌曲名字的显示图层高于profile，我要profile的图层最大。2. 全部歌曲上浮的过程中侧板会收起来。我要上浮的时候侧板也保持不动。」
+
+- **Layers** (`MapScreen.draw`): on ALL SONGS the grid's UI and NUMBER text (titles, scores, constants: `MapRenderer.drawTextUi`, `GridPage.drawUi`, `MapRenderer.drawTextNumbers`) goes down right after the grid's shapes, before the HUD's atlas phase, so the player block (avatar, name and band, depth tag, shell capsule) covers the songs scrolled under it (they slide up to the top of the screen since §24.36). That is two more texture switches on that page; the maps keep the old order, their labels fading out under the block.
+- **Rise** (`MapScreen.goTo`, `enter`): a rise from ALL SONGS no longer closes the card as it starts. The card stays where it is (input is locked while the transition runs; the preview dwell stops and the menu music comes back up as when it closes) and is snapped closed, its jacket released, at the swap, when the level above is entered. Every other way out still closes the card first.
+
+### 24.40 Result screen: the depth rolls to its new value, the shells bubble merges into the capsule (Kelvin 2026-10-20 18:45)
+> Since Kelvin 2026-10-20 19:45 the player frame is the map's block and the gain sits in its own pointed frame; the tag, not the line, grows (1.3×): §24.41.
+
+Asked at 18:45: 「如果说深度值下降了，就显示旧的深度值，右下角浮现这次下降了多少，然后滚动显示到新的深度值。整个过程大概持续2.5秒，要引起玩家的注意。贝壳就普通一点，如果深度值更新了就等深度值完成再开始。就只是在左侧浮现一个加多少的贝壳泡，然后和贝壳那个东西合并，像两个水滴合并一样，再显示新的值。」 Measures below are × UI scale and at 16:10; the frame and the capsule keep their look (§24.19).
+
+- **Depth** (phase D, `Choreo.DEPTH_T` 3.20, `DEPTH_D` 2.50; only for a recorded run that went deeper): the old depth shows; the line (number, unit and gain) grows to 1.7× (`CornerHud.DEPTH_K`, `pow3Out` over 0.35 s) about a pivot 0.35 of the cap above its baseline (`PIVOT`, so it grows up and stays inside the panel), in the layer accent's glow, with an accent ring; `▼ 40` (RESONANCE, cap 15) floats up into its lower right from 0.25 s (0.45 s, 3 under the baseline at rest); from 0.70 s the digits roll as an odometer to the new depth (`pow3` over 1.30 s; the units turn with the fraction, a column turns only while the one on its right goes 9 → 0, each cell cut to the line by `TextQueue.cellClipped`, a new leading digit rolls in and the minus sign moves with it) while bubbles rise from the number; it lands with a white flash (0.35 s), a 0.12 bump and a white ring, and shrinks back from 2.05 s (`sine`). The gain stays. When the scaled line would not fit, the panel stretches with it (a short name) and comes back.
+- **Shells** (phase E, `SHELLS_D` 1.30): after phase D when it runs, else at `SHELLS_T` 3.40. A `+127` bubble (NUMBER 17 on the capsule's fill) rises 10 into place 22 left of the capsule (0.30 s, pop), is drawn in from 0.45 s (`pow2In` over 0.40 s) and shrinks as it enters; within 12 of the capsule a neck grows between their ends (`CornerHud.neck`: 14 slices, waist up to 0.92 of the smaller radius) so the two read as one drop. All three share one opaque fill (`SHELL_CAPSULE` mixed 0.16 toward gold), so no seam shows. Then the capsule wobbles (damped, 0.6 s), its left end flashes gold (0.5 s) and the count rolls on (`pow3Out` over 0.40 s, gold toward white). The capsule no longer shows `+N` beside the count.
+- **Reduced motion**: no scale, roll, rings, wobble or pop; the depth counts on to the new value in place.
+- Buttons follow the last phase as before (`Choreo.lastEnd`); a skip runs these phases fast like the rest.
+
+### 24.41 Result screen: the map's player block, the gain in a pointed frame (Kelvin 2026-10-20 19:45)
+Asked at 19:45 with an Arcaea result screen (the potential in a diamond, its change in a larger diamond frame beside it): 「depth不要出现了，就和之前那样的六边形架构啊，然后出现的下降也是有一个六边形外框。你看arcaea是怎么做的，原来的是菱形，后面变动的外框也是菱形。我们不要做的像arcaea那么大但是思路是一样的。然后点一下右上角的贝壳还是可以弹出来这次加的细则」 Measures at 16:10.
+
+- **Block**: the panel with `DEPTH -2,698 m` (§24.19) gives way to the map's player block (§24.34–§24.38; `MapHud`'s measures copied into `CornerHud`): the avatar in a navy disc with a white ring and a soft shadow, the name (UI_BOLD) on its fading navy band with a soft shadow, and under it the depth in a tag pointed at both ends (navy, cyan edge) with room for `-88,888 m`, the number and its unit centred; no DEPTH label. It is drawn at 2/3 of the block's full measures (the map's at 3/4): 100 high from y 32 to 132 (`ResultLayout.frameH` 100 and `frameY` at 132; a panel 84 high from 40 before), centred on the capsule's 82 and 8 clear of the title band, its left 12 in from the safe left as on the map. Caps: name 16, depth 24.
+- **Gain**: `▼ 40` (RESONANCE, cap 16) sits in its own smaller pointed frame (46 high to the tag's 62; navy at 0.9, a RESONANCE edge, a shadow), its left tip 10 under the tag's right end and its centre 18 under the tag's, so it shows at the tag's lower right, tucked under it as Arcaea's change frame is under its potential, but smaller than the tag (Arcaea's is larger). It floats up 10 into place from 0.25 s as before and stays.
+- **Emphasis**: the whole tag, with the gain's frame, grows to 1.3× about its left tip (`CornerHud.DEPTH_K`; the line grew 1.7×) in the accent glow, with the rings centred on the tag; its edge brightens toward white while it is up and flashes as the number lands (bump 0.08). The digits roll inside it as before, in the final value's cells.
+- **Unchanged**: the timings (§24.40), the shells bubble and capsule and the taps: the block opens the depth breakdown and, once the screen is idle, the capsule opens this run's shells breakdown (`基础`, `新纪录`, `今日首次下潜`, `合计`).
 
 ## Appendix A: Contract additions requested from FOUNDATION
 

@@ -44,7 +44,10 @@ public class IntroductionScreen extends GameplayScreen {
     public static final float SKIP_DELAY_SEC = 10f;
     private static final float SKIP_W = 264f;
     private static final float SKIP_H = 56f;
-    /** Reference y of the SKIP pill's centre: the strip under the bottom judgement line (ref 120; Kelvin 10-12 22:04). */
+    /**
+     * Reference y of the SKIP pill's centre: the middle of the strip under the bottom judgement line (ref 120 since
+     * 2026-10-19 14:55; Kelvin 10-12 22:04).
+     */
     private static final float SKIP_CY = 60f;
     private static final String[] SKIP_LABEL = GameplayHud.letters("HOLD TO SKIP");
 
@@ -85,8 +88,8 @@ public class IntroductionScreen extends GameplayScreen {
     private static final int FALL_LANE = -4;
     private static final int RISE_LANE = 4;
     private static final float FALL_RISE_ALPHA = 0.45f;
-    /** Approach distance of the ghost notes (the chart's default approach: 2 beats × 486 units). */
-    private static final float FALL_RISE_UNITS = 972f;
+    /** Approach distance of the ghost notes (the chart's default approach: 2 beats × 540 units). */
+    private static final float FALL_RISE_UNITS = 1080f;
     /** Stroke of the closed lane's outline. */
     private static final float HINT_STROKE = 3f;
 
@@ -408,7 +411,7 @@ public class IntroductionScreen extends GameplayScreen {
                 // the design's offset clears the T4 wave crest (NoteShapes.T4_REACH) at note size 1; larger notes
                 // raise the crest, and the badge rises with it
                 float u = noteDemoHeight() / NoteRenderer.NOTE_H;
-                return ground + Field.dist(pos + g.y()) + Math.max(0f, u - 1f) * NoteShapes.T4_REACH;
+                return ground + Field.dist(pos + g.y()) - noteHitShift() + Math.max(0f, u - 1f) * NoteShapes.T4_REACH;
             }
             default:
                 return Field.y(g.y());
@@ -417,7 +420,7 @@ public class IntroductionScreen extends GameplayScreen {
 
     /**
      * Writes the bounds {x0, y0, x1, y1} a tour label is placed from into {@code out}: the corner element
-     * {@link GameplayHud#element} names, as laid out this frame (HUD_SCORE score + accuracy, HUD_PAUSE the icon,
+     * {@link GameplayHud#element} names, as laid out this frame (HUD_SCORE the score, HUD_PAUSE the icon,
      * HUD_CHIP chip + title, HUD_TIME the time). The pause icon's bottom drops to its touch box's bottom, so the label
      * stays off the box.
      *

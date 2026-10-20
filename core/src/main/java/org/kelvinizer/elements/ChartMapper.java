@@ -27,8 +27,24 @@ import java.util.regex.Pattern;
 /**
  * 谱面的读取和写出：解析 v2 格式，并把 v1 谱面精确转换成 v2；修正或丢弃的内容记入加载报告。
  *
- * <p>Loads (and writes) charts: format v2 parsing and the exact v1 → v2 conversion of
- * ARCHITECTURE §13.3. Thread-safe; {@code Main} calls it on the chart loader thread.
+ * <p>Loads (and writes) charts: format v4 parsing, the exact v1 → v2 conversion of
+ * ARCHITECTURE §13.3, the v2 → v3 change of frame and the v3 → v4 move of the lines. Thread-safe; {@code Main}
+ * calls it on the chart loader thread.
+ *
+ * <p><b>Format v3</b> ({@code "formatVersion": 3}, Kelvin 2026-10-19 03:51: 「坐标系我们现在修改为1920*1200」) is
+ * format v2 with every position in the 1920 × 1200 reference frame instead of 1920 × 1080. Format v1 and v2 charts
+ * are read in the old frame and their y values (line heights and their events, note distances and tail lengths
+ * with their events, pivot y) are multiplied by 1200 / 1080 on load ({@link #fromFrame1080}), so they look and
+ * play exactly as before; x values (lane widths, camera frame, pivot x) keep their numbers.
+ *
+ * <p><b>Format v4</b> ({@code "formatVersion": 4}, Kelvin 2026-10-19 14:55: 「我觉得换成1080/120」) is format v3 with
+ * the default judgement lines at 1080 / 120 instead of 1066.67 / 133.33. Older charts are moved on load
+ * ({@link #toLines1080}): line heights and their events are stretched about the frame's centre y 600 by 36 / 35, the
+ * gap between the lines (960 over 933.33), and rounded to 0.001 ({@link #toV4Line}: 1066.67 → 1080, 133.33 → 120).
+ * Every other value keeps its number: note distances, tail lengths and pivots are measured from the line, so notes
+ * still reach the lines on their beats, and the default fall stays 1080 over 2 beats (Kelvin 15:19:
+ * 「默认下落改为两拍1080的距离」). The judgement zone stays ±480 about each line, so the two zones meet at the
+ * centre. The writer always writes v4.
  *
  * <p>Parsing uses the Jackson streaming API (no reflection, so it is ProGuard-safe and fast).
  * Unknown keys are skipped, so stale keys in the shipped files ({@code combo}, {@code score},
@@ -37,7 +53,7 @@ import java.util.regex.Pattern;
  * <p><b>Format v2</b> ({@code "formatVersion": 2}): {@code lanes} (absent → ids −4..−1, 1..4,
  * width 240, opacity 1), notes with {@code type} tap / hold / mine / universal
  * (case-insensitive), {@code line} lower (default) / upper, {@code lane} for lane notes, and
- * {@code LineEvents} (absent lines → 960 / 120). A note on an
+ * {@code LineEvents} (absent lines → 1080 / 120 in v4, 1066.67 / 133.33 in v3, 960 / 120 in v2). A note on an
  * undeclared lane adds that lane with defaults; lane 0 is rejected unless the chart inserts it. A
  * lane's optional {@code insert} object (owner 2026-10-15, CHART_FORMAT §3.6) inserts it during the
  * song ({@link Lane#inserted()}), its optional {@code delete} object (owner 2026-10-17, §3.7) deletes
@@ -124,8 +140,10 @@ import java.util.regex.Pattern;
 public final class ChartMapper {
     /** Raw lane count of format v1 (0..9 lower line, 10..19 upper line); used by the converter only. */
     public static final int LANES = 20;
-    /** Chart format this loader writes and reads natively. */
-    public static final int FORMAT_VERSION = 2;
+    /** Chart format this loader writes and reads natively: v4, the 1920 × 1200 frame with the lines at 1080 / 120. */
+    public static final int FORMAT_VERSION = 4;
+    /** Format v4's stretch of the line heights about y 600: the gap between the lines, 960 / 933.33. */
+    private static final double V4_STRETCH = 36.0 / 35.0;
     /** Default v2 lane ids when a chart declares no {@code lanes}. */
     private static final int[] DEFAULT_LANE_IDS = {-4, -3, -2, -1, 1, 2, 3, 4};
     /** Lanes of a format v1 chart (±1..±5). */
@@ -226,10 +244,12 @@ public final class ChartMapper {
     private static Chart build(RawChart raw, String source) throws IOException {
         Chart.LoadReport report = new Chart.LoadReport();
         boolean v1 = raw.formatVersion < 2;
-        report.sourceFormat = v1 ? 1 : 2;
+        report.sourceFormat = v1 ? 1 : Math.min(raw.formatVersion, FORMAT_VERSION);
         if (raw.formatVersion > FORMAT_VERSION) {
             report.messages.add("format " + raw.formatVersion + " read as " + FORMAT_VERSION);
         }
+        if (raw.formatVersion < 3) toFrame1200(raw);
+        if (raw.formatVersion < 4) toLines1080(raw);
         float[][] tempo = tempoMap(raw.bpmList, report);
         float bpm = raw.bpm;
         if (!(bpm > 0f) || bpm == Float.POSITIVE_INFINITY) {
@@ -613,6 +633,80 @@ public final class ChartMapper {
             case TAP: return 1;
             default: return 0;
         }
+    }
+
+    /**
+     * Scales a format v1 / v2 chart's y values from the 1920 × 1080 frame to the 1920 × 1200 frame: the line
+     * heights and their events, every note's distances ({@code MovementEvents}), tail length and
+     * {@code HeightEvents}, and pivot y. Absent values (NaN) stay absent, so they take the v3 defaults.
+     */
+    private static void toFrame1200(RawChart raw) {
+        RawLine l = raw.line;
+        if (l != null) {
+            l.upper = fromFrame1080(l.upper);
+            l.lower = fromFrame1080(l.lower);
+            l.upperEvents = fromFrame1080(l.upperEvents);
+            l.lowerEvents = fromFrame1080(l.lowerEvents);
+        }
+        for (RawNote r : raw.notes) {
+            r.height = fromFrame1080(r.height);
+            r.pivotY = fromFrame1080(r.pivotY);
+            r.movement = fromFrame1080(r.movement);
+            r.heights = fromFrame1080(r.heights);
+        }
+    }
+
+    /**
+     * @return a y value (position or distance) of the old 1920 × 1080 frame in the 1920 × 1200 frame:
+     *         {@code y · 1200 / 1080} (so 120 → 133.33, 960 → 1066.67, 972 → 1080)
+     */
+    public static float fromFrame1080(float y) {
+        return (float) (y * 10.0 / 9.0);
+    }
+
+    /** @return the events with both values scaled by {@link #fromFrame1080(float)} (null stays null). */
+    public static List<Events> fromFrame1080(List<Events> events) {
+        if (events == null) return null;
+        List<Events> out = new ArrayList<>(events.size());
+        for (Events e : events) {
+            out.add(e == null ? null : new Events(e.type(), e.startTime(), e.endTime(), fromFrame1080(e.initialValue()),
+                fromFrame1080(e.finalValue()), e.exponent()));
+        }
+        return out;
+    }
+
+    /**
+     * Moves a format v1–v3 chart (already in the 1200-high frame) onto the v4 lines 1080 / 120: the line heights and
+     * their events by {@link #toV4Line}. Absent values (NaN) stay absent, so they take the v4 defaults; the notes keep
+     * their numbers.
+     */
+    private static void toLines1080(RawChart raw) {
+        RawLine l = raw.line;
+        if (l == null) return;
+        l.upper = toV4Line(l.upper);
+        l.lower = toV4Line(l.lower);
+        l.upperEvents = toV4(l.upperEvents);
+        l.lowerEvents = toV4(l.lowerEvents);
+    }
+
+    /**
+     * @return a format v3 line height in format v4: {@code 600 + (y − 600) · 36/35} to 0.001, so the old lines land
+     *         exactly on 1080 and 120 (1066.67 → 1080, 133.33 → 120)
+     */
+    public static float toV4Line(float y) {
+        double cy = Params.REF_H * 0.5;
+        return (float) (Math.rint((cy + (y - cy) * V4_STRETCH) * 1e3) / 1e3);
+    }
+
+    /** @return the line events with both values moved by {@link #toV4Line} (null stays null). */
+    private static List<Events> toV4(List<Events> events) {
+        if (events == null) return null;
+        List<Events> out = new ArrayList<>(events.size());
+        for (Events e : events) {
+            out.add(e == null ? null : new Events(e.type(), e.startTime(), e.endTime(), toV4Line(e.initialValue()),
+                toV4Line(e.finalValue()), e.exponent()));
+        }
+        return out;
     }
 
     // ------------------------------------------------------------------ streaming parse

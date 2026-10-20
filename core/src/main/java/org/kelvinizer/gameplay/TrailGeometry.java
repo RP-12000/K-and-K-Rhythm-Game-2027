@@ -69,6 +69,7 @@ public final class TrailGeometry {
     private JudgementLine lines = JudgementLine.defaults();
     private boolean staticLayout = true;
     private float pastBeat = Float.NaN;
+    private float shift;
 
     /** Prepares a chart (load time). */
     public void begin(Chart chart) {
@@ -89,6 +90,11 @@ public final class TrailGeometry {
      */
     public void setEntry(EdgeEntry entry) {
         this.entry = entry;
+    }
+
+    /** Moves every copy {@code worldUnits} along its path toward its line, as {@link NoteRenderer#hitShift()} does. */
+    public void setShift(float worldUnits) {
+        shift = worldUnits;
     }
 
     /** @return true when no lane or window ever moves (the frame layout serves every moment). */
@@ -157,11 +163,11 @@ public final class TrailGeometry {
         if (level) {
             float now = distance(n, beat);
             if (hidden(now)) return false;
-            pos = Field.dist(now);
+            pos = Field.dist(now) - shift;
             lineY = liveLineY;
             tail = hold ? Field.dist(n.tailHeightAt(look(n, beat))) : 0f;
         } else {
-            pos = Field.dist(posS);
+            pos = Field.dist(posS) - shift;
             lineY = Field.y(lines.yAt(n.line(), s));
             tail = hold ? Field.dist(n.tailHeightAt(look(n, s))) : 0f;
         }

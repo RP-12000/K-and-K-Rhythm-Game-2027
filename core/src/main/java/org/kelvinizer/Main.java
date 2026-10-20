@@ -24,6 +24,7 @@ import org.kelvinizer.profile.Profile;
 import org.kelvinizer.profile.ProfileStore;
 import org.kelvinizer.profile.Settings;
 import org.kelvinizer.screens.CalibrationScreen;
+import org.kelvinizer.screens.HitPointScreen;
 import org.kelvinizer.screens.FirstRunScreen;
 import org.kelvinizer.screens.ProfileScreen;
 import org.kelvinizer.screens.ResultScreen;
@@ -98,6 +99,7 @@ public class Main extends Game implements KkServices {
     private ProfileScreen profile;
     private SettingsScreen settings;
     private CalibrationScreen calibration;
+    private HitPointScreen hitPoint;
     private VisualsScreen visuals;
     private FirstRunScreen firstRun;
 
@@ -129,8 +131,8 @@ public class Main extends Game implements KkServices {
     /**
      * HitFx's High → Low auto-drop (DESIGN §5.9), run once mid-song inside {@code hitFx.update}:
      * persists LOW for this device and matches the backdrop particles to it. It deliberately
-     * neither calls {@link #applySettings()} (which re-lays out the screen) nor toasts (the drop is
-     * silent during play; the result screen shows the notice).
+     * neither calls {@link #applySettings()} (which re-lays out the screen) nor toasts: the drop is
+     * silent, and since Kelvin 2026-10-19 02:24 the result screen no longer mentions it either.
      */
     private final Runnable particlesAutoDropped = new Runnable() {
         @Override
@@ -251,6 +253,7 @@ public class Main extends Game implements KkServices {
         disposeScreen(profile);
         disposeScreen(settings);
         disposeScreen(calibration);
+        disposeScreen(hitPoint);
         disposeScreen(visuals);
         disposeScreen(firstRun);
         if (profiles != null) profiles.dispose();
@@ -784,6 +787,12 @@ public class Main extends Game implements KkServices {
     public CalibrationScreen calibration() {
         if (calibration == null) calibration = new CalibrationScreen(this);
         return calibration;
+    }
+
+    /** VISUAL HIT POINT calibration 目押校准 (Settings → VISUAL → CALIBRATE…). */
+    public HitPointScreen hitPoint() {
+        if (hitPoint == null) hitPoint = new HitPointScreen(this);
+        return hitPoint;
     }
 
     /** GAMEPLAY VISUALS (Settings → VISUAL → ADJUST…). */

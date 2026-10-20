@@ -3,9 +3,7 @@
   "title": "ALL SONGS", "titleZh": "所有曲目", "route": "ROUTE", "routeZh": "航线",
   "parent": "hub", "depth": 30,
   "packs": [
-    {"title": "SINGLES", "titleZh": "单曲", "songs": "all"},
-    {"title": "MAIN STORY", "titleZh": "主线", "placeholders": 2},
-    {"title": "SIDE", "titleZh": "支线", "placeholders": 2},
-    {"title": "COLLAB", "titleZh": "联动", "placeholders": 2}
+    {"title": "SINGLES", "titleZh": "单曲", "level": "singles"},
+    {"title": "CHAPTER 1", "titleZh": "第一章", "level": "main_c1"}
   ]
 }

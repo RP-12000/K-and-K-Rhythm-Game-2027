@@ -14,11 +14,10 @@ import org.kelvinizer.profile.DeviceSettings;
 import org.kelvinizer.profile.Profile;
 import org.kelvinizer.profile.Settings;
 import org.kelvinizer.screens.result.Choreo;
-import org.kelvinizer.screens.result.EchoTrace;
+import org.kelvinizer.screens.result.CornerHud;
 import org.kelvinizer.screens.result.FxPool;
 import org.kelvinizer.screens.result.GradeStamp;
 import org.kelvinizer.screens.result.JacketBlock;
-import org.kelvinizer.screens.result.ProfileStrip;
 import org.kelvinizer.screens.result.ResultKit;
 import org.kelvinizer.screens.result.ResultLayout;
 import org.kelvinizer.screens.result.ResultModel;
@@ -43,19 +42,25 @@ import org.kelvinizer.ui.Ui;
 /**
  * 结算画面 DIVE LOG：ASCENT 转场盖住画面时一次算好全部数据，
  * 然后按时间线播放曲绘、分数、判定数量、评级印章、深度和贝壳变化等动画，点击可快进。
+ * 2026-10-19 起是设计串第七、八版的排版：左上玩家框（深度在里面数）、右上贝壳胶囊、标题带、16:9 大曲绘（难度块在右下角）
+ * 左下压着评级和分数，曲绘下面是连击线、早晚和判定数，右下角重开和继续，右边留给人物；比 16:8.5 宽的手机分三栏。
+ * 深度明细、贝壳明细、早晚共鸣和分数明细都是点开看（早晚偏差的柱状图 10-19 去掉了）。
  * RETRY 重开同一张谱面，CONTINUE 用 IRIS 转场回到地图。
  *
  * <p>Result screen, "DIVE LOG" (DESIGN §6, §11, §12), reached through {@code Main.showResult},
  * which calls {@link #present} while the ASCENT covers the screen.
  *
  * <p>Everything shown is derived once in {@link #present} ({@link ResultModel}); the screen then
- * plays the {@link Choreo} timeline from the moment the ASCENT starts opening (t = 0): jacket,
- * title decode, the meta line, the score decode and its landing, judgement rows, the echo
- * trace, the grade stamp slam and impact, tiles, the clear badge, the best line, the profile
- * strip with the depth (D) and shells (E) phases, the UNLOCKED beat, and the buttons.
- * Taps fast-forward then jump to the end (§6.4); idle interactions (§6.5) re-stamp, tilt the
- * jacket, expand the trace, open the shell breakdown, the score breakdown (tap the score) and the
- * EARLY / LATE RESONANCE counts (tap PERFECT), and offer the offset hint.
+ * plays the {@link Choreo} timeline from the moment the ASCENT starts opening (t = 0): the title band and the
+ * jacket, the title decode, the score decode and its landing over the jacket, the counts, the chain line and the
+ * early / late line, the grade stamp slam and impact, the best line (or the AUTOPLAY pill), the player frame and
+ * the shell capsule in the top corners with the depth (D) and shells (E) phases, the UNLOCKED beat, and the
+ * buttons. The layout is rounds 7 and 8 of the design thread (Kelvin 2026-10-19 06:28 and 15:2x, {@link
+ * ResultLayout}): no clear badge since round 8, and three columns on screens wider than 16:8.5. Taps fast-forward
+ * then jump to the end (§6.4); idle taps (§6.5) re-stamp and open the popovers: the depth breakdown (the player
+ * frame), the shell breakdown (the capsule), the score breakdown (the score) and EARLY / LATE RESONANCE (PERFECT),
+ * and the offset hint opens its sheet. The early / late line opens nothing since the echo trace card went (Kelvin
+ * 2026-10-19 17:48 「早晚的那个柱状图不要了」).
  *
  * <p>Buttons: RETRY (REPLAY for the tutorial) restarts the same chart, difficulty and autoplay
  * (Main stops the result music); CONTINUE closes an IRIS back to the map and fades the music
@@ -66,12 +71,10 @@ public class ResultScreen extends KkScreen<Main> {
     private static final int MAX_KICKS = 4;
     /** UNLOCKED alert display length (s). */
     private static final float ALERT_UNLOCK_D = 2.0f;
-    /** Baseline distance from the offset hint down to the auto-drop notice under it. */
-    private static final float NOTICE_GAP = 30f;
     // the screen is English in both languages (Kelvin 2026-10-18 16:45 「结算界面的英文也全部保留」) except the
     // RETRY / CONTINUE buttons, the chart offset sheet and the shell breakdown, which follow the language
-    // (17:22 「绿框框起来的语言还是分开吧，然后点击贝壳查看的明细也分开」), and the score breakdown and the expanded
-    // trace's PEAK / MEAN (20:34 「点一下分数弹出的细则框还是分中英文」)
+    // (17:22 「绿框框起来的语言还是分开吧，然后点击贝壳查看的明细也分开」), the score breakdown (20:34 「点一下分数
+    // 弹出的细则框还是分中英文」), and the depth breakdown like the shell one
     private static final CharSequence RETRY = Lang.of("RETRY", "重开"), REPLAY = Lang.of("REPLAY", "再玩一次");
     /** Label cap of RETRY / CONTINUE in 中文 (20:34 「下面的重开/继续字体可以做大一点」); English keeps the default. */
     private static final float ZH_BUTTON_CAP = 34f;
@@ -87,15 +90,11 @@ public class ResultScreen extends KkScreen<Main> {
     private final ResultKit kit;
     private final ScorePanel score;
     private final GradeStamp stamp;
-    private final EchoTrace trace;
-    private final ProfileStrip strip;
+    private final CornerHud hud;
     private final JacketBlock jacket;
     private final StatsBlock stats;
     private final Button retry, cont, apply, calibrate, cancel;
     private final GlitchState titleState, stampState, alertState, g3State;
-    private final Spring tilt = new Spring(Spring.Preset.BOUNCY, 0f);
-    private final Spring press = new Spring(Spring.Preset.BOUNCY, 1f);
-    private final Spring expand = new Spring(Spring.Preset.SHEET, 0f);
     private final Spring sheet = new Spring(Spring.Preset.SHEET, 0f);
     private final Spring popover = new Spring(Spring.Preset.SNAPPY, 0f);
     private final Color accent = new Color(), stampColor = new Color(), tmp = new Color(), tmp2 = new Color();
@@ -111,12 +110,17 @@ public class ResultScreen extends KkScreen<Main> {
     /** The jacket wash of the song (owned by the library). */
     private Texture aura;
     private boolean presented, reduceMotion, idleArmed, sheetOpen, popOpen, hintUsed, musicStopping;
-    /** What {@link #popOpen} shows: the shell breakdown, the score breakdown (DESIGN §18.2 [P1]) or EARLY / LATE RESONANCE beside PERFECT. */
-    private static final int POP_SHELLS = 0, POP_SCORE = 1, POP_PERFECT = 2;
-    /** Which popover {@link #popOpen} shows ({@link #POP_SHELLS}, {@link #POP_SCORE} or {@link #POP_PERFECT}). */
+    /**
+     * What {@link #popOpen} shows: the shell breakdown, the score breakdown (DESIGN §18.2 [P1]), EARLY / LATE
+     * RESONANCE beside PERFECT or the depth breakdown (round 7).
+     */
+    private static final int POP_SHELLS = 0, POP_SCORE = 1, POP_PERFECT = 2, POP_DEPTH = 3;
+    /** Which popover {@link #popOpen} shows (one of the {@code POP_} kinds). */
     private int popKind;
     /** Where the score popover points (x of the tap, clamped to the score row). */
     private float popScoreX;
+    /** Width of the depth breakdown (its longest row). */
+    private float depthPopW;
     private float nextStampBurst = -1f;
     private float restampT = -1f, duckRestoreReal = -1f, lastBubbleT = -1f;
     /** UNLOCKED alert lines: the option (or how many), and the list when there are several. */
@@ -133,8 +137,7 @@ public class ResultScreen extends KkScreen<Main> {
         kit = new ResultKit(game.draw(), game.fonts(), game.glitch());
         score = new ScorePanel(kit);
         stamp = new GradeStamp(kit);
-        trace = new EchoTrace(kit);
-        strip = new ProfileStrip(kit, game.avatars());
+        hud = new CornerHud(kit, game.avatars());
         jacket = new JacketBlock(kit);
         stats = new StatsBlock(kit);
         // RETRY / CONTINUE: bodies via drawBody, labels by the screen (shared UI_BOLD raster)
@@ -194,7 +197,6 @@ public class ResultScreen extends KkScreen<Main> {
         Profile p = game.profiles().active();
         DeviceSettings device = game.profiles().device();
         model.set(r, o, song, chapter, p, device);
-        model.fxNotice = game.hitFx().consumeAutoDropNotice(); // true once per drop: a retry won't repeat it
         Settings s = p != null ? p.settings : null;
         reduceMotion = s != null && s.reduceMotion;
         choreo.plan(model);
@@ -219,9 +221,6 @@ public class ResultScreen extends KkScreen<Main> {
         stampState.reset();
         alertState.reset();
         g3State.reset();
-        tilt.snap(0f);
-        press.snap(1f);
-        expand.snap(0f);
         sheet.snap(0f);
         popover.snap(0f);
         sheetOpen = false;
@@ -236,12 +235,10 @@ public class ResultScreen extends KkScreen<Main> {
         for (int i = 0; i < MAX_KICKS; i++) kickT[i] = -100f;
         tapPointer = -1;
         retry.setLabel(model.tutorial ? REPLAY : RETRY);
-        retry.setLabelCap(model.zh ? ZH_BUTTON_CAP : Button.LABEL_CAP);
-        cont.setLabelCap(model.zh ? ZH_BUTTON_CAP : Button.LABEL_CAP);
         retry.cancel();
         cont.cancel();
-        jacket.setJacket(song != null ? game.library().jacket(song) : null);
         aura = game.library().wash(song); // the library's 16×16 jacket wash (shared with gameplay)
+        jacket.setJacket(song != null ? game.library().jacket(song) : null, aura);
         if (!resultPageTried && s != null && s.backgroundArt) {
             resultPageTried = true;
             resultPage = game.art().acquire(RESULT_PAGE);
@@ -262,10 +259,16 @@ public class ResultScreen extends KkScreen<Main> {
     }
 
     private void relayout() {
-        layout.compute(model.hasMines ? 4 : 3);
+        layout.compute();
         jacket.measure(model, layout);
         stamp.measure(model, layout);
         stats.measure(model, layout);
+        hud.measure(model, layout);
+        // the labels shrink with the buttons (96 high on the blueprint, the standard 112 before round 7)
+        float lk = layout.contH / Button.standardHeight();
+        retry.setLabelCap((model.zh ? ZH_BUTTON_CAP : Button.LABEL_CAP) * lk);
+        cont.setLabelCap((model.zh ? ZH_BUTTON_CAP : Button.LABEL_CAP) * lk);
+        depthPopW = rowsWidth(model.depthRows, model.depthRowValues);
         prewarm();
         if (choreo.started() && t() >= Choreo.IMPACT_T && !model.tutorial) {
             game.backdrop().setFocus(layout.stampX, layout.stampY);
@@ -273,9 +276,19 @@ public class ResultScreen extends KkScreen<Main> {
         if (isShown()) anchorToasts();
     }
 
-    /** Toasts (unlocks skipped past, the applied offset) sit just above the strip, clear of the score. */
+    /** Toasts (unlocks skipped past, the applied offset) hang under the title band, clear of the score. */
     private void anchorToasts() {
-        game.toasts().setAnchorTop(layout.stripY + layout.stripH + 96f);
+        game.toasts().setAnchorTop(layout.bandY0 - 24f * layout.s);
+    }
+
+    /** Width of a breakdown popover for {@code labels} and {@code values} (UI 18 labels, NUMBER 20 values). */
+    private float rowsWidth(java.util.List<String> labels, java.util.List<String> values) {
+        float lw = 0f, vw = 0f;
+        for (int i = 0; i < labels.size(); i++) {
+            lw = Math.max(lw, kit.text.width(Fonts.Role.UI, 18f, labels.get(i)));
+            vw = Math.max(vw, kit.text.fixedWidth(20f, values.get(i)));
+        }
+        return Math.max(360f, 22f + lw + 40f + vw + 22f);
     }
 
     private float t() {
@@ -343,10 +356,9 @@ public class ResultScreen extends KkScreen<Main> {
         f.prewarm(Fonts.Role.RUBIK, 40f, Fonts.GlyphSet.FULL);
         f.prewarm(Fonts.Role.RUBIK, 48f, Fonts.GlyphSet.FULL);
         f.prewarm(Fonts.Role.UI_BOLD, Button.LABEL_CAP, Fonts.GlyphSet.FULL);
-        if (model.autoplay) f.prewarm(Fonts.Role.DISPLAY_OUTLINE, 200f, Fonts.GlyphSet.WORDS);
-        if (jacket.ghostCap() > 0f) f.prewarm(Fonts.Role.DISPLAY_OUTLINE, jacket.ghostCap(), Fonts.GlyphSet.DIGITS);
+        if (model.autoplay) f.prewarm(Fonts.Role.DISPLAY_OUTLINE, jacket.watermarkCap(), Fonts.GlyphSet.WORDS);
         if (song == null || song.jacket() == null) {
-            f.prewarm(Fonts.Role.DISPLAY_OUTLINE, layout.jacketSize * 0.22f, Fonts.GlyphSet.LOGO);
+            f.prewarm(Fonts.Role.DISPLAY_OUTLINE, JacketBlock.fallbackCap(layout), Fonts.GlyphSet.LOGO);
         }
     }
 
@@ -357,15 +369,14 @@ public class ResultScreen extends KkScreen<Main> {
      */
     private void warmText() {
         TextQueue q = kit.text;
-        q.warm(Fonts.Role.UI_LABEL, 18f, model.meta);
-        q.warm(Fonts.Role.UI_BOLD, 34f, model.title);
-        q.warm(Fonts.Role.UI, 22f, model.artist);
-        q.warm(Fonts.Role.UI_BOLD, 22f, model.chipText);
+        q.warm(Fonts.Role.UI_BOLD, jacket.titleCap(), model.title);
+        q.warm(Fonts.Role.UI, layout.artistCap, model.artist);
+        q.warm(Fonts.Role.UI_BOLD, layout.chipCap, model.chipText);
         q.warm(Fonts.Role.UI, 18f, model.hintText);
+        q.warm(Fonts.Role.UI, 18f, model.stripNote);
         q.warm(Fonts.Role.UI, 24f, model.hintQuestion);
-        if (model.fxNotice) q.warm(Fonts.Role.UI, 18f, model.fxNoticeText());
         if (model.zh) {
-            // the Chinese labels of the buttons, the offset sheet, the shell and score breakdowns and the trace
+            // the Chinese labels of the buttons, the offset sheet and the shell and score breakdowns
             q.warm(Fonts.Role.UI_BOLD, retry.labelCap(), retry.label());
             q.warm(Fonts.Role.UI_BOLD, cont.labelCap(), cont.label());
             q.warm(Fonts.Role.UI_BOLD, Button.LABEL_CAP, apply.label());
@@ -373,12 +384,12 @@ public class ResultScreen extends KkScreen<Main> {
             q.warm(Fonts.Role.UI_BOLD, Button.LABEL_CAP, cancel.label());
             q.warm(Fonts.Role.UI_LABEL, 18f, OFFSET_TITLE);
             for (int i = 0; i < model.shellRows.size(); i++) q.warm(Fonts.Role.UI, 18f, model.shellRows.get(i));
+            for (int i = 0; i < model.depthRows.size(); i++) q.warm(Fonts.Role.UI, 18f, model.depthRows.get(i));
             q.warm(Fonts.Role.UI_BOLD, 18f, SHELLS_TOTAL);
             for (CharSequence label : BREAKDOWN_LABELS) q.warm(Fonts.Role.UI, 18f, label);
             q.warm(Fonts.Role.UI_BOLD, 18f, BREAKDOWN_TOTAL);
-            trace.warm();
         }
-        strip.warm(model);
+        hud.warm(model);
         for (int i = 0; i < model.unlocks.size(); i++) q.warm(Fonts.Role.UI_LABEL, 18f, model.unlocks.get(i));
         if (model.title != null && game.fonts().needsCjk(Fonts.Role.UI_BOLD, model.title)) {
             // the title's G2 burst draws through GlitchText at its own cap
@@ -423,21 +434,16 @@ public class ResultScreen extends KkScreen<Main> {
         stamp.color(model, t, stampColor);
         accent.set(game.backdrop().accent());
         handleEvents(t);
-        // gauge bubbles while the depth counts
-        float dT = choreo.depthT();
-        if (dT >= 0f && t >= dT && t < dT + Choreo.DEPTH_D && !choreo.skipping()
-            && model.depthAfter != model.depthBefore && t - lastBubbleT > 0.07f) {
+        // bubbles off the depth while it rolls
+        if (CornerHud.rolling(choreo, t) && !choreo.skipping() && t - lastBubbleT > 0.07f) {
             lastBubbleT = t;
-            fx.bubbles(strip.markerX(), strip.markerY(), 8f, 1, accent);
+            fx.bubbles(hud.depthCenterX(), hud.depthCenterY(), 8f, 1, accent);
         }
         if (duckRestoreReal >= 0f && choreo.real() >= duckRestoreReal) {
             duckRestoreReal = -1f;
             game.audio().duckResult(1f, 0.3f);
         }
         fx.update(dt);
-        tilt.update(dt);
-        press.update(dt);
-        expand.update(dt);
         sheet.update(dt);
         popover.update(dt);
         layoutButtons(t);
@@ -487,8 +493,8 @@ public class ResultScreen extends KkScreen<Main> {
         choreo.due(Choreo.EV_SHELLS);
         if (choreo.due(Choreo.EV_UNLOCK)) {
             if (!silent) {
-                float oy = strip.lastOffset();
-                fx.burstDots(layout.gaugeX, layout.depthRight, layout.stripY + layout.stripH * 0.5f + oy, 24,
+                float m = 40f * layout.s;
+                fx.burstDots(layout.charX0 + m, layout.charX1 - m, (layout.charY0 + layout.charY1) * 0.5f, 24,
                     Theme.GOLD);
                 Haptics.heavy();
                 game.audio().duckResult(0.6f, 0.08f);
@@ -600,21 +606,23 @@ public class ResultScreen extends KkScreen<Main> {
         // shapes draw at once; text, glyph cells and images are recorded and drawn grouped by
         // texture page in flush() (DESIGN §14 draw-call budget)
         kit.text.begin();
-        jacket.drawHeader(model, layout, t, accent, 1f);
-        jacket.drawJacket(model, layout, t, tilt.value(), press.value(), accent, reduceMotion, 1f);
+        jacket.drawBand(layout, t, 1f);
+        jacket.drawJacket(model, layout, t, accent, reduceMotion, 1f);
+        jacket.drawWatermark(model, layout, t, 1f);
         jacket.drawTitle(model, layout, t, titleState, reduceMotion, 1f);
+        jacket.drawChip(model, layout, t, reduceMotion, 1f);
         score.drawScore(model, layout, t, accent, 1f);
         score.drawBest(model, layout, t, accent, 1f);
-        stats.drawRows(model, layout, t, 1f, expand.value());
-        trace.draw(model, layout, t, choreo.end(), expand.value(), accent, 1f);
+        stats.drawRows(model, layout, t, 1f);
         drawHint(t);
-        stats.drawTiles(model, layout, t, 1f);
-        stats.drawBadge(model, layout, t, 1f);
+        stats.drawAutoplay(model, layout, t, 1f);
         stamp.drawFlash(model, layout, t, 1f);
         stamp.draw(model, layout, t, stampState, restampT, 1f);
-        strip.draw(model, layout, choreo, t, time, accent, reduceMotion, 1f);
+        hud.draw(model, layout, choreo, t, time, accent, reduceMotion, 1f);
         drawButtons(t);
         kit.text.flush();
+        // a title past 50 characters scrolls inside the band
+        jacket.drawMarquee(model, layout, t, 1f);
 
         kit.additive();
         fx.draw(batch, game.draw(), 1f);
@@ -630,7 +638,7 @@ public class ResultScreen extends KkScreen<Main> {
             camera.update();
             batch.setProjectionMatrix(camera.combined);
         }
-        drawPopover(t);
+        drawPopover();
         drawSheet();
         batch.end();
     }
@@ -662,68 +670,53 @@ public class ResultScreen extends KkScreen<Main> {
     }
 
     /**
-     * The offset hint link (§6.5) and, when hit effects dropped to Low this run, the auto-drop
-     * notice (§5.9): in the hint's slot, or on the line under the link when both show. Both lines are centred on
-     * the slot, which puts them under the trace's 0-ms line (Kelvin 2026-10-18 21:56: 「就是居在那个柱状图0ms那里」;
-     * on the compact layout the slot is under the tiles).
+     * The offset hint link (§6.5) under the early / late line, left-aligned at x 96 (Kelvin 2026-10-19 06:04
+     * 「如果说average太高了就在early late avg下面显示建议调整」; the same text and style as before). Autoplay and the
+     * tutorial show their note there instead when there is no hint (the profile strip's until round 7).
      */
     private void drawHint(float t) {
         hintVisible = false;
-        boolean hint = model.hasHint && !hintUsed;
-        if (!hint && !model.fxNotice) return;
-        float start = Choreo.TRACE_T + Choreo.TRACE_D + 0.3f;
-        float a = Anim.progress(t, start, 0.3f) * (1f - Math.min(1f, Math.max(0f, expand.value()) * 2f));
+        float a = Anim.progress(t, Choreo.EL_T + Choreo.EL_D + 0.3f, 0.3f);
         if (a <= 0.01f) return;
-        float cx = layout.hintX + layout.hintMaxW * 0.5f, y = layout.hintBase;
-        if (model.fxNotice) {
-            float ny = hint ? y - NOTICE_GAP : y;
-            CharSequence notice = model.fxNoticeText();
-            // the dot and the text centred together
-            float tw = Math.min(kit.text.width(Fonts.Role.UI, 18f, notice), layout.hintMaxW - 20f);
-            float nx = cx - (20f + tw) * 0.5f;
-            game.draw().disc(nx + 5f, ny + 8f, 5f, Theme.AUTO, a);
-            kit.text.textFit(Fonts.Role.UI, 18f, notice, nx + 20f, ny, Align.left, layout.hintMaxW - 20f, 0.7f,
-                Theme.INK2, a);
+        float x = layout.hintX, y = layout.hintBase, cap = layout.hintCap;
+        if (model.hasHint && !hintUsed) {
+            float w = kit.text.textFit(Fonts.Role.UI, cap, model.hintText, x, y, Align.left, layout.hintMaxW, 0.7f,
+                accent, a);
+            game.draw().rect(x, y - layout.hintLine, w, 1.5f, accent, 0.6f * a);
+            float pad = Math.max(0f, (Ui.touchTarget() - 24f) * 0.5f);
+            hintX0 = x - 8f;
+            hintX1 = x + w + 8f;
+            hintY0 = y - 8f - pad;
+            hintY1 = y + cap + pad;
+            hintVisible = a > 0.5f;
+        } else if (!model.stripNote.isEmpty()) {
+            kit.text.textFit(Fonts.Role.UI, cap, model.stripNote, x, y, Align.left, layout.hintMaxW, 0.7f,
+                model.autoplay ? Theme.AUTO : Theme.INK2, a);
         }
-        if (!hint) return;
-        float w = kit.text.textFit(Fonts.Role.UI, 18f, model.hintText, cx, y, Align.center, layout.hintMaxW, 0.7f,
-            accent, a);
-        float x = cx - w * 0.5f;
-        game.draw().rect(x, y - 6f, w, 1.5f, accent, 0.6f * a);
-        float pad = Math.max(0f, (Ui.touchTarget() - 24f) * 0.5f);
-        hintX0 = x - 8f;
-        hintX1 = x + w + 8f;
-        hintY0 = y - 8f - pad;
-        hintY1 = y + 18f + pad;
-        hintVisible = a > 0.5f;
     }
 
     /**
-     * UNLOCKED (DESIGN §6.3, §11): an opaque toast kept inside the strip so it never covers the
-     * trace or the stats. It covers the depth block (gauge, numbers, or the strip note), which has
-     * finished counting by then, at the strip's full height, and names the avatar option the new
-     * depth unlocked (or how many, with their names under it).
+     * UNLOCKED (DESIGN §6.3, §11): an opaque alert in the middle of the character area, where it covers nothing
+     * (round 7), naming the avatar option the new depth unlocked (or how many, with their names under it).
      */
     private void drawAlerts(float t) {
         float ut = choreo.unlockT();
         if (ut < 0f || !model.unlockUp) return;
-        float oy = strip.lastOffset();
-        float cy = layout.stripY + layout.stripH * 0.5f + oy;
-        float x0 = layout.gaugeX - 24f, x1 = layout.depthRight;
-        drawAlert(UNLOCKED, 48f, unlockLine2, unlockLine3, Theme.GOLD, ut, ut + ALERT_UNLOCK_D, (x0 + x1) * 0.5f,
-            cy, x1 - x0, t);
+        float w = Math.min(600f * layout.s, layout.charX1 - layout.charX0);
+        float cx = (layout.charX0 + layout.charX1) * 0.5f, cy = (layout.charY0 + layout.charY1) * 0.5f;
+        drawAlert(UNLOCKED, 48f, unlockLine2, unlockLine3, Theme.GOLD, ut, ut + ALERT_UNLOCK_D, cx, cy, w,
+            180f * layout.s, t);
     }
 
-    /** One alert box {@code w} wide and the strip's height, centred on (cx, cy); text centred in it. */
+    /** One alert box {@code w} × {@code h}, centred on (cx, cy); text centred in it. */
     private void drawAlert(String line1, float cap, String line2, String line3, Color col, float start, float end,
-                           float cx, float cy, float w, float t) {
+                           float cx, float cy, float w, float h, float t) {
         if (t < start || t >= end) return;
         float p = Anim.progress(t, start, Anim.POP);
         float s = Math.max(0.001f, Anim.POP_EASE.apply(p));
         float a = Math.min(1f, p * 4f) * (1f - Anim.progress(t, end - 0.25f, 0.25f));
         TextQueue q = kit.text;
         boolean third = line3 != null && !line3.isEmpty();
-        float h = layout.stripH - 12f;
         // the text block (headline, value, optional unlock line), centred vertically in the box
         float th = Math.min(h, cap + 26f + 56f + (third ? 34f : 0f));
         kit.push(cx, cy, 0f, s, s);
@@ -748,45 +741,58 @@ public class ResultScreen extends KkScreen<Main> {
         kit.pop();
     }
 
-    private void drawPopover(float t) {
+    private void drawPopover() {
         if (popKind == POP_SCORE) {
             drawScorePopover();
-            return;
-        }
-        if (popKind == POP_PERFECT) {
+        } else if (popKind == POP_PERFECT) {
             drawPerfectTiming();
-            return;
+        } else if (popKind == POP_DEPTH) {
+            drawRowsPopover(model.depthRows, model.depthRowValues, null, null, depthPopW, hud.depthCenterX(),
+                hud.frameBottom(), accent, Theme.INK1);
+        } else {
+            drawRowsPopover(model.shellRows, model.shellRowValues, SHELLS_TOTAL, model.shellsText, 360f,
+                hud.capsuleCenterX(), hud.capsuleBottom(), Theme.GOLD, Theme.GOLD);
         }
+    }
+
+    /**
+     * A breakdown card hanging under ({@code pointX}, {@code under}) with its pointer up at it: one row per label
+     * (UI 18, ink2) and value (NUMBER 20), then an optional total line. The shell breakdown hangs from the capsule
+     * (no title since 17:22 「把"这次下潜获得的贝壳"这个小字删掉」), the depth breakdown from the player frame.
+     */
+    private void drawRowsPopover(java.util.List<String> labels, java.util.List<String> values, CharSequence total,
+                                 CharSequence totalValue, float w, float pointX, float under, Color edge,
+                                 Color valueColor) {
         float v = popover.value();
-        if (v <= 0.01f || model.shellRows.isEmpty()) return;
+        int n = labels.size();
+        if (v <= 0.01f || n == 0) return;
         float a = Math.min(1f, v);
         TextQueue q = kit.text;
-        int n = model.shellRows.size();
-        // no title since 17:22 (「把"这次下潜获得的贝壳"这个小字删掉」): the rows start under the top edge
-        float w = 360f, rowH = 36f, h = 34f + n * rowH + 44f;
-        float cx = Math.max(Ui.safeLeft() + w * 0.5f + 16f, Math.min(Ui.safeRight() - w * 0.5f - 16f,
-            strip.chipCenterX()));
-        float y0 = strip.chipTop() + 14f;
+        boolean sum = total != null;
+        float rowH = 36f, h = 34f + (n - 1) * rowH + (sum ? rowH + 44f : 30f);
+        float cx = Math.max(Ui.safeLeft() + w * 0.5f + 16f, Math.min(Ui.safeRight() - w * 0.5f - 16f, pointX));
+        float yTop = under - 14f;
         float s = 0.9f + 0.1f * a;
-        kit.push(cx, y0, 0f, s, s);
-        float lx = -w * 0.5f;
-        // opaque card so the strip under it does not show through
-        Panel.shadow(game.draw(), lx, 0f, w, h, a);
-        Panel.cardHi(game.draw(), lx, 0f, w, h, 18f, a);
-        game.draw().roundRectStroke(lx, 0f, w, h, 18f, 1.5f, Theme.GOLD, 0.5f * a);
-        float px = Math.max(lx + 30f, Math.min(lx + w - 30f, strip.chipCenterX() - cx));
-        kit.triangle(px - 11f, 1f, px + 11f, 1f, px, -10f, Theme.GOLD, 0.5f * a);
-        float y = h - 34f;
+        kit.push(cx, yTop, 0f, s, s);
+        float lx = -w * 0.5f, by = -h;
+        // opaque card so the title band under it does not show through
+        Panel.shadow(game.draw(), lx, by, w, h, a);
+        Panel.cardSolid(game.draw(), lx, by, w, h, 18f, a);
+        game.draw().roundRectStroke(lx, by, w, h, 18f, 1.5f, edge, 0.5f * a);
+        float px = Math.max(lx + 30f, Math.min(lx + w - 30f, pointX - cx));
+        kit.triangle(px - 11f, -1f, px + 11f, -1f, px, 10f, edge, 0.5f * a);
+        float y = -34f;
         for (int i = 0; i < n; i++) {
-            q.textFit(Fonts.Role.UI, 18f, model.shellRows.get(i), lx + 22f, y - i * rowH, Align.left | Fonts.VCENTER,
-                w - 150f, 0.8f, Theme.INK2, a);
-            q.fixed(20f, model.shellRowValues.get(i), lx + w - 22f, y - i * rowH, Align.right | Fonts.VCENTER,
-                Theme.GOLD, a);
+            q.textFit(Fonts.Role.UI, 18f, labels.get(i), lx + 22f, y - i * rowH, Align.left | Fonts.VCENTER,
+                w * 0.5f, 0.8f, Theme.INK2, a);
+            q.fixed(20f, values.get(i), lx + w - 22f, y - i * rowH, Align.right | Fonts.VCENTER, valueColor, a);
         }
-        float ty = 30f;
-        game.draw().rect(lx + 22f, ty + 22f, w - 44f, 1f, Theme.STROKE, a);
-        q.text(Fonts.Role.UI_BOLD, 18f, SHELLS_TOTAL, lx + 22f, ty, Align.left | Fonts.VCENTER, Theme.INK1, a);
-        q.text(Fonts.Role.NUMBER, 22f, model.shellsText, lx + w - 22f, ty, Align.right | Fonts.VCENTER, Theme.GOLD, a);
+        if (sum) {
+            float ty = by + 30f;
+            game.draw().rect(lx + 22f, ty + 22f, w - 44f, 1f, Theme.STROKE, a);
+            q.text(Fonts.Role.UI_BOLD, 18f, total, lx + 22f, ty, Align.left | Fonts.VCENTER, Theme.INK1, a);
+            q.text(Fonts.Role.NUMBER, 22f, totalValue, lx + w - 22f, ty, Align.right | Fonts.VCENTER, valueColor, a);
+        }
         kit.pop();
     }
 
@@ -798,8 +804,8 @@ public class ResultScreen extends KkScreen<Main> {
     /**
      * Score breakdown popover (DESIGN §18.2 [P1]): {@code ACCURACY SCORE · 88,123,456},
      * {@code RESONANCE CHAIN · 9,812}, {@code PERFECT RESONANCE +812} and the TOTAL (准度分 / 共鸣链 / 完美共鸣 /
-     * 总计 in 中文), hanging under the score with a pointer at the tapped digit; no title since 17:26
-     * (「把"分数"这个小字去掉」).
+     * 总计 in 中文), hanging under the score with a pointer at the tapped digit (standing over it when there is no
+     * room under it, as with three columns); no title since 17:26 (「把"分数"这个小字去掉」).
      */
     private void drawScorePopover() {
         float v = popover.value();
@@ -811,17 +817,19 @@ public class ResultScreen extends KkScreen<Main> {
         float right = left + score.scoreWidth(model, layout.scoreCap);
         float px0 = Math.max(left, Math.min(right, popScoreX));
         float cx = Math.max(Ui.safeLeft() + w * 0.5f + 16f, Math.min(Ui.safeRight() - w * 0.5f - 16f,
-            layout.scoreCentred ? px0 : Math.max(px0, left + w * 0.5f)));
+            Math.max(px0, left + w * 0.5f)));
         float yTop = layout.scoreBase - 0.113f * layout.scoreCap - 14f;
+        boolean up = yTop - h < Ui.safeBottom();
         float s = 0.9f + 0.1f * a;
-        kit.push(cx, yTop, 0f, s, s);
-        float lx = -w * 0.5f, by = -h;
+        kit.push(cx, up ? layout.scoreBase + layout.scoreCap + 14f : yTop, 0f, s, s);
+        float lx = -w * 0.5f, by = up ? 0f : -h;
         Panel.shadow(game.draw(), lx, by, w, h, a);
-        Panel.cardHi(game.draw(), lx, by, w, h, 18f, a);
+        Panel.cardSolid(game.draw(), lx, by, w, h, 18f, a);
         game.draw().roundRectStroke(lx, by, w, h, 18f, 1.5f, accent, 0.5f * a);
         float px = Math.max(lx + 30f, Math.min(lx + w - 30f, px0 - cx));
-        kit.triangle(px - 11f, -1f, px + 11f, -1f, px, 10f, accent, 0.5f * a);
-        float y = -21f - rowH * 0.5f + 6f;
+        if (up) kit.triangle(px - 11f, 1f, px + 11f, 1f, px, -10f, accent, 0.5f * a);
+        else kit.triangle(px - 11f, -1f, px + 11f, -1f, px, 10f, accent, 0.5f * a);
+        float y = by + h - 21f - rowH * 0.5f + 6f;
         for (int i = 0; i < 3; i++) {
             float ry = y - i * rowH;
             String value = i == 0 ? model.breakdownAccuracy : i == 1 ? model.breakdownChain : model.breakdownPerfect;
@@ -837,33 +845,38 @@ public class ResultScreen extends KkScreen<Main> {
     }
 
     /**
-     * EARLY / LATE RESONANCE (owner, 2026-10-14): tapping the PERFECT sub-count slides
-     * {@code EARLY n · LATE n} out to its right in the same font, starting where the bars start.
-     * They count the RESONANCE hits that are not PERFECT (33–67 ms off) by sign, so
-     * PERFECT + EARLY + LATE = RESONANCE. Any tap hides them again.
+     * EARLY / LATE RESONANCE (owner, 2026-10-14): tapping {@code PERFECT n} under RESONANCE slides
+     * {@code EARLY n · LATE n} out to its right in the same font. They count the RESONANCE hits that are not PERFECT
+     * (33–67 ms off) by sign, so PERFECT + EARLY + LATE = RESONANCE. Any tap hides them again.
      */
     private void drawPerfectTiming() {
         float v = popover.value();
         if (v <= 0.01f) return;
         float a = Math.min(1f, v);
         TextQueue q = kit.text;
-        float cap = StatsBlock.perfectCap();
-        float x = layout.barX0 - 16f * (1f - a), y = layout.perfectBase;
-        x += q.text(Fonts.Role.UI, cap, EARLY, x, y, Align.left, Theme.EARLY, a) + 8f;
-        x += q.text(Fonts.Role.UI, cap, model.earlyResonanceText, x, y, Align.left, Theme.INK2, a) + 12f;
-        x += q.text(Fonts.Role.UI, cap, "·", x, y, Align.left, Theme.INK3, a) + 12f;
-        x += q.text(Fonts.Role.UI, cap, LATE, x, y, Align.left, Theme.LATE, a) + 8f;
-        q.text(Fonts.Role.UI, cap, model.lateResonanceText, x, y, Align.left, Theme.INK2, a);
+        float cap = layout.perfectCap, sc = layout.rowK;
+        float x = layout.rowLabelX + stats.perfectWidth(model, layout) + 14f * sc - 16f * sc * (1f - a);
+        float y = layout.perfectBase;
+        x += q.text(Fonts.Role.UI_LABEL, cap, EARLY, x, y, Align.left, Theme.EARLY, a) + 8f * sc;
+        x += q.text(Fonts.Role.UI_LABEL, cap, model.earlyResonanceText, x, y, Align.left, Theme.INK2, a) + 12f * sc;
+        x += q.text(Fonts.Role.UI_LABEL, cap, "·", x, y, Align.left, Theme.INK3, a) + 12f * sc;
+        x += q.text(Fonts.Role.UI_LABEL, cap, LATE, x, y, Align.left, Theme.LATE, a) + 8f * sc;
+        q.text(Fonts.Role.UI_LABEL, cap, model.lateResonanceText, x, y, Align.left, Theme.INK2, a);
     }
 
-    /** True when (x, y) is on the PERFECT sub-count under RESONANCE (grown to a touch target). */
+    /** True when (x, y) is on {@code PERFECT n} under RESONANCE (grown to a touch target). */
     private boolean hitPerfect(float x, float y) {
         if (model.totalNotes <= 0) return false;
-        float cap = StatsBlock.perfectCap();
-        float right = layout.rowCountRight, left = right - stats.perfectWidth(model);
+        float cap = layout.perfectCap;
+        float left = layout.rowLabelX, right = left + stats.perfectWidth(model, layout);
         float grow = Math.max(0f, (Ui.touchTarget() - cap) * 0.5f);
         float y0 = layout.perfectBase - grow, y1 = layout.perfectBase + cap + grow;
         return x >= left - 12f && x <= right + 12f && y >= y0 && y <= y1;
+    }
+
+    /** Height halfway between the hint's top and the early / late line's baseline (the hint's tap area ends there). */
+    private float hintSplit() {
+        return (layout.earlyLateBase + layout.hintBase + layout.hintCap) * 0.5f;
     }
 
     /** True when (x, y) is on the score row (grown to a touch target). */
@@ -969,13 +982,6 @@ public class ResultScreen extends KkScreen<Main> {
         Haptics.light();
     }
 
-    private void tiltJacket(float x) {
-        float dir = x < jacket.jacketX() ? -1f : 1f;
-        tilt.setValue(0f).impulse(dir * 3f * 18f).setTarget(0f);
-        press.setValue(0.97f).setTarget(1f);
-        Haptics.light();
-    }
-
     // ------------------------------------------------------------------ input
     private boolean buttonsLive() {
         return choreo.buttonsEnabled() && !sheetOpen;
@@ -1066,39 +1072,32 @@ public class ResultScreen extends KkScreen<Main> {
     }
 
     private void idleTap(float x, float y) {
-        float grow = Math.max(0f, (Ui.touchTarget() - 32f) * 0.5f);
         float dx = x - layout.stampX, dy = y - layout.stampY;
+        float capGrow = Math.max(0f, (Ui.touchTarget() - layout.capsuleH) * 0.5f);
         if (model.grade != null && !model.tutorial && dx * dx + dy * dy <= (layout.stampR + 12f) * (layout.stampR + 12f)) {
             restamp();
-        } else if (jacket.hitJacket(x, y)) {
-            tiltJacket(x);
-        } else if (hintVisible && x >= hintX0 && x <= hintX1 && y >= hintY0 && y <= hintY1) {
-            openSheet();
-        } else if (strip.hitShellChip(x, y, grow) && !model.shellRows.isEmpty()) {
-            popOpen = true;
-            popKind = POP_SHELLS;
-            popover.snap(0f);
-            popover.setTarget(1f);
-            Haptics.light();
-        } else if (hitPerfect(x, y)) {
-            popOpen = true;
-            popKind = POP_PERFECT;
-            popover.snap(0f);
-            popover.setTarget(1f);
-            Haptics.light();
         } else if (hitScore(x, y)) {
-            popOpen = true;
-            popKind = POP_SCORE;
             popScoreX = x;
-            popover.snap(0f);
-            popover.setTarget(1f);
-            Haptics.light();
-        } else if (trace.hit(x, y, 12f)) {
-            expand.setTarget(expand.target() > 0.5f ? 0f : 1f);
-            Haptics.light();
+            openPopover(POP_SCORE);
+        } else if (!model.depthRows.isEmpty() && hud.hitFrame(x, y, 0f)) {
+            openPopover(POP_DEPTH);
+        } else if (!model.shellRows.isEmpty() && hud.hitCapsule(x, y, capGrow)) {
+            openPopover(POP_SHELLS);
+        } else if (hitPerfect(x, y)) {
+            openPopover(POP_PERFECT);
+        } else if (hintVisible && x >= hintX0 && x <= hintX1 && y >= hintY0 && y <= Math.min(hintY1, hintSplit())) {
+            openSheet();
         } else {
             game.backdrop().touch(x, y);
         }
+    }
+
+    private void openPopover(int kind) {
+        popOpen = true;
+        popKind = kind;
+        popover.snap(0f);
+        popover.setTarget(1f);
+        Haptics.light();
     }
 
     @Override

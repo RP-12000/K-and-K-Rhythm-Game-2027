@@ -37,18 +37,19 @@ final class MapNode {
     final int order;
     /** Index in {@code MapWorld.all}. */
     int idx;
-    /** Base world position (before bob and lag) and hole radius. */
-    float x, y;
-    final float r;
+    /** Base world position (before bob and lag) and hole radius (ALL SONGS sets both every frame). */
+    float x, y, r;
+    /** ALL SONGS: no idle bob (the grid's rows stay straight under their names). */
+    boolean still;
 
     // ------------------------------------------------------------------ record cache
     /** Per difficulty: chart present. */
     final boolean[] has = new boolean[4];
     /** Per difficulty: at least one recorded play. */
     final boolean[] played = new boolean[4];
-    /** Per difficulty: FULL COMBO. */
+    /** Per difficulty: a full combo at least once (the grade is drawn purple). */
     final boolean[] fullCombo = new boolean[4];
-    /** Per difficulty: best grade index (0 = PURE … 7 = D), −1 when unplayed. */
+    /** Per difficulty: best grade index (0 = R+ … 14 = F), −1 when unplayed. */
     final int[] grade = new int[4];
     /** Per difficulty: best score. */
     final int[] best = new int[4];
@@ -241,7 +242,8 @@ final class MapNode {
 
     /** Current world y including bob and lag. */
     float drawY(float time, boolean reduceMotion) {
-        float bob = reduceMotion || kind == SLOT ? 0f : 4f * MathUtils.sin(time * MathUtils.PI2 / bobPeriod + bobPhase);
+        float bob = reduceMotion || still || kind == SLOT ? 0f
+            : 4f * MathUtils.sin(time * MathUtils.PI2 / bobPeriod + bobPhase);
         return y + bob + lagY.value();
     }
 

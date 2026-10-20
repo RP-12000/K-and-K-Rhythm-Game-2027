@@ -13,13 +13,15 @@ import org.kelvinizer.ui.Fonts;
 /**
  * 结算画面的逐字绘制，做 {@link Fonts} 和 {@code GlitchText} 不包办的效果：
  * 分数格子 G2 故障时的横向错位切片，以及评级印章上斜扫过字形的光带。
- * 也能不借助批处理变换直接画出旋转、缩放后的字形，让静止的印章字母和同一字体页的文字一起绘制。
+ * 也能不借助批处理变换直接画出旋转、缩放后的字形，让静止的印章字母和同一字体页的文字一起绘制；
+ * 还能把文字只画在一个窗口里、两端渐隐（滚动的歌名）。
  *
  * <p>Glyph-level drawing for the effects {@link Fonts} and {@code GlitchText} do not cover: fixed
  * cells cut into horizontally shifted sub-UV slices (the score's G2 burst on fixed cells) and a
  * diagonal shimmer band painted through the glyphs with per-vertex colours (the grade stamp),
- * and plain glyph quads under an optional rotation / scale (the stamp letter at rest, drawn
- * without a batch transform so it batches with the rest of its page).
+ * plain glyph quads under an optional rotation / scale (the stamp letter at rest, drawn
+ * without a batch transform so it batches with the rest of its page), and text cut to a window
+ * with faded ends (scrolling titles, {@link #faded}).
  *
  * <p>Glyph placement matches {@link Fonts}: a font returned by {@code fonts.get(role, cap, set)}
  * is already scaled to world units, and a glyph's quad bottom sits at
@@ -98,6 +100,75 @@ public final class GlyphQuads {
         return w;
     }
 
+    /**
+     * Draws {@code text} like {@link #text} but only inside {@code [clipX0, clipX1]}, its alpha rising over
+     * {@code fadeL} from clipX0 and falling over {@code fadeR} to clipX1 (a scrolling title, {@code Marquee}). Each
+     * glyph quad is cut at those four lines, so the ramps are exact and nothing outside is drawn (no scissor, no
+     * flush). Ignores the affine.
+     */
+    public void faded(Batch b, BitmapFont font, CharSequence text, float x, float y, int align, float cap, Color c,
+                      float alpha, float clipX0, float clipX1, float fadeL, float fadeR) {
+        if (alpha <= 0.002f || text == null || text.length() == 0 || clipX1 <= clipX0) return;
+        boolean was = affine;
+        affine = false;
+        BitmapFont.BitmapFontData d = font.getData();
+        layout.setText(font, text);
+        float w = layout.width;
+        float left = (align & Align.left) != 0 ? x : ((align & Align.right) != 0 ? x - w : x - w * 0.5f);
+        float base = (align & Align.top) != 0 ? y - cap : ((align & Fonts.VCENTER) != 0 ? y - cap * 0.5f : y);
+        float sx = d.scaleX, sy = d.scaleY;
+        float yOrigin = base - refYOffset(d) * sy;
+        float in0 = Math.min(clipX0 + fadeL, clipX1 - fadeR), in1 = Math.max(clipX0 + fadeL, clipX1 - fadeR);
+        Array<GlyphLayout.GlyphRun> runs = layout.runs;
+        for (int r = 0; r < runs.size; r++) {
+            GlyphLayout.GlyphRun run = runs.get(r);
+            Array<BitmapFont.Glyph> glyphs = run.glyphs;
+            FloatArray adv = run.xAdvances;
+            float gx = left + run.x;
+            float gy = yOrigin + run.y;
+            for (int i = 0; i < glyphs.size; i++) {
+                gx += adv.get(i);
+                BitmapFont.Glyph g = glyphs.get(i);
+                if (g.width == 0 || g.height == 0) continue;
+                float qx = gx + g.xoffset * sx, qy = gy + g.yoffset * sy;
+                float qw = g.width * sx, qh = g.height * sy;
+                float xa = Math.max(qx, clipX0), x1 = Math.min(qx + qw, clipX1);
+                if (x1 <= xa) continue;
+                Texture tex = font.getRegion(g.page).getTexture();
+                // pieces between the clip edges and the two ramp ends, each linear in x
+                if (in0 > xa && in0 < x1) {
+                    fadedPiece(b, tex, g, qx, qw, qy, qh, xa, in0, c, alpha, clipX0, clipX1, fadeL, fadeR);
+                    xa = in0;
+                }
+                if (in1 > xa && in1 < x1) {
+                    fadedPiece(b, tex, g, qx, qw, qy, qh, xa, in1, c, alpha, clipX0, clipX1, fadeL, fadeR);
+                    xa = in1;
+                }
+                fadedPiece(b, tex, g, qx, qw, qy, qh, xa, x1, c, alpha, clipX0, clipX1, fadeL, fadeR);
+            }
+        }
+        affine = was;
+    }
+
+    private void fadedPiece(Batch b, Texture tex, BitmapFont.Glyph g, float qx, float qw, float qy, float qh, float xa,
+                            float xb, Color c, float alpha, float clipX0, float clipX1, float fadeL, float fadeR) {
+        float fa = edgeRamp(xa, clipX0, clipX1, fadeL, fadeR), fb = edgeRamp(xb, clipX0, clipX1, fadeL, fadeR);
+        if (fa <= 0f && fb <= 0f) return;
+        float ua = g.u + (xa - qx) / qw * (g.u2 - g.u), ub = g.u + (xb - qx) / qw * (g.u2 - g.u);
+        float ca = pack(c, alpha * fa), cb = pack(c, alpha * fb);
+        put(0, xa, qy, ca, ua, g.v);
+        put(5, xa, qy + qh, ca, ua, g.v2);
+        put(10, xb, qy + qh, cb, ub, g.v2);
+        put(15, xb, qy, cb, ub, g.v);
+        b.draw(tex, q, 0, 20);
+    }
+
+    private static float edgeRamp(float x, float x0, float x1, float fadeL, float fadeR) {
+        float l = fadeL > 0f ? Math.max(0f, Math.min(1f, (x - x0) / fadeL)) : 1f;
+        float r = fadeR > 0f ? Math.max(0f, Math.min(1f, (x1 - x) / fadeR)) : 1f;
+        return l * r;
+    }
+
     /** Reference y-offset (unscaled) of a font, as Fonts uses for its baseline. */
     public static float refYOffset(BitmapFont.BitmapFontData d) {
         for (int i = 0; i < REF_CHARS.length(); i++) {
@@ -143,6 +214,21 @@ public final class GlyphQuads {
             cursor = z;
         }
         piece(b, tex, g, gx, gy, gw, gh, cursor, end, 0f);
+    }
+
+    /**
+     * {@link #cell} at scale 1 without bands, drawing only the part of the glyph between {@code y0} and {@code y1}
+     * (a slot-roll window: no scissor, no flush). Uses the batch colour.
+     */
+    public void clipped(Batch b, BitmapFont font, char c, float cellX, float cellW, float baseline, float y0,
+                        float y1) {
+        if (c == ' ') return;
+        BitmapFont.BitmapFontData d = font.getData();
+        BitmapFont.Glyph g = d.getGlyph(c);
+        if (g == null || g.width == 0 || g.height == 0) return;
+        float s = d.scaleX, gw = g.width * s, gh = g.height * s;
+        float gx = cellX + (cellW - gw) * 0.5f, gy = baseline + (g.yoffset - refYOffset(d)) * s;
+        piece(b, font.getRegion(g.page).getTexture(), g, gx, gy, gw, gh, Math.max(y0, gy), Math.min(y1, gy + gh), 0f);
     }
 
     private static void piece(Batch b, Texture tex, BitmapFont.Glyph g, float qx, float qy, float qw, float qh,

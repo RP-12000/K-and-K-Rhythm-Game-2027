@@ -90,14 +90,31 @@ final class MapStyle {
     static final float RUBBER = 0.55f;
     /** Long-press and double-tap intervals (s). */
     static final float LONG_PRESS = 0.45f, DOUBLE_TAP = 0.30f;
+    /**
+     * Rise hold (Kelvin 2026-10-19 18:46 「双指静止不动长按1.5秒上浮」): two fingers held still this long rise one
+     * level; the ring shows from {@code RISE_RING} s on, so a pinch that only pauses shows nothing.
+     */
+    static final float RISE_HOLD = 1.5f, RISE_RING = 0.3f;
     /** Idle drift (P1): start delay, amplitude, period. */
     static final float IDLE_DELAY = 8f, IDLE_AMP = 6f, IDLE_PERIOD = 14f;
     /** Keyboard pan speed (world units per second at zoom 1). */
     static final float KEY_PAN = 1200f;
 
     // ------------------------------------------------------------------ HUD (§3.9)
-    /** Profile badge size, and the narrowest it may get beside the icon cluster. */
-    static final float BADGE_W = 540f, BADGE_H = 120f, BADGE_MIN_W = 380f;
+    /**
+     * Player block (top left) and shell capsule (top right) heights since the badge was split in two (Kelvin
+     * 2026-10-19 06:28), and the band under the safe top kept for that row (the ALL SONGS grid starts under the
+     * block). Since Kelvin 2026-10-20 03:26 the capsule is drawn at the size of the box marked on the 16:10 map, with a
+     * minimum width so a small shell count no longer shrinks it into the corner. The block has no frame since
+     * 2026-10-20 14:10 (the design thread's plan 5): an avatar disc, the name and a depth tag, 100 high from the
+     * top of Settings. Since Kelvin 2026-10-20 15:10 the capsule is smaller (「我感觉贝壳有点太大了，喧宾夺主了」), and
+     * since 15:36 it sits beside the block's depth tag, 46 high. The block is 150 high since 16:05, as tall as its
+     * avatar circle (「把头像圈直径扩大1.5倍我看看」). Since 17:34 the block and the capsule are drawn at 0.75 of these
+     * (and of {@link #CAPSULE_MIN_W}; 「整体等比例缩小到原来的75%」, {@code MapHud.BLOCK_K}).
+     */
+    static final float FRAME_H = 150f, CAPSULE_H = 46f, BADGE_H = 120f;
+    /** Minimum width of the shell capsule (Kelvin 2026-10-20 03:26; 110 since 15:36). */
+    static final float CAPSULE_MIN_W = 110f;
     /** Lens segments. */
     static final float LENS_SEG_W = 168f, LENS_H = 96f;
     /** Depth gauge column (from mapRight): x offsets and vertical insets. */
@@ -114,8 +131,8 @@ final class MapStyle {
     static final float SHEET_PEEK = 300f, SHEET_FULL = 640f;
     /** Sheet drag handle. */
     static final float HANDLE_W = 80f, HANDLE_H = 8f, HANDLE_DY = 16f;
-    /** Header icon buttons (64 visuals, {@code P} hits). */
-    static final float HEADER_ICON = 64f;
+    /** Card header arrows ‹ › (76 visuals, 64 until Kelvin 2026-10-19 13:37 「稍微大一点」; {@code P} hits). */
+    static final float HEADER_ICON = 76f;
     /** Jacket side (20:9 / 16:9 card, sheet) and its corner radius. */
     static final float JACKET_WIDE = 320f, JACKET = 300f, JACKET_RADIUS = 16f;
     /** Difficulty chip height, gap and corner radius. */
@@ -124,8 +141,8 @@ final class MapStyle {
     static final float ACTION_H = 128f, AUTO_W_WIDE = 112f, AUTO_W = 104f, ACTION_GAP = 24f;
     /** Sheet DESCEND width and chip width. */
     static final float SHEET_DESCEND_W = 480f, SHEET_CHIP_W = 184f;
-    /** Recent sparkline bars. */
-    static final float SPARK_BAR_W = 20f, SPARK_GAP = 8f, SPARK_H = 40f;
+    /** Height of the card's NEXT / AUTOPLAY row (it was the recent sparkline's row until 2026-10-19). */
+    static final float GOAL_ROW_H = 40f;
     /** Swipe dismissal: velocity (units / s) and fraction of the size. */
     static final float DISMISS_V = 900f, DISMISS_FRACTION = 0.35f;
     /** Card exit (pow2In) and content crossfade timings (s). */

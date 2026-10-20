@@ -8,12 +8,11 @@ import org.kelvinizer.elements.LaneLayout;
 import org.kelvinizer.elements.Line;
 import org.kelvinizer.elements.Note;
 import org.kelvinizer.elements.NoteType;
-import org.kelvinizer.ui.Ui;
 
 import java.util.List;
 
 /**
- * 屏幕边缘入场：出生点在 16:9 参考画面之外、音符本体在出生时却会露进实际可见区域的音符（场地拉伸到屏幕之后，就是任何比例下
+ * 屏幕边缘入场：出生点在参考画面之外、音符本体在出生时却会露进实际可见区域的音符（场地拉伸到屏幕之后，就是任何比例下
  * 转了角度的音符），不再在画面里凭空出现，而是按第一段移动的平均速度从真正的屏幕边缘滑进来，再接上谱面写好的路径。只改绘制，不改判定。
  *
  * <p>Edge entry (DESIGN §5.4; owner 2026-10-12 12:42 「我想要整个谱面出现得更自然」), pure Java: no GL,
@@ -22,7 +21,7 @@ import java.util.List;
  *   <li>its first movement (its first {@code MovementEvent}, or the default approach) moves toward
  *       its line: {@code v = (initial − final) / (end − start) > 0} ref units per beat;</li>
  *   <li>its authored spawn {@code sp} (its distance at that start beat) lies outside the reference
- *       1920 × 1080 frame: ground {@code lineY + sp ≥ 1080}, sky {@code lineY − sp ≤ 0}, with the
+ *       1920 × 1200 frame: ground {@code lineY + sp ≥ 1200}, sky {@code lineY − sp ≤ 0}, with the
  *       line's y at the start beat;</li>
  *   <li>and the body it draws at the spawn, in the pose of that beat and at the current note
  *       size, reaches inside the actual visible area ({@link #update}): its leading edge, or
@@ -43,8 +42,8 @@ import java.util.List;
  * the entry beat the note stays parked at {@link Note#HIDDEN_POSITION}, as before its first
  * movement. Spawns inside the reference frame (deliberate on-screen appearances) and notes whose
  * first movement does not approach the line keep the 80-unit fade-in. An upright note spawning
- * just beyond a 16:9 edge (the default 972) keeps its body off screen, so 16:9 and wider screens
- * change only for turned notes that used to show a corner. The engine and judging never read
+ * on or just beyond the reference frame's edge (the default 1080) keeps its body off screen, so the
+ * entry changes only turned notes that used to show a corner. The engine and judging never read
  * this class; the screen starts the run before the first note can be drawn ({@link #firstDrawBeat}:
  * the earliest entry, or the earliest visibleFrom).
  *
@@ -65,6 +64,11 @@ public final class EdgeEntry {
     private static final float TURN_PAD = 120f;
     /** Passes that widen the line's range over the slide before falling back to the whole chart. */
     private static final int PASSES = 4;
+    /**
+     * Ref units a body may poke past the visible edge and still count as off screen: float noise, since the default
+     * fall 1080 from the lines at 1080 / 120 (2026-10-19) spawns upright notes exactly on the frame's edge.
+     */
+    private static final float EDGE_EPS = 1e-3f;
     /** Half the side of a MINE stud, which sits across the body's long edges. */
     private static final float STUD_HALF = 3f;
     /** Half the diagonal of a TIDE STREAM bar's ping diamond. */
@@ -179,7 +183,7 @@ public final class EdgeEntry {
             float sp = n.positionAt(s);
             if (!(Math.abs(sp) < Note.HIDDEN_POSITION - 1f)) continue;
             float y = lines.yAt(n.line(), s);
-            if (n.isUpper() ? y - sp > 0f : y + sp < Ui.REF_H) continue; // inside the reference frame
+            if (n.isUpper() ? y - sp > 0f : y + sp < Field.REF_H) continue; // inside the reference frame
             start[i] = s;
             spawn[i] = sp;
             speed[i] = v;
@@ -336,7 +340,8 @@ public final class EdgeEntry {
         float sp = spawn[i];
         float y = lines.yAt(line, s);
         float body = bodyReach[i] / ky;
-        if (up ? y - sp + body <= refBottom() : y + sp - body >= refTop()) return Float.NaN; // it already comes from off screen
+        // it already comes from off screen
+        if (up ? y - sp + body <= refBottom() + EDGE_EPS : y + sp - body >= refTop() - EDGE_EPS) return Float.NaN;
         float tail = Math.min(tailAt[i] * ky, NoteRenderer.MAX_TAIL_DRAW);
         float turn = turnSin[i] * (width + TURN_PAD) * 0.5f + turnBack[i] * (tail + TURN_PAD);
         // a pivot far from the body, or a turned TIDE, may reach farther than that
@@ -360,12 +365,12 @@ public final class EdgeEntry {
 
     /** @return the visible bottom edge in reference units. */
     private float refBottom() {
-        return Field.CY + (bottom - Field.CY) / ky;
+        return Field.refY(bottom);
     }
 
     /** @return the visible top edge in reference units. */
     private float refTop() {
-        return Field.CY + (top - Field.CY) / ky;
+        return Field.refY(top);
     }
 
     /**

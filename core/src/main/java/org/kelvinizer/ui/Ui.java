@@ -30,6 +30,8 @@ public final class Ui {
     public static final float REF_W = 1920f;
     /** Reference (minimum) world height. */
     public static final float REF_H = 1080f;
+    /** Height of the playfield's reference frame ({@code Params.REF_H}; the field stretches it onto the world). */
+    private static final float FIELD_H = 1200f;
     /** Camera centre x used by every screen camera. */
     public static final float CX = 960f;
     /** Camera centre y used by every screen camera. */
@@ -40,10 +42,13 @@ public final class Ui {
     public static final float WIDE_ASPECT = 1.6f;
     /** Gameplay switches to the band HUD when the free band is at least this tall. */
     public static final float BAND_HUD_MIN = 104f;
-    /** Top edge of the sky judgement zone (y). */
-    public static final float SKY_ZONE_TOP = 1068f;
-    /** Bottom edge of the ground judgement zone (y). */
-    public static final float GROUND_ZONE_BOTTOM = 12f;
+    /**
+     * Top edge of the sky line's band, y in the playfield's 1920 × 1200 reference frame: the line 1080 + 120 since
+     * 2026-10-19 14:55 (1186.67 before; 1068 at 1080 high).
+     */
+    public static final float SKY_ZONE_TOP = 1200f;
+    /** Bottom edge of the ground line's band, y in the playfield's reference frame: 120 − 120 (13.33 before). */
+    public static final float GROUND_ZONE_BOTTOM = 0f;
 
     /** Layout classes (DESIGN §1.1). */
     public enum Layout {
@@ -66,6 +71,11 @@ public final class Ui {
     /** Extra edge padding from Settings (0..48 world units), folded into the safe edges. */
     public static void setEdgePadding(float padding) {
         edgePadding = Math.max(0f, Math.min(48f, padding));
+    }
+
+    /** The Settings edge padding (0..48 world units) folded into the safe edges. */
+    public static float edgePadding() {
+        return edgePadding;
     }
 
     /** UI scale setting: 0 = Auto, else 0.9..1.3. */
@@ -277,23 +287,22 @@ public final class Ui {
     // ------------------------------------------------------------------ gameplay bands
     /**
      * Free band above the sky zone. The gameplay field is stretched to fill the visible world (owner
-     * 2026-10-12 16:17, {@code gameplay.Field}: y about 540 by {@code worldH / 1080}), so the zone top 1068
-     * lands at {@code 540 + 528·worldH / 1080} and the band is {@code 12·worldH / 1080}: the 12-unit
-     * margin of the reference frame, stretched.
+     * 2026-10-12 16:17, {@code gameplay.Field}: the reference centre y 600 on 540, y by {@code worldH / 1200}),
+     * so the zone top 1200 lands at {@code 540 + 600·worldH / 1200}, the top of the world: with the lines at
+     * 1080 / 120 (2026-10-19 14:55) there is no free band (13.33·worldH / 1200 before).
      */
     public static float freeBandTop() {
-        return top() - (CY + (SKY_ZONE_TOP - CY) * worldH / REF_H);
+        return top() - (CY + (SKY_ZONE_TOP - FIELD_H * 0.5f) * worldH / FIELD_H);
     }
 
-    /** Free band below the ground zone (stretched like {@link #freeBandTop}): {@code 12·worldH / 1080}. */
+    /** Free band below the ground zone (stretched like {@link #freeBandTop}): 0 with the ground line at 120. */
     public static float freeBandBottom() {
-        return (CY + (GROUND_ZONE_BOTTOM - CY) * worldH / REF_H) - bottom();
+        return (CY + (GROUND_ZONE_BOTTOM - FIELD_H * 0.5f) * worldH / FIELD_H) - bottom();
     }
 
     /**
      * True when gameplay should use the band HUD layout (free band ≥ 104). With the stretched field the
-     * band stays 12·worldH / 1080 (under 104 on every landscape screen), so gameplay keeps the corner HUD
-     * at every aspect.
+     * band is 0 on every screen, so gameplay keeps the corner HUD at every aspect.
      */
     public static boolean useBandHud() {
         return freeBandTop() >= BAND_HUD_MIN;

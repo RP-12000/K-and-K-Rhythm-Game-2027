@@ -31,16 +31,16 @@ public final class Choreo {
     public static final float JACKET_T = 0.10f, JACKET_D = 0.50f;
     /** Title decode start / duration and per-char stagger. */
     public static final float TITLE_T = 0.25f, TITLE_D = 0.45f, TITLE_STAGGER = 0.018f;
-    /** Artist and chip. */
+    /** Artist. */
     public static final float ARTIST_T = 0.30f, ARTIST_D = 0.25f;
+    /** Difficulty chip pop, once the jacket has landed (it sits in the jacket's corner since round 8). */
+    public static final float CHIP_T = 0.60f;
     /** Header band: the meta line, AUTO watermark and ghost numeral fade in from here (no type-on since 2026-10-18). */
     public static final float HEADER_T = 0.40f;
     /** Score decode start, lock interval (9 locks since scoring v2, the last at 1.725). */
     public static final float SCORE_T = 0.60f, SCORE_LOCK = 0.125f;
     /** Judgement rows: start, stagger, roll duration. */
     public static final float ROWS_T = 0.80f, ROWS_STAGGER = 0.12f, ROWS_D = 0.90f;
-    /** Echo trace sweep. */
-    public static final float TRACE_T = 1.10f, TRACE_D = 0.80f;
     /** Early / late line fade. */
     public static final float EL_T = 1.40f, EL_D = 0.20f;
     /** Score lands (hold point). */
@@ -49,18 +49,19 @@ public final class Choreo {
     public static final float STAMP_T = 2.00f, IMPACT_T = 2.22f;
     /** Shimmer pass (R+ / R / SS+). */
     public static final float SHIMMER_T = 2.40f, SHIMMER_D = 0.60f;
-    /** Tiles. */
-    public static final float TILES_T = 2.30f, TILES_STAGGER = 0.08f, TILES_D = 0.60f;
-    /** Clear badge. */
+    /** AUTOPLAY pill (the clear badge's beat; no clear badge since round 8). */
     public static final float BADGE_T = 2.50f, BADGE_D = 0.50f;
     /** Best line. */
     public static final float BEST_T = 2.70f;
     /** Strip rise. */
     public static final float STRIP_T = 3.00f, STRIP_D = 0.35f;
-    /** Depth phase D. */
-    public static final float DEPTH_T = 3.20f, DEPTH_D = 0.80f;
-    /** Shells phase E: start and length of the old → new count. */
-    public static final float SHELLS_T = 3.40f, SHELLS_D = 0.90f;
+    /**
+     * Depth phase D, only for a run that went deeper: the depth pops, its gain floats in at its lower right and the
+     * number rolls to the new depth (Kelvin 2026-10-20 18:45: about 2.5 s, to catch the player's eye).
+     */
+    public static final float DEPTH_T = 3.20f, DEPTH_D = 2.50f;
+    /** Shells phase E: the +N bubble merges into the capsule, then the count rolls on; after phase D when it runs. */
+    public static final float SHELLS_T = 3.40f, SHELLS_D = 1.30f;
     /** UNLOCKED alert: gap after the depth and shells phases, and its hold before the buttons. */
     public static final float UNLOCK_GAP = 0.10f, UNLOCK_HOLD = 0.45f;
     /** Earliest buttons time; buttons rise duration and stagger. */
@@ -119,14 +120,14 @@ public final class Choreo {
         stripT = m.autoplay ? AUTO_STRIP_T : STRIP_T;
         float lastEnd = stripT + STRIP_D;
         depthT = -1f;
-        if (m.hasDepth) {
+        if (m.hasDepth && m.depthGain > 0) {
             depthT = DEPTH_T;
             lastEnd = depthT + DEPTH_D;
         }
         shellsT = -1f;
         shellsEnd = -1f;
         if (m.hasShells) {
-            shellsT = SHELLS_T;
+            shellsT = depthT >= 0f ? depthT + DEPTH_D : SHELLS_T;
             shellsEnd = shellsT + SHELLS_D;
             lastEnd = Math.max(lastEnd, shellsEnd);
         }

@@ -11,18 +11,17 @@ import org.kelvinizer.ui.Theme;
 import org.kelvinizer.ui.Ui;
 
 /**
- * “所有曲目”层的排序面板：从右下角的 SORT 按钮升起，上面选分组（按曲包 / 全部铺开），中间选顺序
- * （默认、歌名、定数、最高分、最近游玩），下面是筛选（NEW / FULL COMBO / RESONATED，一次一个，再点取消）。
+ * “所有曲目”层的排序面板：从 SORT 按钮升起，上面选顺序（默认、歌名、定数、最高分、最近游玩），
+ * 下面是筛选（NEW / FULL COMBO / RESONATED，一次一个，再点取消）；按曲包分组已经去掉。
  * 点一下马上重排，面板保持打开；点面板外面、再点 SORT 或按返回键关闭。
  *
  * <p>The ALL SONGS sort panel (Kelvin 2026-10-13 21:58: the layout and order options, which were a
  * chip row under the badge, gathered behind one SORT button at the bottom right, between the rise
  * plate and recentre). It rises from the button ({@link #W} wide, {@link MapStyle#FILTER_IN}
- * {@code pow3Out}) with three groups of {@link TextChip}s:
- * LAYOUT (packs / all), ORDER ({@link MapWorld#SORT_NAMES}, three per row) and FILTER (the
- * {@link MapFilter} values, merged in from their own panel by Kelvin 2026-10-16 22:39: one at a
- * time, tapping the lit one clears it). A tap re-sorts the map at once and keeps the panel open;
- * a touch outside it closes it (the map does not receive that touch).
+ * {@code pow3Out}) with two groups of {@link TextChip}s: ORDER ({@link MapWorld#SORT_NAMES}, three per row) and
+ * FILTER (the {@link MapFilter} values, merged in from their own panel by Kelvin 2026-10-16 22:39: one at a
+ * time, tapping the lit one clears it). The LAYOUT group (packs / all) went on 2026-10-19 13:14. A tap re-sorts
+ * the map at once and keeps the panel open; a touch outside it closes it (the map does not receive that touch).
  *
  * <p>Every metric is the scale-1 value × the panel scale: the HUD scale, shrunk (to
  * {@link #MIN_FIT} at most) to fit between the button and the top cluster. Chip rows are at least
@@ -31,8 +30,8 @@ import org.kelvinizer.ui.Ui;
 final class SortPanel {
     /** Panel events (implemented by the screen). */
     interface Listener {
-        /** A chip was tapped: {@code flat} lays every song out without packs, {@code sort} is a {@code MapWorld.SORT_*}. */
-        void gridLayout(boolean flat, int sort);
+        /** An ORDER chip was tapped: {@code sort} is a {@code MapWorld.SORT_*}. */
+        void gridSort(int sort);
 
         /** A FILTER chip toggled the filter. */
         void filterChanged();
@@ -44,27 +43,27 @@ final class SortPanel {
     private static final float PAD = 32f, HEAD_H = 88f, LABEL_H = 48f, CHIP_H = 80f, CHIP_GAP = 16f, ROW_PITCH = 104f,
         GROUP_GAP = 24f;
     /** Panel height at scale 1 without the {@code P}-floored order row pitch. */
-    private static final float FIXED_H = HEAD_H + LABEL_H + CHIP_H + GROUP_GAP + LABEL_H + CHIP_H + GROUP_GAP + LABEL_H
-        + CHIP_H + PAD;
+    private static final float FIXED_H = HEAD_H + LABEL_H + CHIP_H + GROUP_GAP + LABEL_H + CHIP_H + PAD;
     private static final float CLOSE_T = 0.18f;
     /** The panel never shrinks below this scale to fit. */
     private static final float MIN_FIT = 0.8f;
-    private static final String TITLE = "排序 SORT", LAYOUT = "分组 LAYOUT", ORDER = "顺序 ORDER", FILTER = "筛选 FILTER";
+    private static final String TITLE = "排序 SORT", ORDER = "顺序 ORDER", FILTER = "筛选 FILTER";
+    /** In English without the Chinese (Kelvin 2026-10-20: 如果语言选择是英语就不要出现中文). */
+    private static final String TITLE_EN = "SORT", ORDER_EN = "ORDER", FILTER_EN = "FILTER";
     /** Order chip labels, in {@link MapWorld#SORT_NAMES} order. */
-    private static final String[] ORDER_LABELS = {"默认 DEFAULT", "歌名 TITLE", "定数 LEVEL", "最高分 BEST", "最近 RECENT"};
+    private static final String[] ORDER_LABELS = {"默认 DEFAULT", "歌名 TITLE", "定数 LEVEL", "最高分 BEST", "最近 RECENT"},
+        ORDER_LABELS_EN = {"DEFAULT", "TITLE", "LEVEL", "BEST", "RECENT"};
 
     private final Draw draw;
     private final MapRenderer r;
     private final Listener listener;
-    final TextChip packs, flat;
     final TextChip[] sorts = new TextChip[MapWorld.SORT_NAMES.length];
     /** FILTER chips: {@link MapFilter} values 1–3. */
     final TextChip[] filters = new TextChip[MapFilter.LABELS.length - 1];
     private final MapFilter filter;
     private final Pressable[] controls;
 
-    private boolean open, curFlat;
-    private int curSort;
+    private boolean open;
     private float t, k;
     private float x, top, dy;
     /** Panel size and scale of this frame. */
@@ -72,33 +71,21 @@ final class SortPanel {
     private int ptr = -1;
     private Pressable pressed;
     private final Color c1 = new Color();
+    /** The language the order chips are labelled in. */
+    private boolean chipsZh = true;
 
     SortPanel(Draw draw, MapRenderer r, MapFilter filter, final Listener listener) {
         this.draw = draw;
         this.r = r;
         this.filter = filter;
         this.listener = listener;
-        packs = new TextChip(draw, r, "曲包 PACKS", null);
-        packs.setOnTap(new Runnable() {
-            @Override
-            public void run() {
-                listener.gridLayout(false, curSort);
-            }
-        });
-        flat = new TextChip(draw, r, "全部 ALL", null);
-        flat.setOnTap(new Runnable() {
-            @Override
-            public void run() {
-                listener.gridLayout(true, curSort);
-            }
-        });
         for (int i = 0; i < sorts.length; i++) {
             final int s = i;
             sorts[i] = new TextChip(draw, r, ORDER_LABELS[i], null);
             sorts[i].setOnTap(new Runnable() {
                 @Override
                 public void run() {
-                    listener.gridLayout(curFlat, s);
+                    listener.gridSort(s);
                 }
             });
         }
@@ -113,7 +100,7 @@ final class SortPanel {
                 }
             });
         }
-        controls = new Pressable[]{packs, flat, sorts[0], sorts[1], sorts[2], sorts[3], sorts[4], filters[0], filters[1],
+        controls = new Pressable[]{sorts[0], sorts[1], sorts[2], sorts[3], sorts[4], filters[0], filters[1],
             filters[2]};
     }
 
@@ -168,8 +155,8 @@ final class SortPanel {
      * Anchors the panel above the SORT button: its right edge at {@code right} (kept inside the
      * safe left edge), its bottom at {@code bottomY}, at the HUD scale, shrunk (to {@link #MIN_FIT}
      * at most) so that its top stays under {@code topY}. Rows (scale-1 offsets below the top):
-     * header 0–88, LAYOUT label 88–136 and its two chips, ORDER label after a 24 gap, then the
-     * order chips three per row at a pitch ≥ {@code P}, then the FILTER label and its three chips.
+     * header 0–88, ORDER label 88–136, the order chips three per row at a pitch ≥ {@code P}, then
+     * after a 24 gap the FILTER label and its three chips.
      */
     void layout(float right, float bottomY, float topY) {
         float P = Ui.touchTarget();
@@ -184,15 +171,8 @@ final class SortPanel {
         top = bottomY + h + dy;
         float pad = PAD * ks, gap = CHIP_GAP * ks, chipH = CHIP_H * ks;
         float cx0 = x + pad, cw = w - 2f * pad;
-        float halfW = (cw - gap) * 0.5f, thirdW = (cw - 2f * gap) / 3f;
-        float layoutY = top - (HEAD_H + LABEL_H) * ks - chipH;
-        packs.k = ks;
-        flat.k = ks;
-        packs.setBounds(cx0, layoutY, halfW, chipH);
-        flat.setBounds(cx0 + halfW + gap, layoutY, halfW, chipH);
-        packs.setMinHit(halfW + gap, Math.max(chipH, P));
-        flat.setMinHit(halfW + gap, Math.max(chipH, P));
-        float rowTop = layoutY - (GROUP_GAP + LABEL_H) * ks;
+        float thirdW = (cw - 2f * gap) / 3f;
+        float rowTop = top - (HEAD_H + LABEL_H) * ks;
         for (int i = 0; i < sorts.length; i++) {
             int row = i / 3, col = i % 3;
             sorts[i].k = ks;
@@ -250,8 +230,8 @@ final class SortPanel {
     }
 
     // ------------------------------------------------------------------ frame
-    /** Advances the rise animation and the chips; {@code flatOn} and {@code sort} are the level's current choice. */
-    void update(float dt, boolean flatOn, int sort) {
+    /** Advances the rise animation and the chips; {@code sort} is the level's current order. */
+    void update(float dt, int sort) {
         t += dt;
         if (open) {
             float p = Math.min(1f, t / MapStyle.FILTER_IN);
@@ -261,10 +241,10 @@ final class SortPanel {
             k = Math.max(0f, k - dt / CLOSE_T);
             dy = -24f * (1f - k);
         }
-        curFlat = flatOn;
-        curSort = sort;
-        packs.selected = !flatOn;
-        flat.selected = flatOn;
+        if (chipsZh != r.zh) {
+            chipsZh = r.zh;
+            for (int i = 0; i < sorts.length; i++) sorts[i].setLabel(chipsZh ? ORDER_LABELS[i] : ORDER_LABELS_EN[i]);
+        }
         for (int i = 0; i < sorts.length; i++) sorts[i].selected = sort == i;
         for (int i = 0; i < filters.length; i++) filters[i].selected = filter.status() == i + 1;
         for (Pressable c : controls) c.update(dt);
@@ -284,14 +264,11 @@ final class SortPanel {
         for (Pressable c : controls) c.draw(b, a);
         float cx0 = x + PAD * ks;
         float c20 = MapUi.cap(20f, ks), c24 = MapUi.cap(24f, ks);
-        r.bold(b, TITLE, c24, cx0, top - 48f * ks, Align.left | Fonts.VCENTER, Theme.INK1, a);
-        r.bold(b, LAYOUT, c20, cx0, top - (HEAD_H + LABEL_H * 0.5f) * ks, Align.left | Fonts.VCENTER, Theme.INK2, a);
-        float orderY = packs.y() - (GROUP_GAP + LABEL_H * 0.5f) * ks;
-        r.bold(b, ORDER, c20, cx0, orderY, Align.left | Fonts.VCENTER, Theme.INK2, a);
+        r.bold(b, r.zh ? TITLE : TITLE_EN, c24, cx0, top - 48f * ks, Align.left | Fonts.VCENTER, Theme.INK1, a);
+        r.bold(b, r.zh ? ORDER : ORDER_EN, c20, cx0, top - (HEAD_H + LABEL_H * 0.5f) * ks, Align.left | Fonts.VCENTER,
+            Theme.INK2, a);
         float filterY = filters[0].y() + filters[0].height() + LABEL_H * 0.5f * ks;
-        r.bold(b, FILTER, c20, cx0, filterY, Align.left | Fonts.VCENTER, Theme.INK2, a);
-        packs.drawText(b, a);
-        flat.drawText(b, a);
+        r.bold(b, r.zh ? FILTER : FILTER_EN, c20, cx0, filterY, Align.left | Fonts.VCENTER, Theme.INK2, a);
         for (TextChip c : sorts) c.drawText(b, a);
         for (TextChip c : filters) c.drawText(b, a);
     }

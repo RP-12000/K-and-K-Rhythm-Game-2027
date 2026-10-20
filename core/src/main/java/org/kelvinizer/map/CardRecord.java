@@ -12,13 +12,13 @@ import org.kelvinizer.ui.Fonts;
 import org.kelvinizer.ui.Theme;
 
 /**
- * 歌曲卡片上一张谱面的成绩区：最高分、评级、通关标记、准确率、这张谱的深度（当前/全共鸣时）、本机排名、游玩次数、最近走势和小目标。
+ * 歌曲卡片上一张谱面的成绩区：最高分、评级（打过全连就是紫色）、准确率、这张谱的深度（当前/全共鸣时）、本机排名、游玩次数和小目标。
  * 只在谱面、潜水员或存档修订号变化时重新计算，绘制时直接读缓存好的字符串。
  *
  * <p>The record block of the song card for one chart (DESIGN §4.6): best score with its leading
- * zeros, grade, clear badge, accuracy, the chart depth as current / max (Kelvin 2026-10-17: metres
- * replace the rating), local rank, plays, the recent sparkline and the micro-goal (§11.5). Computed only when the chart, the diver or the
- * profile revision changes ({@link #update}); drawing reads the cached strings. No allocation
+ * zeros, grade (purple once the chart has a full combo, Kelvin 2026-10-19), accuracy, the chart depth as current / max
+ * (Kelvin 2026-10-17: metres replace the rating), local rank, plays and the micro-goal (§11.5). Computed only when the
+ * chart, the diver or the profile revision changes ({@link #update}); drawing reads the cached strings. No allocation
  * after construction.
  */
 final class CardRecord {
@@ -29,13 +29,15 @@ final class CardRecord {
     boolean played;
     /** Best score and grade index (0 = R+ … 14 = F, {@link Grades#GRADES}; −1 unplayed). */
     int best, grade = -1;
-    /** Clear flags. */
-    boolean fullCombo, allResonance;
+    /** True once the chart has a full combo (sticky in the record): the grade turns purple. */
+    boolean fullCombo;
     /** Recorded plays. */
     int plays;
     /** Best score as {@code 098,123,456} and the count of its dim leading chars. */
     final StringBuilder bestText = new StringBuilder(14);
     int bestLead;
+    /** {@link #bestText} split at {@link #bestLead}: the dim leading chars and the rest (the side card's score). */
+    final StringBuilder bestGhost = new StringBuilder(14), bestRest = new StringBuilder(14);
     /** {@code 99.12%} (value only; the {@code ACC} label is drawn separately). */
     final StringBuilder accText = new StringBuilder(10);
     /**
@@ -47,9 +49,8 @@ final class CardRecord {
     boolean firstDive;
     /** {@code PLAYS 12}, then {@code  · LOCAL #1 / 3} when 2 or more local profiles have a record. */
     final StringBuilder playsText = new StringBuilder(32);
-    /** Recent scores, oldest first (the sparkline draws newest at the right). */
-    final int[] recent = new int[ChartRecord.RECENT_MAX];
-    int recentN;
+    /** The same without the label ({@code 12 · LOCAL #1 / 3}; the side card draws PLAYS apart). */
+    final StringBuilder playsValue = new StringBuilder(32);
     /** Micro-goal: kind, the prefix ({@code NEXT}, {@code MAX}, {@code MAXED}) and the rest ({@code -2,500 m AT 97,350,000}). */
     int goal = GOAL_NONE;
     String goalPrefix = "";
@@ -92,7 +93,6 @@ final class CardRecord {
         grade = played ? Grades.gradeIndex(r.bestGrade) : -1;
         if (grade >= Theme.GRADES.length) grade = played ? Grades.gradeIndex(Grades.gradeOf(best)) : -1;
         fullCombo = played && r.fullCombo;
-        allResonance = played && r.allResonance;
         plays = played ? r.plays : 0;
 
         bestText.setLength(0);
@@ -104,6 +104,10 @@ final class CardRecord {
             bestLead = i + 1;
         }
         if (best == 0) bestLead = bestText.length();
+        bestGhost.setLength(0);
+        bestGhost.append(bestText, 0, bestLead);
+        bestRest.setLength(0);
+        bestRest.append(bestText, bestLead, bestText.length());
 
         accText.setLength(0);
         if (played) Fonts.appendTruncated(accText, Math.max(0f, Math.min(1f, r.bestAccuracy)) * 100.0, 2).append('%');
@@ -120,22 +124,14 @@ final class CardRecord {
         }
 
         playsText.setLength(0);
+        playsValue.setLength(0);
         if (played) {
-            playsText.append("PLAYS ").append(plays);
+            playsValue.append(plays);
             store.localRank(p, song.id(), d, local);
             if (local.count >= 2 && local.rank > 0) {
-                playsText.append(" · LOCAL #").append(local.rank).append(" / ").append(local.count);
+                playsValue.append(" · LOCAL #").append(local.rank).append(" / ").append(local.count);
             }
-        }
-
-        recentN = 0;
-        if (played && r.recent != null) {
-            int n = Math.min(recent.length, r.recent.size());
-            // r.recent is newest first: store oldest first
-            for (int i = n - 1; i >= 0; i--) {
-                Integer v = r.recent.get(i);
-                recent[recentN++] = v != null ? v : 0;
-            }
+            playsText.append("PLAYS ").append(playsValue);
         }
 
         goal = GOAL_NONE;
@@ -174,9 +170,8 @@ final class CardRecord {
         return sb;
     }
 
-    /** Grade colour into {@code out} (white when unplayed). */
-    Color gradeColor(float time, Color out) {
-        if (grade >= 0 && grade < Theme.GRADES.length) return Theme.gradeColor(Theme.GRADES[grade], time, out);
-        return out.set(Theme.INK1);
+    /** Grade colour into {@code out} (white when unplayed, purple once the chart has a full combo). */
+    Color gradeColor(Color out) {
+        return Theme.gradeColor(grade, fullCombo, out);
     }
 }

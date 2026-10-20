@@ -70,6 +70,11 @@ public final class Theme {
     public static final Color GLITCH_M = rgb(0xFF2E88, 1f);
     /** Records, NEW BEST, level, the YOU marker. */
     public static final Color GOLD = rgb(0xFFD27A, 1f);
+    /**
+     * Shell capsule fill under its {@link #GOLD} wash (map and result corners): a deep gold, nearly opaque, so the
+     * map's level title behind it does not show through (Kelvin 2026-10-19 13:59 「光晕加深一点盖过单曲」).
+     */
+    public static final Color SHELL_CAPSULE = rgb(0x443A2B, 0.88f);
     /** Autoplay tint. */
     public static final Color AUTO = rgb(0x9CF5B0, 1f);
     /** Primary button gradient, top. */
@@ -78,7 +83,7 @@ public final class Theme {
     public static final Color BTN_BOT = rgb(0x36B9E8, 1f);
     /** Primary button label. */
     public static final Color BTN_LABEL = rgb(0x04142B, 1f);
-    /** FULL COMBO badge / banner colour: purple (Kelvin 2026-10-17 16:02). */
+    /** FULL COMBO badge / banner colour: purple (Kelvin 2026-10-17 16:02); also a full combo's grade (2026-10-19). */
     public static final Color FULL_COMBO = rgb(0xB49CFF, 1f);
     /** ALL RESONANCE badge / banner colour: the light blue of R and R+ (Kelvin 2026-10-17 16:02). */
     public static final Color ALL_RESONANCE = rgb(0xA6DDFF, 1f);
@@ -347,6 +352,16 @@ public final class Theme {
      */
     public static Color gradeColor(String grade, float time, Color out) {
         return out.set(GRADE_COLORS[gradeIndex(grade)]);
+    }
+
+    /**
+     * Colour of grade index {@code g} written into {@code out}; ink1 when unknown. A full combo paints it purple
+     * ({@link #FULL_COMBO}, Kelvin 2026-10-19 13:09): the select screen passes whether the chart was ever
+     * full-comboed, the result screen whether this play was. R and R+ already mean ALL RESONANCE and stay light blue.
+     */
+    public static Color gradeColor(int g, boolean fullCombo, Color out) {
+        if (g < 0 || g >= GRADE_COLORS.length) return out.set(INK1);
+        return out.set(fullCombo && g != Grades.R && g != Grades.R_PLUS ? FULL_COMBO : GRADE_COLORS[g]);
     }
 
     /**

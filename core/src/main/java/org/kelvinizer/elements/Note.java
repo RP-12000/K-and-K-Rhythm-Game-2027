@@ -71,9 +71,12 @@ import java.util.List;
 public final class Note {
     /** Movement value outside every movement event: far off screen. */
     public static final float HIDDEN_POSITION = 2000f;
-    /** Start distance of the default approach (ref units; where the shipped charts spawn notes). */
-    public static final float DEFAULT_SPAWN_DISTANCE = 972f;
-    /** Length of the default approach in beats (972 over 2 beats: the shipped charts' 486 units/beat). */
+    /**
+     * Start distance of the default approach (ref units; where the shipped charts spawn notes; 972 when 1080 high).
+     * Kept at 1080 when the lines moved to 1080 / 120 (Kelvin 2026-10-19 15:19: 「默认下落改为两拍1080的距离」).
+     */
+    public static final float DEFAULT_SPAWN_DISTANCE = 1080f;
+    /** Length of the default approach in beats (1080 over 2 beats: the shipped charts' 540 units/beat). */
     public static final float DEFAULT_APPROACH_BEATS = 2f;
     /**
      * Movement ending at most this long before the judgement (1/32 beat, about 10 ms at 182 BPM)
@@ -287,7 +290,7 @@ public final class Note {
             && activeAt(m, judgement - APPROACH_PROBE_BEATS, true) == null;
     }
 
-    /** @return the default approach as a movement event: 972 → 0, linear, over the 2 beats before {@code judgement}. */
+    /** @return the default approach as a movement event: 1080 → 0, linear, over the 2 beats before the judgement. */
     public static Events defaultApproachEvent(float judgement) {
         return new Events(Events.TYPE.Movement, judgement - DEFAULT_APPROACH_BEATS, judgement, DEFAULT_SPAWN_DISTANCE,
             0f, 1f);

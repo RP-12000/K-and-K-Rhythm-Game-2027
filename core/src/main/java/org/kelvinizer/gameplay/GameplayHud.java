@@ -20,20 +20,25 @@ import org.kelvinizer.ui.Theme;
 import org.kelvinizer.ui.Ui;
 
 /**
- * 游玩界面的 HUD：分数和准确率在左上角，暂停键在右上角，难度标签和曲名在左下角，剩余时间在右下角；
- * 连击数和判定字仍在屏幕中央。四角的 HUD 最后绘制，光柱和按住的长条都盖不住它。
+ * 游玩界面的 HUD：分数在左上角（不显示准确率，离屏幕左边固定距离；顶边到上判定线默认位置这一段按 0.3 / 0.4 / 0.3 分，
+ * 分数字高占中间 0.4），暂停键在右上角，难度标签和曲名在左下角，
+ * 剩余时间在右下角；连击数和判定字仍在屏幕中央，自动游玩时连击数下面写 AUTOPLAY。四角的 HUD 最后绘制，光柱和按住的长条都盖不住它。
  *
  * <p>Persistent gameplay HUD in the screen corners (owner decisions 2026-10-12; DESIGN §21.5, which
- * they override where they differ, §5.3, §5.5, §5.6): score and accuracy top-left, the pause
+ * they override where they differ, §5.3, §5.5, §5.6): the score top-left, the pause
  * control top-right ({@link PauseControl}), difficulty chip and song title bottom-left, time
  * remaining bottom-right, each anchored to the {@code Ui.safe*()} edges at every aspect (16:9, 20:9,
- * 16:10, 3:2, 4:3); the progress hairline runs along the top edge. Score and accuracy are drawn at
- * {@link #CORNER_SCALE} of their §5.3 size (the accuracy never below the 20-unit playfield minimum
- * of DESIGN §1.1). Combo, judgement word and the hit error meter stay in the middle band. The band
+ * 16:10, 3:2, 4:3), except that the score keeps a fixed distance from the screen's left edge, the device's
+ * cutout inset left out (Kelvin 2026-10-20 05:56); the progress hairline runs along the top edge. The score's cap
+ * is {@link #SCORE_BAND_CAP} of the top band, from the top edge down to the default sky line, with
+ * {@link #SCORE_BAND_TOP} of the band above it and as much under it (Kelvin 2026-10-20 06:27, the shares from
+ * 07:01). The accuracy is not shown anywhere (Kelvin 2026-10-20 05:00, and again 05:56 after it came back at 05:31;
+ * it still counts in the score). Combo, judgement word and the hit error meter stay in the middle band; in an
+ * autoplay run AUTOPLAY stands under the combo in place of COMBO, the whole run (Kelvin 2026-10-20 05:57). The band
  * layout (live counters centred in a free bottom band, formerly 3:2 and 4:3) no longer switches on:
  * the playfield is stretched to fill the screen ({@link Field}, owner 2026-10-12 16:17), so there is
- * no free band ({@link Ui#useBandHud}). The corner HUD itself is not stretched. Score, accuracy, chip,
- * title and time are display-only: every touch on them goes to gameplay.
+ * no free band ({@link Ui#useBandHud}). The corner HUD itself is not stretched. Score, chip, title and
+ * time are display-only: every touch on them goes to gameplay.
  *
  * <p><b>Guard (§5.1).</b> At 16:9 the corners sit inside the outer judgement zones by design, so a
  * corner element fades to α .15 (120 ms) only while a judgement line itself, moved by chart events,
@@ -57,12 +62,12 @@ import org.kelvinizer.ui.Ui;
  * <p><b>Draw passes.</b> {@link #drawUnder} (normal block A: meter frame, glint) and
  * {@link #drawUnderText} (HUD-under text: combo, word) sit under the notes; {@link #drawCorners}
  * (shapes: hairline, chip plate, pause icon, hint, hold ring) and {@link #drawCornerText} (score,
- * accuracy, chip text, title, time, counters) run last, after the additive block and above the
+ * chip text, title, time, counters) run last, after the additive block and above the
  * pause scrim, so lane glows and held bodies never cover the corners.
  *
- * <p><b>Font pages (DESIGN §14).</b> Every HUD text comes from one of five rasters, whatever
- * its drawn size: NUMBER digits at the score cap (score, accuracy, time, chip constant), NUMBER
- * digits at the combo cap, UI at 20 (title, and the COMBO / AUTOPLAY labels drawn as UI with
+ * <p><b>Font pages (DESIGN §14).</b> Every HUD text comes from one of six rasters, whatever
+ * its drawn size: NUMBER digits at the score's cap, NUMBER digits at the §5.3 score cap
+ * {@link #SCORE_CAP} (time, chip constant), NUMBER digits at the combo cap, UI at 20 (title, and the COMBO / AUTOPLAY labels drawn as UI with
  * the UI_LABEL tracking), UI_BOLD at 22 (chip name, EARLY/LATE, live counters) and the current
  * judgement word's face. Smaller sizes are drawn from the shared raster through
  * {@link Fonts#pushPixelScale}; the screen records the text with a {@link DeferredBatch} so each
@@ -70,18 +75,30 @@ import org.kelvinizer.ui.Ui;
  */
 final class GameplayHud {
     // ------------------------------------------------------------------ corner layout (HUD scale 1)
-    /** Size of the score and the accuracy against their §5.3 size (owner: 80 %). */
-    static final float CORNER_SCALE = 0.80f;
-    /** §5.3 score cap (NUMBER 40), drawn at {@link #CORNER_SCALE}. */
+    /**
+     * §5.3 score cap (NUMBER 40) at HUD scale 1, the score's size until Kelvin 2026-10-20 06:27; now the raster of the
+     * small NUMBER page only (time, chip constant), the score taking its cap from the top band ({@link #SCORE_BAND_CAP}).
+     */
     static final float SCORE_CAP = 40f;
-    /** §5.3 accuracy cap (NUMBER 24), drawn at {@link #CORNER_SCALE}. */
-    static final float ACC_CAP = 24f;
-    /** Smallest cap of text over the moving playfield (DESIGN §1.1); floors the accuracy. */
-    static final float PLAYFIELD_MIN_CAP = 20f;
-    /** Gap between the score's baseline and the accuracy's cap top. */
-    static final float ACC_GAP = 12f;
-    /** AUTOPLAY label cap (UI_LABEL 20, §5.3), in place of the accuracy. */
+    /**
+     * The score's cap against the top band, the height from the top edge (less cutout inset and edge padding, as the
+     * pause control measures it) down to the default sky line: the band splits {@link #SCORE_BAND_TOP} above the
+     * score, this for its cap and the rest under it (Kelvin 2026-10-20 06:27: 「上沿->分数上沿->分数下沿->上判定线default
+     * 位置的三短距离比例为0.15，0.7，0.15」; 07:01, the 0.7 too large: 「太大了太大了！改回0.3+0.4+0.3」). Ignores the HUD
+     * scale; never under {@link Ui#minEssentialCap()}.
+     */
+    static final float SCORE_BAND_CAP = 0.40f;
+    /** The top band's share above the score's cap (see {@link #SCORE_BAND_CAP}). */
+    static final float SCORE_BAND_TOP = 0.30f;
+    /**
+     * Distance of the score's left edge from the screen's left edge, before the Settings edge padding: the minimum
+     * margin, whatever the device's cutout inset (Kelvin 2026-10-20 05:56: 「分数始终距离屏幕左侧一个固定距离」).
+     */
+    static final float SCORE_LEFT = Ui.MIN_MARGIN;
+    /** AUTOPLAY label cap (UI_LABEL 20, §5.3), under the combo in place of COMBO in an autoplay run. */
     static final float AUTO_CAP = 20f;
+    /** AUTOPLAY label alpha in the centre, under the notes. */
+    static final float AUTO_ALPHA = 0.70f;
     /** Difficulty chip height (§5.3). */
     static final float CHIP_H = 40f;
     /** Chip text cap (UI_BOLD name and NUMBER constant, §5.3). */
@@ -113,7 +130,7 @@ final class GameplayHud {
     static final float DEMO_SECOND_TAP = 0.18f;
 
     // ------------------------------------------------------------------ element rects (getters)
-    /** Score + accuracy (or AUTOPLAY) cluster, top-left. */
+    /** The score, top-left. */
     static final int EL_SCORE = 0;
     /** Pause icon ring, top-right. */
     static final int EL_PAUSE = 1;
@@ -150,8 +167,6 @@ final class GameplayHud {
     private static final float GLINT_SEC = 0.09f;
     /** Glint trail colour: the gradient starts at the settled trail's alpha (.35 of the head's .95), no seam. */
     private static final Color TRAIL_WHITE = new Color(1f, 1f, 1f, 0.35f / 0.95f);
-    /** The widest accuracy text, for the score cluster's width. */
-    private static final String ACC_WIDEST = "100.00%";
 
     private final Fonts fonts;
     private final Draw draw;
@@ -164,7 +179,7 @@ final class GameplayHud {
 
     // run info
     private boolean autoplay;
-    /** Corners show only the score and the accuracy (the GAMEPLAY VISUALS preview, {@link PreviewRun}). */
+    /** Corners show only the score (the GAMEPLAY VISUALS preview, {@link PreviewRun}). */
     private boolean scoreOnly;
     private Settings settings = new Settings();
     private String diffName = "";
@@ -178,12 +193,11 @@ final class GameplayHud {
     private float k = 1f;
     private float sl;
     private float sr;
+    /** The score's left edge: {@link #SCORE_LEFT} and the edge padding from the screen's left edge. */
+    private float scoreX;
     private float scoreCap;
     private float scoreW;
     private float scoreTop;
-    private float accCap;
-    private float accTop;
-    private float accW;
     private boolean constDigits;
     /** The constant's superscript mark ({@code ConstantLabel}; {@link #constText} is its whole number) and the number's width. */
     private String constMark = "";
@@ -201,9 +215,10 @@ final class GameplayHud {
     private float progY;
     private float countersY;
     private float bandBottomY;
-    /** Viewport generation and HUD scale the text widths were measured for. */
+    /** Viewport generation, HUD scale and score cap the text widths were measured for. */
     private int measuredGen = -1;
     private float measuredK = -1f;
+    private float measuredCap = -1f;
     /** Pause control hit box (field names read by the screen harnesses). */
     private float pauseX;
     private float pauseY;
@@ -225,8 +240,6 @@ final class GameplayHud {
     private final float[] cellScale = new float[SCORE_CELLS];
 
     // text caches
-    private final StringBuilder accSb = new StringBuilder(16);
-    private int accJudged = -1;
     private final StringBuilder timeSb = new StringBuilder(8);
     private int timeSec = -1;
     private final StringBuilder comboSb = new StringBuilder(16);
@@ -310,8 +323,6 @@ final class GameplayHud {
         scoreShown = 0;
         java.util.Arrays.fill(cellPop, -10f);
         java.util.Arrays.fill(cellScale, 1f);
-        accJudged = -1;
-        accSb.setLength(0);
         timeSec = -1;
         timeSb.setLength(0);
         java.util.Arrays.fill(cntVal, -1);
@@ -347,7 +358,8 @@ final class GameplayHud {
         Fonts.GlyphSet dig = Fonts.GlyphSet.DIGITS;
         Fonts.GlyphSet full = Fonts.GlyphSet.FULL;
         Fonts.GlyphSet words = Fonts.GlyphSet.WORDS;
-        // the five HUD rasters (see the class comment)
+        // the six HUD rasters (see the class comment)
+        fonts.prewarm(Fonts.Role.NUMBER, scoreCap, dig);
         fonts.prewarm(Fonts.Role.NUMBER, numRaster(), dig);
         float combo = 96f * k;
         fonts.prewarm(Fonts.Role.NUMBER, combo, dig);
@@ -362,9 +374,9 @@ final class GameplayHud {
 
     // ------------------------------------------------------------------ shared rasters
 
-    /** Raster cap of the small NUMBER page (the score's own cap). */
+    /** Raster cap of the small NUMBER page (time, chip constant): the §5.3 score cap. */
     private float numRaster() {
-        return scoreCap;
+        return SCORE_CAP * k;
     }
 
     /** Raster cap of the UI page. */
@@ -442,14 +454,6 @@ final class GameplayHud {
         unraster();
     }
 
-    /** Width of a {@link #label} at {@code cap} from the UI page. */
-    private float labelWidth(String[] letters, float cap) {
-        raster(cap, uiRaster());
-        float w = advance.measure(fonts, letters, cap);
-        unraster();
-        return w;
-    }
-
     /** "COMBO" split into cached one-letter strings for {@link #label}. */
     static final String[] COMBO = letters("COMBO");
     /** "AUTOPLAY" split for {@link #label}. */
@@ -497,22 +501,28 @@ final class GameplayHud {
     private void layout() {
         band = Ui.useBandHud();
         k = MathUtils.clamp(Ui.uiScale(), 0.9f, 1.3f);
-        sl = Ui.safeLeft();
-        sr = Ui.safeRight();
-        float st = Ui.safeTop();
-        float sb = Ui.safeBottom();
+        // the live preview is a picture of a whole screen: its corners keep only the minimum margin, not this
+        // device's cutout insets and edge padding, which pushed the score in from the panel's corner on phones
+        // (Kelvin 2026-10-20 03:20)
+        sl = scoreOnly ? Ui.left() + Ui.MIN_MARGIN : Ui.safeLeft();
+        sr = scoreOnly ? Ui.right() - Ui.MIN_MARGIN : Ui.safeRight();
+        float sb = scoreOnly ? Ui.bottom() + Ui.MIN_MARGIN : Ui.safeBottom();
         pause.layout();
         pauseX = pause.boxX();
         pauseY = pause.boxY();
         pauseW = pause.boxW();
         pauseH = pause.boxH();
-        scoreCap = SCORE_CAP * CORNER_SCALE * k;
-        accCap = Math.max(ACC_CAP * CORNER_SCALE * k, PLAYFIELD_MIN_CAP);
+        // top-left: the score, its cap 0.4 of the top band from the top edge (the pause control's, less cutout and
+        // edge padding; the live preview's own top) down to the default sky line, 0.3 of the band above it
+        float bandTop = scoreOnly ? Ui.top() : pause.edgeTop();
+        float topBand = bandTop - pause.sky();
+        scoreCap = Math.max(SCORE_BAND_CAP * topBand, Ui.minEssentialCap());
         chipH = CHIP_H * k;
-        if (measuredGen != Ui.generation() || measuredK != k) measure();
-        // top-left: score, accuracy (or AUTOPLAY) under it
-        scoreTop = st;
-        accTop = st - scoreCap - ACC_GAP * k;
+        if (measuredGen != Ui.generation() || measuredK != k || measuredCap != scoreCap) measure();
+        // a fixed distance from the screen's left edge (no cutout inset; the live preview's corner has no edge
+        // padding either)
+        scoreX = scoreOnly ? sl : Ui.left() + SCORE_LEFT + Ui.edgePadding();
+        scoreTop = bandTop - SCORE_BAND_TOP * topBand;
         // bottom-left: chip on the safe bottom, title after it; bottom-right: time on the chip's row
         chipX = sl;
         chipY = sb;
@@ -530,8 +540,8 @@ final class GameplayHud {
     private void measure() {
         measuredGen = Ui.generation();
         measuredK = k;
+        measuredCap = scoreCap;
         scoreW = fonts.digitsWidth(Fonts.Role.NUMBER, scoreCap, SCORE_DIGITS, true);
-        accW = autoplay ? labelWidth(AUTOPLAY, AUTO_CAP * k) : numFixedWidth(ACC_WIDEST, accCap);
         chipNameW = boldWidth(diffName, CHIP_CAP * k);
         constW = constText.length() == 0 ? 0f : constDigits
             ? numFixedWidth(constText, CHIP_CAP * k)
@@ -550,8 +560,7 @@ final class GameplayHud {
     }
 
     private void updateRects() {
-        float accH = autoplay ? AUTO_CAP * k : accCap;
-        setRect(EL_SCORE, sl, accTop - accH, sl + Math.max(scoreW, accW), scoreTop);
+        setRect(EL_SCORE, scoreX, scoreTop - scoreCap, scoreX + scoreW, scoreTop);
         float rr = pause.radius() + pause.stroke() * 0.5f;
         setRect(EL_PAUSE, pause.cx() - rr, pause.cy() - rr, pause.cx() + rr, pause.cy() + rr);
         setRect(EL_CHIP, chipX, chipY, titleRight(), chipY + chipH);
@@ -732,8 +741,9 @@ final class GameplayHud {
     }
 
     /**
-     * Keeps only the score and the accuracy of the corners (no progress hairline, pause control, chip, title or time):
-     * the live preview of GAMEPLAY VISUALS, whose caption takes the bottom-right (Kelvin 2026-10-18 19:52).
+     * Keeps only the score of the corners (no progress hairline, pause control, chip, title or time):
+     * the live preview of GAMEPLAY VISUALS, whose caption takes the bottom-right (Kelvin 2026-10-18 19:52). The corners
+     * then sit the minimum margin from the screen's edges, without the device's insets or edge padding.
      */
     void setScoreOnly(boolean on) {
         scoreOnly = on;
@@ -859,13 +869,6 @@ final class GameplayHud {
         }
         fcState = !settings.fcArIndicator || !s.isFullComboSoFar() ? FC_NONE
             : s.count(Judgement.ECHO) > 0 ? FC_ECHO : FC_AR;
-        // accuracy
-        int judged = s.judgedCount();
-        if (judged != accJudged) {
-            accJudged = judged;
-            accSb.setLength(0);
-            Fonts.appendTruncated(accSb, s.accuracy() * 100.0, 2).append('%');
-        }
         // time remaining
         double remain = Math.max(0.0, e.lastNoteEndMs() - Math.max(0.0, e.judgeMs()));
         int sec = (int) Math.ceil(remain / 1000.0);
@@ -1153,22 +1156,17 @@ final class GameplayHud {
     }
 
     /**
-     * Last pass, text: score, accuracy (or AUTOPLAY), chip text and title, time, live counters.
+     * Last pass, text: score, chip text and title, time, live counters.
      */
     void drawCornerText(Batch b, float introT) {
         float s = slide(introT);
         float off = (1f - s) * 90f;
-        // score, accuracy, time and the chip constant: the small NUMBER page; with FC / AR INDICATOR the score is light
+        // score, time and the chip constant: the small NUMBER page; with FC / AR INDICATOR the score is light
         // blue while all RESONANCE, purple while a FULL COMBO with ECHOs, white after a break (Kelvin 2026-10-18 16:17)
         Color sc = autoplay ? Theme.AUTO : fcState == FC_AR ? Theme.ALL_RESONANCE : fcState == FC_ECHO
             ? Theme.FULL_COMBO : Theme.INK1;
-        fonts.drawDigits(b, Fonts.Role.NUMBER, scoreCap, scoreShown, SCORE_DIGITS, true, sl - off, scoreTop,
+        fonts.drawDigits(b, Fonts.Role.NUMBER, scoreCap, scoreShown, SCORE_DIGITS, true, scoreX - off, scoreTop,
             Align.left | Align.top, sc, Theme.LEADING_ZERO, 0.80f * s * gScore, cellScale);
-        if (autoplay) {
-            label(b, AUTOPLAY, AUTO_CAP * k, sl - off, accTop, Align.left | Align.top, Theme.AUTO, 0.85f * s * gScore);
-        } else {
-            numFixed(b, accSb, accCap, sl - off, accTop, Align.left | Align.top, Theme.INK1, 0.60f * s * gScore);
-        }
         if (scoreOnly) return;
         float chipCy = chipY + chipH * 0.5f;
         numFixed(b, timeSb, TIME_CAP * k, sr + off, chipCy, Align.right | Fonts.VCENTER, Theme.INK1, 0.50f * s * gTime);
@@ -1233,6 +1231,8 @@ final class GameplayHud {
         int c = e.scores().combo();
         float keep = 1f - centreCover;
         if (keep <= 0.003f) return;
+        // an autoplay run says so in the middle, under the combo in COMBO's place, from the first frame on
+        if (autoplay) label(b, AUTOPLAY, AUTO_CAP * k, Ui.CX, 504f, Align.center, Theme.AUTO, AUTO_ALPHA * keep * gCombo);
         float cap = 96f * k;
         float bt = now - breakT;
         if (c < 3 && bt >= 0f && bt < BREAK_FLICKER + BREAK_FADE) {
@@ -1269,6 +1269,7 @@ final class GameplayHud {
     }
 
     private void drawComboLabel(Batch b, float a) {
+        if (autoplay) return;
         label(b, COMBO, 18f * k, Ui.CX, 504f, Align.center, Theme.INK1, a * gCombo);
     }
 

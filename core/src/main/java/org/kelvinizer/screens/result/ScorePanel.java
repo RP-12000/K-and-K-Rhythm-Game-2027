@@ -23,7 +23,8 @@ import org.kelvinizer.ui.Theme;
  *       fixed cells: face swap NUMBER → DISPLAY → DISPLAY_SOFT, split, 1–3 sub-UV slices and tear
  *       bars. The camera kick is the screen's.</li>
  *   <li>2.70: the best line (NEW BEST pop + counted diff + pulsing gold border, BEST in
- *       {@code ink3}, FIRST DIVE, AUTOPLAY).</li>
+ *       {@code ink3}, FIRST DIVE), a pill above the score since round 7 (Kelvin 2026-10-19
+ *       06:28); an autoplay run shows the AUTOPLAY pill there instead (round 8, {@link StatsBlock}).</li>
  * </ul>
  *
  * Everything is a pure function of the timeline time; no allocation. Outside the land burst the
@@ -50,9 +51,9 @@ public final class ScorePanel implements TextQueue.Deferred {
         return w;
     }
 
-    /** Left x of the score row. */
+    /** Left x of the score row (left-aligned over the jacket since round 7). */
     public float scoreLeft(ResultModel m, ResultLayout l) {
-        return l.scoreCentred ? l.scoreX - scoreWidth(m, l.scoreCap) * 0.5f : l.scoreX;
+        return l.scoreX;
     }
 
     /**
@@ -209,21 +210,27 @@ public final class ScorePanel implements TextQueue.Deferred {
     }
 
     // ------------------------------------------------------------------ best line
+    /** Height of the NEW BEST pill the sizes below were drawn for (the layout's pill is {@code bestH}). */
+    private static final float PILL_H0 = 46f;
+
     /**
-     * Draws the best line at timeline time {@code t} ({@link Choreo#BEST_T}).
+     * Draws the best line at timeline time {@code t} ({@link Choreo#BEST_T}), its pill's top-left at
+     * ({@code bestX}, {@code bestTop}) over the jacket.
      *
      * @param accent FIRST DIVE colour
      */
     public void drawBest(ResultModel m, ResultLayout l, float t, Color accent, float alpha) {
         if (m.bestKind == ResultModel.BestKind.NONE || t < Choreo.BEST_T) return;
-        float x = l.bestX, base = l.bestBase;
+        float x = l.bestX, bh = l.bestH, by = l.bestTop - bh;
         TextQueue q = k.text;
         switch (m.bestKind) {
             case NEW_BEST: {
+                // the earlier 46-unit pill scaled to bestH
+                float f = bh / PILL_H0;
                 float p = Anim.progress(t, Choreo.BEST_T, Anim.POP);
                 float s = Math.max(0.001f, Anim.POP_EASE.apply(p));
                 float a = alpha * Math.min(1f, p * 4f);
-                float cap = 30f, numCap = 26f;
+                float cap = 30f * f, numCap = 26f * f, padX = 16f * f;
                 float wWord = q.width(Fonts.Role.RUBIK, cap, "NEW BEST");
                 float cp = Anim.ease(Anim.POW3_OUT, t, Choreo.BEST_T, 0.5f);
                 StringBuilder sb = k.sb;
@@ -233,18 +240,17 @@ public final class ScorePanel implements TextQueue.Deferred {
                 Fonts.appendGrouped(sb, Anim.count(0L, m.firstPlay ? 0L : m.bestDiff, cp));
                 boolean showDiff = m.previousBest > 0;
                 float wNum = showDiff ? q.fixedWidth(numCap, m.bestDiffText) : 0f;
-                float gap = showDiff ? 18f : 0f;
-                float total = wWord + gap + wNum;
-                float left = l.scoreCentred ? x - total * 0.5f : x;
-                float padX = 16f, padY = 8f;
-                float bx = left - padX, by = base - padY - 2f, bw = total + 2f * padX, bh = cap + 2f * padY;
-                float cx = bx + bw * 0.5f, cy = by + bh * 0.5f;
+                float gap = showDiff ? 18f * f : 0f;
+                float bw = wWord + gap + wNum + 2f * padX;
+                float base = by + 10f * f, left = x + padX;
+                float cx = x + bw * 0.5f, cy = by + bh * 0.5f;
                 boolean px = k.pushIf(cx, cy, 0f, s, s);
                 float dx = k.ox - cx, dy = k.oy - cy;
                 float pulse = t >= Choreo.BEST_T + Anim.POP
                     ? 0.5f + 0.5f * (float) Math.sin((t - Choreo.BEST_T - Anim.POP) * Math.PI * 2f / 1.2f) : 1f;
-                k.draw.roundRect(bx + dx, by + dy, bw, bh, 12f, Theme.GOLD, 0.07f * a);
-                k.draw.roundRectStroke(bx + dx, by + dy, bw, bh, 12f, 2f, Theme.GOLD, (0.30f + 0.50f * pulse) * a);
+                k.draw.roundRect(x + dx, by + dy, bw, bh, 12f * f, Theme.GOLD, 0.07f * a);
+                k.draw.roundRectStroke(x + dx, by + dy, bw, bh, 12f * f, Math.max(1.5f, 2f * f), Theme.GOLD,
+                    (0.30f + 0.50f * pulse) * a);
                 q.text(Fonts.Role.RUBIK, cap, "NEW BEST", left + dx, base + dy, Align.left, Theme.GOLD, a);
                 if (showDiff) q.fixed(numCap, sb, left + wWord + gap + dx, base + dy, Align.left, Theme.GOLD, a);
                 k.popIf(px);
@@ -252,47 +258,33 @@ public final class ScorePanel implements TextQueue.Deferred {
             }
             case BEST: {
                 float a = alpha * Anim.progress(t, Choreo.BEST_T, 0.25f);
-                float cap = 20f;
+                float cap = bh * 0.5f, base = by + (bh - cap) * 0.5f;
+                float g0 = 10f * l.s, g1 = 16f * l.s;
                 float wLabel = q.width(Fonts.Role.UI, cap, "BEST");
                 float wBest = q.fixedWidth(cap, m.bestText);
-                float wDiff = q.fixedWidth(cap, m.bestDiffText);
-                float total = wLabel + 14f + wBest + 22f + wDiff;
-                float left = l.scoreCentred ? x - total * 0.5f : x;
-                q.text(Fonts.Role.UI, cap, "BEST", left, base, Align.left, Theme.INK3, a);
-                q.fixed(cap, m.bestText, left + wLabel + 14f, base, Align.left, Theme.INK3, a);
-                q.fixed(cap, m.bestDiffText, left + wLabel + 14f + wBest + 22f, base, Align.left, Theme.INK3, a);
+                q.text(Fonts.Role.UI, cap, "BEST", x, base, Align.left, Theme.INK3, a);
+                q.fixed(cap, m.bestText, x + wLabel + g0, base, Align.left, Theme.INK3, a);
+                q.fixed(cap, m.bestDiffText, x + wLabel + g0 + wBest + g1, base, Align.left, Theme.INK3, a);
                 break;
             }
             case FIRST_DIVE: {
                 float p = Anim.progress(t, Choreo.BEST_T, Anim.POP);
                 float s = Math.max(0.001f, Anim.POP_EASE.apply(p));
                 float a = alpha * Math.min(1f, p * 4f);
-                float cap = 20f;
+                float cap = bh * 0.5f, padX = 12f * l.s;
                 float w = q.width(Fonts.Role.UI_LABEL, cap, "FIRST DIVE");
-                float left = l.scoreCentred ? x - w * 0.5f : x;
-                float padX = 14f, padY = 10f;
-                float bw = w + 2f * padX, bh = cap + 2f * padY;
-                float cx = left - padX + bw * 0.5f, cy = base - padY + bh * 0.5f;
+                float bw = w + 2f * padX;
+                float cx = x + bw * 0.5f, cy = by + bh * 0.5f;
                 boolean px = k.pushIf(cx, cy, 0f, s, s);
                 float ox = k.ox, oy = k.oy;
-                k.draw.roundRect(ox - bw * 0.5f, oy - bh * 0.5f, bw, bh, 10f, accent, 0.10f * a);
-                k.draw.roundRectStroke(ox - bw * 0.5f, oy - bh * 0.5f, bw, bh, 10f, 1.5f, accent, 0.6f * a);
+                k.draw.roundRect(ox - bw * 0.5f, oy - bh * 0.5f, bw, bh, 8f * l.s, accent, 0.10f * a);
+                k.draw.roundRectStroke(ox - bw * 0.5f, oy - bh * 0.5f, bw, bh, 8f * l.s, 1.5f, accent, 0.6f * a);
                 q.text(Fonts.Role.UI_LABEL, cap, "FIRST DIVE", ox - w * 0.5f, oy - cap * 0.5f, Align.left, accent, a);
                 k.popIf(px);
                 break;
             }
-            case AUTO: {
-                if (m.previousBest <= 0) break;
-                float a = alpha * Anim.progress(t, Choreo.BEST_T, 0.25f);
-                float cap = 20f;
-                float wLabel = q.width(Fonts.Role.UI, cap, "BEST");
-                float wBest = q.fixedWidth(cap, m.bestText);
-                float total = wLabel + 14f + wBest;
-                float left = l.scoreCentred ? x - total * 0.5f : x;
-                q.text(Fonts.Role.UI, cap, "BEST", left, base, Align.left, Theme.INK3, a);
-                q.fixed(cap, m.bestText, left + wLabel + 14f, base, Align.left, Theme.INK3, a);
-                break;
-            }
+            case AUTO:
+                // the AUTOPLAY pill has this place (round 8)
             default:
                 break;
         }

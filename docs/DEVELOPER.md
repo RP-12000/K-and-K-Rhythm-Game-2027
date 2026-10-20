@@ -30,7 +30,7 @@
 
 ## 2. 代码约定（摘要，完整的见 ARCHITECTURE §0）
 
-* **坐标**：世界坐标固定以 1920 × 1080 为最小可见区域（`ExtendViewport`），较长的一边向外延伸。游戏场地另外按 `gameplay/Field` 拉伸到整个可见区域（谱面坐标 → 世界坐标），四角的 HUD 不拉伸。安全边（刘海、圆角、设置里的额外边距）用 `ui/Ui` 的 `safeLeft()` 等取得。界面元素按 `Ui.uiScale()` 缩放。
+* **坐标**：世界坐标固定以 1920 × 1080 为最小可见区域（`ExtendViewport`），较长的一边向外延伸。游戏场地另外按 `gameplay/Field` 拉伸到整个可见区域（谱面坐标 → 世界坐标；谱面按 1920 × 1200 的参考画面写，2026-10-19 起），四角的 HUD 不拉伸。安全边（刘海、圆角、设置里的额外边距）用 `ui/Ui` 的 `safeLeft()` 等取得。界面元素按 `Ui.uiScale()` 缩放。
 * **服务**：字体、绘图、背景、转场、音频、曲库、存档都由 `Main` 创建并持有，画面通过 `game.xxx()` 取用。GL 对象（贴图、着色器、帧缓冲）**不能放在 static 字段里**（Android 会丢失 GL 上下文）。
 * **不在每帧分配内存**：游戏、渲染和特效代码在加载后不再 `new`，用预先分配的数组和对象池。
 * **文字**：所有文字都通过 `ui/Fonts` 绘制；含中文的字符串会自动换到中文字体（`NotoSansSC-Medium.ttf`）。
@@ -60,7 +60,7 @@
 | 类 | 作用 |
 |---|---|
 | `Main` | 服务中心：创建并持有所有共用服务（`ui/UiKit` 里的绘图、字体、背景、转场、故障字、提示条、头像，以及 `SongLibrary`、`ProfileStore`、`AudioService`、`HitFx`），缓存所有画面，负责画面切换（`transitionTo`、`startGameplay`、`startTutorial`、`showResult`）和让设置生效（`applySettings`）。 |
-| `Params` | 全局常量：参考尺寸 1920 × 1080，判定窗口和权重（`play/Judgement` 里定义的别名），水雷窗口 `MINE_WINDOW_MS`（±66.67 ms）、轨道水雷提前量 `LANE_MINE_LEAD_MS`（0，到线才封锁），判定区半高 `JUDGE_ZONE_HALF`（108），结束延迟 `FINISH_DELAY_MS` 等。只放常量。 |
+| `Params` | 全局常量：游玩场地和谱面的参考画面 1920 × 1200（2026-10-19 起；界面视口仍是至少 1920 × 1080，`Ui.REF_H`），判定窗口和权重（`play/Judgement` 里定义的别名），水雷窗口 `MINE_WINDOW_MS`（±66.67 ms）、轨道水雷提前量 `LANE_MINE_LEAD_MS`（0，到线才封锁），判定区半高 `JUDGE_ZONE_HALF`（480，屏幕高度的 0.4）和画出来的判定带 `JUDGE_BAND_HALF`（120），结束延迟 `FINISH_DELAY_MS` 等。只放常量。 |
 
 ### 4.2 `audio`：声音和歌曲时钟
 
@@ -77,7 +77,7 @@
 | 类 | 作用 |
 |---|---|
 | `Chart` | 一张可玩的谱面（v2 模型）：轨道、轨道模式（`laneLimit()`，0 = 无限轨）、判定线几何、按轨道和线预先建好的音符索引；内部类 `Chart.LoadReport` 记录加载时修正、丢弃的内容和 LANE MINE 冲突。 |
-| `ChartMapper` | 读写谱面：解析 v2，把 v1 精确转换成 v2（20 条原始轨道 → 上下两条线各 ±1..±5），去掉重复音符，生成加载报告（不干净时记一次日志）。 |
+| `ChartMapper` | 读写谱面：解析 v2、v3、v4，把 v1 精确转换成 v2（20 条原始轨道 → 上下两条线各 ±1..±5），v1、v2 的 y 值乘 10/9 换到 1200 高的画面（`toFrame1200`），v1、v2、v3 的判定线以 600 为中心拉长 36/35 换到 1080 / 120（`toLines1080`），写出 v4，去掉重复音符，生成加载报告（不干净时记一次日志）。 |
 | `Events` | 一段带缓动的关键帧：`MovementEvents`、`RotationEvents`、`DisappearEvents`、`HeightEvents`、轨道的宽度和透明度事件、`LineEvents` 都用它。 |
 | `JudgementLine` | 两条判定线的高度、全局轨道缩放（`laneScaleAt`）、镜头平移（`cameraFrameAt`，中轴线左右移动），以及让它们动起来的 `LineEvents`。旧的窗口左右边界读取时换算成缩放和平移（CHART_FORMAT §3.5）。 |
 | `Lane` | 一条轨道：id 负数在左，0 只能是插入的轨道；宽度和透明度可以随时间变化；`implicit()` 是无限轨加载时自动补上、存档时不写出的轨道；`insert()` 是插入事件（CHART_FORMAT §3.6），插入前宽 0；`deletion()` 是删除事件（§3.7），删完宽 0。 |
@@ -115,29 +115,29 @@
 |---|---|
 | `DeferredBatch` | 包内。先记录、再按贴图分组重放的 Batch：分散绘制的文字合并成每个字体页一次绘制调用。 |
 | `GlitchCapture` | 包内。音符故障的录制 Batch：`NoteRenderer` 画正在故障的音符时先录下它的四边形，再切成左右错开的横条、加上红蓝两层、偶尔变暗，画进图集批次（CHART_FORMAT §6.9）。 |
-| `EdgeEntry` | 从屏幕边缘入场（DESIGN §5.4）：出生点在 16:9 参考画面之外、出生时本体却会露进可见范围的音符（场地拉伸之后就是任何屏幕上转了角度、会露出一角的音符），在第一段运动之前按它的平均速度从屏幕边缘滑进来。按当前可见范围算出每个音符的入场拍，供 `NoteRenderer`、`TrailRenderer` 和开场留白（`GameplayScreen`）使用。距离用参考单位，可见范围按 `Field` 换回参考单位来算。纯 Java，只影响画面，不影响判定。 |
-| `Field` | 场地拉伸（2026-10-12 16:17）：谱面按 1920 × 1080 写，游戏时以屏幕中心为原点，x 乘 `kx = worldW / 1920`、y 乘 `ky = worldH / 1080`（像素上就是屏幕宽 / 1920、屏幕高 / 1080）。引擎拉伸判定线和轨道窗口，渲染把到线的距离和尾巴长度乘 `ky`，判定区是 ±432·`ky`（19:09 起，上下各约半屏；画面上的判定带仍是 ±108·`ky`，见 `Field.bandHalf`）。音符厚度、文字、波纹和四角 HUD 不拉伸。`GameplayScreen` 加载时和每帧按视口设置；默认 1（无头测试不受影响）。 |
+| `EdgeEntry` | 从屏幕边缘入场（DESIGN §5.4）：出生点在参考画面之外、出生时本体却会露进可见范围的音符（场地拉伸之后就是任何屏幕上转了角度、会露出一角的音符），在第一段运动之前按它的平均速度从屏幕边缘滑进来。按当前可见范围算出每个音符的入场拍，供 `NoteRenderer`、`TrailRenderer` 和开场留白（`GameplayScreen`）使用。距离用参考单位，可见范围按 `Field` 换回参考单位来算。纯 Java，只影响画面，不影响判定。 |
+| `Field` | 场地拉伸（2026-10-12 16:17）：谱面按 1920 × 1200 写（2026-10-19 起，以前是 1920 × 1080，旧谱面读取时换算，`ChartMapper.fromFrame1080`），游戏时参考画面的中心 (960, 600) 对准屏幕中心，x 乘 `kx = worldW / 1920`、y 乘 `ky = worldH / 1200`（16:10 屏幕正好是 1，16:9 是 0.9）。引擎拉伸判定线和轨道窗口，渲染把到线的距离和尾巴长度乘 `ky`，判定区是 ±480·`ky`（上下各约半屏；画面上的判定带是 ±120·`ky`，见 `Field.bandHalf`）。音符厚度、文字、波纹和四角 HUD 不拉伸。`GameplayScreen` 加载时和每帧按视口设置；默认 1（无头测试不受影响）。 |
 | `FeedbackLayer` | 包内。判定线附近的短暂反馈：“轨道上”显示的判定字（含碰到水雷的红色 LOST）、触摸接触环、ECHO 小箭头、水雷冲击环。 |
 | `FieldRenderer` | 包内。两条判定线和轨道区：线、刻度、全高的轨道分隔线、轨道发光、TIDE 命中时整条线的涌起（`swell`）、判定区提示（从线往外到 ±0.4 屏高的渐变，线上的不透明度 `ZONE_HINT_A` 0.07，2026-10-18 19:52 前 0.035）。 |
 | `GameEngine` | 一局的模型：歌曲时间、触摸和按键输入、判定（TIDE 组、联合判定、hold 和 TIDE STREAM 的按住规则）、水雷和 LANE MINE（和同轨 note 撞在一起时 note 优先）、计分、事件流、暂停和恢复、自动播放。纯 Java，不碰 GL，加载后不分配内存。 |
 | `GameEvent` | 引擎事件流里的一条：HIT、HOLD_START、HOLD_END、LOST、MINE、EMPTY，加上标志（如 `FLAG_JOINT` 联合判定、`FLAG_LANE_MINE` 轨道水雷接触）。画面按它播放特效和文字。 |
 | `GameKeys` | 桌面键位：两排各 10 个键对应两条线的 ±1..±5 轨道，G/H、T/Y 对应插入的 0 号轨，空格只判定下线的 TIDE。 |
-| `GameplayHud` | 包内。游戏 HUD：四角（分数、准确率、暂停按钮、难度和歌名、剩余时间、进度条）、中间的连击和判定字、误差条、实时计数；教程用的演示钩子（`demoPauseDoubleTap`、`demoJudgement`）。开着「FC/AR 指示」（`Settings.fcArIndicator`，2026-10-18 16:17）时分数按 `fcState` 变色：全共鸣淡蓝、FC 紫、断了白色。 |
+| `GameplayHud` | 包内。游戏 HUD：四角（分数、暂停按钮、难度和歌名、剩余时间、进度条；2026-10-20 起不显示准确率（05:00；05:31 放回过一次，05:56 又去掉），离屏幕左边固定 `SCORE_LEFT`（24）加额外边距，不按设备的安全边距（05:56）；顶边到上判定线默认位置这一段按 `SCORE_BAND_TOP` 0.3 / `SCORE_BAND_CAP` 0.4 / 0.3 分，分数字高占 0.4（06:27 起按这一段算，07:01 从 0.15 / 0.7 / 0.15 改小））、中间的连击和判定字（自动游玩时连击数下面写 AUTOPLAY，代替 COMBO，05:57）、误差条、实时计数；教程用的演示钩子（`demoPauseDoubleTap`、`demoJudgement`）。开着「FC/AR 指示」（`Settings.fcArIndicator`，2026-10-18 16:17）时分数按 `fcState` 变色：全共鸣淡蓝、FC 紫、断了白色。`setScoreOnly`（实时预览）时四角只离边 `Ui.MIN_MARGIN`，不按设备的安全边距和额外边距（2026-10-20，手机上预览框里的分数以前会往右挪）。 |
 | `GameplayScreen` | 游戏画面：先把输入交给引擎、再交给暂停控件；绘制场地、潮水、残影、音符、特效和 HUD；开场、倒计时、暂停菜单和结束。教程画面继承它（受保护的演示钩子在这里）。 |
 | `GuidingText` | 教程的一条定时字幕：按拍子淡入淡出；样式 `GuidingText.Style`，锚点 `GuidingText.Anchor`（可以挂在 HUD 元素、判定线或叠在一起的 TIDE 上）。 |
 | `IntroductionGuidelines` | 教程的全部字幕（英文和中文），按语言和暂停方式构造（`IntroductionGuidelines(zh, pauseMode)`）。拍点和位置按 Kelvin 手写的谱面（2026-10-17）手工排，直接改，改完按 §6.4 检查。 |
 | `IntroductionScreen` | 教程画面：在普通游玩之上显示字幕和演示（判定字、EARLY / LATE、暂停双击、水雷），以及 SKIP 按钮；结果标记为教程（不记录谱面成绩，只记下“看过教程”和第一次的经验）。 |
 | `NoteGuide` | NOTE GUIDE 音符图鉴面板（2026-10-12；在设置 GAMEPLAY 最后，2026-10-18 03:25 起在 OTHER 最后，**05:14 起哪里都不显示**，代码先留着）：两列六种音符，每种一个静止小图（自己持有一个 `NoteRenderer`，用它的 `paint*` 方法画）、名字和一句玩法（玩法文字在 `RULE` / `RULE_ZH`，名字来自 `NoteType`）。`layout(width, k, zh)` 按宽度、界面缩放和语言排版并缓存，`drawShapes` / `drawText` 两遍绘制。只显示，不接收输入。原来由 `screens/shell/NoteGuideRow` 放进设置列表。 |
-| `NoteRenderer` | 包内。画所有音符：DROP、STREAM、MINE、LANE MINE 柱、TIDE（天空线珍珠串、地面线滚浪）、TIDE STREAM 水带、金色同步方块和发光，以及 sync 高亮边框（`setSyncHint`、`syncFrame` / `frameGlow`、`crestGlow`，粗细和强度是 `HL_*` 常量）。转过的 TIDE / TIDE STREAM 绕旋转中心画成无限长（`tideTurn` / `tideTurnEnd`，2026-10-16）。它的 `paint*` 方法也给残影、教程演示和 NOTE GUIDE 用。 |
+| `NoteRenderer` | 包内。画所有音符：DROP、STREAM、MINE、LANE MINE 柱、TIDE（天空线珍珠串、地面线滚浪）、TIDE STREAM 水带、金色同步方块和发光，以及 sync 高亮边框（`setSyncHint`、`syncFrame` / `frameGlow`、`crestGlow`，粗细和强度是 `HL_*` 常量）。转过的 TIDE / TIDE STREAM 绕旋转中心画成无限长（`tideTurn` / `tideTurnEnd`，2026-10-16）。它的 `paint*` 方法也给残影、教程演示和 NOTE GUIDE 用。目押校准（`setHitPoint`，2026-10-20）：`hitShift()` =（20 − 设定值）× 按键缩放，`drawPos` 减掉它，所有音符沿自己的路一起挪；残影由 `TrailGeometry.setShift` 跟着挪。 |
 | `NoteShapes` | 音符外形的纯数字和规则：上下线重叠时的挖空、TIDE 的 T4 外形、sync 珍珠（`showsPearl`）、LANE MINE 柱、按键离线远时按中心定位（`centreShiftX/Y`，天地两排在任何音符大小和屏幕比例下对齐）、旋转中心（`pivotShiftX/Y`，CHART_FORMAT §6.1.1）和转过的 TIDE 能伸多远（`tideTurnReach`）。渲染器和残影按它画，测试直接检查它。 |
-| `PauseControl` | 右上角暂停按钮的位置、触摸区和输入规则（双击、按住 0.35 s、单击；哪些按下不算）。纯 Java。 |
+| `PauseControl` | 右上角暂停按钮的位置（靠右，上下居中在屏幕顶边和天线之间；`edgeTop()`、`sky()` 也给 HUD 的分数用）、触摸区和输入规则（双击、按住 0.35 s、单击；哪些按下不算）。纯 Java。 |
 | `PauseMenu` | 包内。暂停菜单（方案 B）：暗幕和三个大按钮 RETRY / RESUME / QUIT。 |
-| `PreviewRun` | 「游戏界面」中间实时预览的那一局（2026-10-18 19:52）：自己持有一个 `GameEngine`（时钟用模拟的时间源 `SongClock.setTimeSource`）和 `FieldRenderer`、`NoteRenderer`、`FeedbackLayer`、`GameplayHud`（`setScoreOnly`：四角只剩分数和准确率），每局随机生成一张 40 次下落的谱（`DROPS`，120 BPM 每拍一个；双押之间隔 1–6 次下落，车道至少隔一条），自己按每个音符（±50 ms，约六分之一打成回响），连击到这一局的 5–12 时漏一个；打完 0.7 s 换新谱。按当前玩家的设置每帧绘制，用世界坐标画一整个游戏画面，由 `screens/shell/LivePreview` 缩小、裁剪进框里。不接收点击。 |
+| `PreviewRun` | 「游戏界面」中间实时预览的那一局（2026-10-18 19:52）：自己持有一个 `GameEngine`（时钟用模拟的时间源 `SongClock.setTimeSource`）和 `FieldRenderer`、`NoteRenderer`、`FeedbackLayer`、`GameplayHud`（`setScoreOnly`：四角只剩分数），每局生成一张 12 组的谱（`GROUPS`，120 BPM 每拍一组，单、单、双循环四次，每组随机在上线或下线，双押车道至少隔一条，2026-10-20 起；以前是 40 次下落随机漏），自己按每个音符（±50 ms 共鸣），第 5 组（`ECHO_GROUP`）早或晚 85–120 ms 打成回响，第 9 组（`LOST_GROUP`，双押）不打，所以分数每局淡蓝 → 紫 → 白；打完 0.7 s 换新谱。按当前玩家的设置每帧绘制，用世界坐标画一整个游戏画面，由 `screens/shell/LivePreview` 缩小、裁剪进框里。不接收点击。 |
 | `RunOverlay` | 包内。盖在 HUD 之上的时刻：3-2-1 倒计时（开场每步 1 s，在歌曲时钟开始前；恢复每步 0.6 s）、结束横幅（CLEAR / FULL COMBO / ALL RESONANCE）。开场的预备时间常量 `PREROLL_SEC` 也在这里。 |
 | `ScaledGlitch` | 包内。连击数、倒计时这类会缩放的数字的故障闪烁，固定格宽，数字变化时不抖动。 |
 | `TideWash` | 包内。TIDE 命中的潮水效果（光带浮起、退潮、变暗）和 TIDE STREAM 按住时的细光带。 |
 | `TouchMarks` | 包内。「显示触控」（2026-10-18 19:52）：游戏中每个按着的手指下面一个白色的圈（半径 `R` 64）和中间的小点，跟着手指；松开后圈放大三分之一、`FADE_SEC` 0.25 s 淡出。每帧从引擎的指针表读位置，画在音符和特效上面、四角 HUD 下面。以前「显示触控」只在点到两个判定区外时闪淡点（那个淡点现在只有教程有）。 |
-| `TrailGeometry` | 残影副本在某一时刻的位置和角度。纯 Java。 |
+| `TrailGeometry` | 残影副本在某一时刻的位置和角度。纯 Java。`setShift` 让副本和活音符一样按目押校准挪（2026-10-20）。 |
 | `TrailPlan` | 残影的纯规则：哪些副本存在、多亮、超出预算时怎么稀疏。 |
 | `TrailRenderer` | 包内。画残影：在活音符之前画每个副本，最远的先画，用和活音符相同的画法。 |
 
@@ -164,7 +164,7 @@
 | `Profile` | 一个玩家的存档：名字、头像、贝壳、深度、买过的歌、成绩记录、个人设置、地图位置等；旧存档的转换（`migrateToSchema2`）。 |
 | `ProfileStore` | 多账号存档：读写、原子保存、备份和损坏恢复、导入导出、记录成绩（`recordPlay`）、买单曲（`buySong`）、重置记录（`resetRecords`，2026-10-18 20:16 起清空全部进度：成绩、深度、记录、统计、贝壳、买下的曲目、剧情和隐藏曲目标记、教程、章节模式和要靠深度解锁的头像样式；名字、设置和校准保留）。 |
 | `Shells` | 每局贝壳（原来的经验公式和奖励）和单曲默认价格。 |
-| `Settings` | 跟随潜水员的设置：暂停方式 `pauseMode`、判定字位置、EARLY / LATE、语言、显示触控 `strayTouches`（2026-10-18 起只有开 / 关，旧的 AUTO 按关算；19:52 起是游戏中每个手指下的圈，见 `gameplay/TouchMarks`）、实时计数（设置里已没有这一行）、触感、sync 提示 `syncHint` 等。 |
+| `Settings` | 跟随潜水员的设置：暂停方式 `pauseMode`、判定字位置、EARLY / LATE、语言、显示触控 `strayTouches`（2026-10-18 起只有开 / 关，旧的 AUTO 按关算；19:52 起是游戏中每个手指下的圈，见 `gameplay/TouchMarks`）、实时计数（设置里已没有这一行）、触感、sync 提示 `syncHint`、目押校准 `hitPointPx`（−100..100 px，默认 20，2026-10-20）等。 |
 
 ### 4.9 `map`：潜水地图（选歌）
 
@@ -174,25 +174,26 @@
 |---|---|
 | `AutoChip` | 歌曲卡片上的 AUTO（自动播放）开关。 |
 | `CardChip` | 歌曲卡片上的一个难度按钮（难度名和定数）。 |
-| `CardRecord` | 歌曲卡片上一个难度的成绩区：最高分、评级、通关标记、准确率、这张谱的深度（当前 / 满分）、排名、次数、最近走势、小目标。 |
+| `CardRecord` | 歌曲卡片上一个难度的成绩区：最高分、评级（打过全连就是紫色）、准确率、这张谱的深度（当前 / 满分）、排名、次数、小目标。 |
 | `DescendButton` | DESCEND 按钮（带下沉的双箭头和光晕）；没买的单曲变成「HOLD TO BUY」购买模式（按住 0.6 秒）。 |
-| `SortPanel` | 所有曲目的排序面板：从 SORT 按钮升起，选分组（曲包 / 全部）、顺序（默认、歌名、定数、最高分、最近）和筛选（NEW / FULL COMBO / ALL RESONANCE，一次一个，再点取消）。 |
-| `TextChip` | 排序面板里的文字小按钮（选中时填满青色，放不下时折成两行）。 |
+| `SortPanel` | 所有曲目的排序面板：从 SORT 按钮升起，选顺序（默认、歌名、定数、最高分、最近）和筛选（NEW / FULL COMBO / RESONATED，一次一个，再点取消）。 |
+| `GridPage` | 所有曲目页（2026-10-19）：网格的位置（一排两首、相邻两行错开半格，手机上和地图默认缩放一样大、平板小两成，2026-10-19 21:18 起）、选中圈半径、网格的裁剪和渐隐（遮罩着色器）、滚动条和点击范围。网格跟着地图镜头上下滚（x 锁住、不缩放）；节点、名字、成绩行和行与行之间的连线由 `MapRenderer` 画，连线由 `MapWorld` 建。上面的曲包框 2026-10-20 去掉了，网格从玩家框下面 24 开始（`MapHud.frameBottom`）。 |
+| `TextChip` | 排序面板里的文字小按钮（选中时填满青色，放不下时折成两行；`setLabel` 换语言时换字）。 |
 | `CaveData` | 读 `assets/maps/` 的地图数据（每层一个 JSON）和剧情，格式见 `docs/MAP_FORMAT.md`。 |
 | `CaveFx` | 层与层之间的转场：旋涡进入（X1）、下坠（X3）、上浮（X4）。 |
 | `MapBubbles` | 在地图上拖动、点击时冒出的气泡。 |
 | `MapCamera` | 地图镜头的物理：跟手拖动、惯性、越界回弹、双指缩放、飞行到节点。 |
 | `MapFilter` | 筛选条件（NEW / FULL COMBO / ALL RESONANCE 之一或不筛），按镜头难度判断每首歌；`MapWorld` 不把不符合的歌排进网格。 |
-| `MapGestures` | 地图的手势识别（拖动、双指、点击、长按、双击）。 |
-| `MapHud` | 地图四周的 HUD：潜水员徽章（贝壳数、深度、离下一个头像外观的进度）、设置按钮、镜头难度切换、全图提示（捏合到全图时亮 1 秒），所有曲目的 SORT 按钮（右下角，底栏放不下时在难度切换上方），主界面右下角的「所有曲目」按钮和设置左边的故事模式 / 章节模式切换按钮（主线章节全部解锁后出现）。2026-10-16 起没有上浮牌、回到当前位置和 DEMO 标记。 |
+| `MapGestures` | 地图的手势识别（拖动、双指、点击、长按、双击；两根手指静止按住 1.5 秒上浮，2026-10-19）。 |
+| `MapHud` | 地图四周的 HUD：左上玩家块（白圈圆头像、名字、两头尖的深度标签）和设置左边的贝壳胶囊（2026-10-19 由原来的潜水员徽章拆成两个；2026-10-20 03:26 按 Kelvin 画的绿框放大；14:10 起玩家块照设计串的方案五不画框，高 100，顶边和贝壳胶囊对齐，胶囊高 88，尺寸常量在类里和 `MapStyle`；03:38 起贝壳胶囊不能点，14:40 起只有点玩家块的头像打开玩家档案）、设置按钮、镜头难度切换、上浮圈（两根手指静止按住时出现在两指中间，2026-10-19 起代替全图提示），所有曲目的 SORT 按钮（右下角，底栏放不下时在难度切换上方），主界面右下角的「所有曲目」按钮和设置左边的故事模式 / 章节模式切换按钮（主线章节全部解锁后出现）。2026-10-16 起没有上浮牌、回到当前位置和 DEMO 标记。 |
 | `MapNode` | 地图上的一个点（歌曲洞、剧情、竖井、航线洞口、上浮洞、未知信号）：位置、成绩、上锁和已读状态、动画状态。 |
-| `MapRenderer` | 画地图世界：光斑、区域名、路、解锁虚线、各种点、锁、层名牌、路牌和提示，按贴图排序控制绘制次数。 |
-| `MapScreen` | 公开。洞穴地图：把上面这些组合起来，处理层的切换、上浮（只在子层：缩到全图后 1 秒内连捏两次，或返回键 / Esc / PageUp；航线页和开着歌曲卡片时不上浮）、选歌（没有镜头难度谱面的歌点了只晃一下）、剧情、DESCEND（X2c）和从游戏返回的解锁动画（X5）。 |
+| `MapRenderer` | 画地图世界：光斑、区域名、路、解锁虚线、各种点、锁、层名牌、路牌和提示，按贴图排序控制绘制次数；也给 HUD 画字。 |
+| `MapScreen` | 公开。洞穴地图：把上面这些组合起来，处理层的切换、每层进来的镜头（最近的缩放 `MapStyle.ZOOM_MIN`，主界面除外）、上浮（只在子层：两根手指静止按住 1.5 秒，或返回键 / Esc / PageUp；主界面和开着歌曲卡片时不上浮，所有曲目页除外）、选歌（没有镜头难度谱面的歌点了只晃一下）、剧情、DESCEND（X2c）和从游戏返回的解锁动画（X5）。 |
 | `MapStyle` | 地图专用常量：世界尺寸、节点样式、镜头物理、HUD 尺寸和少量地图专用颜色。 |
 | `MapUi` | 地图上 HUD、卡片和面板的界面缩放。 |
-| `MapWorld` | 一层地图的内容：从数据建点和路、算上锁和通关、所有曲目的网格排列（含筛选）。`rise` 点不建节点，只用于起始镜头和镜头范围。 |
+| `MapWorld` | 一层地图的内容：从数据建点和路、算上锁和通关、所有曲目的歌（所有曲包里的，含排序和筛选；位置由 `GridPage` 排）。`rise` 点不建节点，只用于起始镜头和镜头范围。 |
 | `PeekTip` | 长按节点时显示各难度最高分的小浮窗。 |
-| `SongCard` | 歌曲卡片（宽屏在右侧、窄屏从底部弹出）：曲绘、成绩、信息、难度、AUTO 和 DESCEND。 |
+| `SongCard` | 歌曲卡片（右侧弹出；排版是第五版，DESIGN §4.2）：最上面一行 ‹ 关卡名 ›（2026-10-19 起没有 ×）、16:9 曲绘和柔光（`SongLibrary.washIfReady`）、标题带（超过 30 个字符的歌名用 `ui/Marquee` 滚动）、分数和 DEPTH / PLAYS、评级圈、难度、NEXT、AUTO 和 DESCEND。成绩区的文字由 `CardRecord` 算好缓存。 |
 | `StoryCard` | 剧情卡（X6）：墨水晕开、青色细线、打字机文字、翻页。 |
 | `ThumbAtlas` | 节点上的圆形缩略图：在后台线程裁剪缩放曲绘，缓存到 `cache/thumbs/`。 |
 | `VelocityTracker` | 拖动松手时的速度估计（卡片滑动、列表滚动）。 |
@@ -202,11 +203,12 @@
 | 类 | 作用 |
 |---|---|
 | `CalibrationScreen` | 校准：音频延迟（跟着 120 BPM 节拍点击，取中位数），可以试打验证。画面延迟 2026-10-18 起取消，这里只剩这一页。 |
+| `HitPointScreen` | 目押校准（VISUAL HIT POINT，2026-10-20 03:20；设置 → 视觉第一行的「校准…」打开，返回回到视觉）：开头一张示意图（判定线、实际大小的按键、按键中线和两者的距离，`drawDiagram`），没有声音地落 4 + 16 个按键，点屏幕任意位置算最近的按键（±250 ms），用 16 个测量点击晚了多少的中位数 t 算新数值 = 当前 − 1.08 × t ÷ 按键缩放；少于 12 次或偏差超过 35 ms 只能重试，「应用」存进当前玩家。分布条用 `shell/TapStrip`。 |
 | `FirstRunScreen` | 首次设置三步：WHO'S DIVING?（头像和名字）、COMFORT（故障强度、减少动态 / 闪烁）、TUNE YOUR SONAR（音频输出和校准）。 |
 | `ProfileScreen` | 玩家档案：潜水员信息，以及 STATS / DST 10 / RECENT / PLAYER（玩家，原来叫 DIVERS）四个标签页。 |
 | `ResultScreen` | 结算画面 DIVE LOG：用 `screens/result` 的组件按时间线播放成绩。 |
 | `VisualsScreen` | 游戏界面（GAMEPLAY VISUALS；19:52 前中文叫游玩界面视觉参数；2026-10-18 15:17 起的独立画面，像校准画面；设置 → 视觉 → 调整… 打开，返回回到视觉页）：中间是 `shell/LivePreview` 大预览（19:52 起由 `gameplay/PreviewRun` 自己打一局），右列第二行是多押辅助（19:52 从游玩页挪来），下面「判定字样」一条（ECHO、RESONANCE、LOST 按故障强度轮流闪），左右两列竖排的设置行（`SettingRow.setStacked`），两列用 `SettingsPage.setSpread` 排到底、放不下时缩小而不滚动；列宽、留白等数字在类开头的常量里。 |
-| `SettingsScreen` | 设置：AUDIO、VISUAL、GAMEPLAY、OTHER 四页，每页的行在 `buildAudio` … `buildOther` 里建立（2026-10-18 起没有 TIMING：音频延迟和音频输出是 AUDIO 最上面的 TIMING 一节，校准按钮挂在音频延迟那行的微调按钮左边（`SliderRow.setLead`）；画面延迟取消；02:27 起 ACCOUNT 和 ABOUT 合并成 OTHER；03:25 起 OTHER 不分节；04:06 起 VISUAL 第一行的「调整…」打开实时预览页 `PAGE_PREVIEW`（行在 `buildPreview`，`railTab` 让它亮着 VISUAL），早 / 晚提示等挪到 GAMEPLAY 最前，实时计数没有行了，K & K 在开源许可证下面；05:14 起去掉音符图鉴；05:58 起 OTHER 最后一行左边 K & K 大字、右边版本号（`InfoRow.brand`，占满剩下的高度，05:28–05:58 是居中上下排）；06:03 起 GAMEPLAY 的两个早 / 晚提示合成一行 EARLY / LATE ON（`ChipsRow`，RESONANCE、ECHO 两个可多选的按钮）；14:29 起名字按 Kelvin 定的中文（谱面延时、音频预设、游玩界面视觉参数、多押辅助、过早 / 过晚提示等），英文从中文重译，谱面延时的两行小字是 `OFFSET_EARLY` / `OFFSET_LATE`，背景插画、打击音效时机、曲目试听、菜单音乐四行去掉，`Settings.sanitize` 把它们固定在默认值；15:17 起音频页多一行界面音效音量（`UI_NONE`，一直灰着），视觉页的「调整…」打开独立的 `VisualsScreen`，`PAGE_PREVIEW` 和 `buildPreview` 去掉；19:52 起谱面延时的说明三行（`OFFSET_DESC` 加两行提示，`SettingRow.setDescription3`），游玩页多了显示触控（暂停方式和震动之间），多押辅助挪进 `VisualsScreen`；20:16 起重置记录按住 2 秒后弹出 `shell/ResetDialog`，确认并输入玩家名后才调用 `resetRecords`）。OTHER 的 VIEW 打开开源许可证页（`buildLicenses`，数据在 `screens/shell/Licenses`），带 VIEW 的条目用 `showLicense` 显示全文。 |
+| `SettingsScreen` | 设置：AUDIO、VISUAL、GAMEPLAY、OTHER 四页，每页的行在 `buildAudio` … `buildOther` 里建立（2026-10-18 起没有 TIMING：音频延迟和音频输出是 AUDIO 最上面的 TIMING 一节，校准按钮挂在音频延迟那行的微调按钮左边（`SliderRow.setLead`）；画面延迟取消；02:27 起 ACCOUNT 和 ABOUT 合并成 OTHER；03:25 起 OTHER 不分节；04:06 起 VISUAL 第一行的「调整…」打开实时预览页 `PAGE_PREVIEW`（行在 `buildPreview`，`railTab` 让它亮着 VISUAL），早 / 晚提示等挪到 GAMEPLAY 最前，实时计数没有行了，K & K 在开源许可证下面；05:14 起去掉音符图鉴；05:58 起 OTHER 最后一行左边 K & K 大字、右边版本号（`InfoRow.brand`，占满剩下的高度，05:28–05:58 是居中上下排）；06:03 起 GAMEPLAY 的两个早 / 晚提示合成一行 EARLY / LATE ON（`ChipsRow`，RESONANCE、ECHO 两个可多选的按钮）；14:29 起名字按 Kelvin 定的中文（谱面延时、音频预设、游玩界面视觉参数、多押辅助、过早 / 过晚提示等），英文从中文重译，谱面延时的两行小字是 `OFFSET_EARLY` / `OFFSET_LATE`，背景插画、打击音效时机、曲目试听、菜单音乐四行去掉，`Settings.sanitize` 把它们固定在默认值；15:17 起音频页多一行界面音效音量（`UI_NONE`，一直灰着），视觉页的「调整…」打开独立的 `VisualsScreen`，`PAGE_PREVIEW` 和 `buildPreview` 去掉；19:52 起谱面延时的说明三行（`OFFSET_DESC` 加两行提示，`SettingRow.setDescription3`），游玩页多了显示触控（暂停方式和震动之间），多押辅助挪进 `VisualsScreen`；20:16 起重置记录按住 2 秒后弹出 `shell/ResetDialog`，确认并输入玩家名后才调用 `resetRecords`；2026-10-20 03:20 起视觉页第一行是目押校准，排法同谱面延时：`SliderRow` 带 –10 / –1 / +1 / +10 微调和三行说明（`HIT_DESC`、`HIT_EDGE`、`HIT_MIDDLE`），左边「校准…」打开 `HitPointScreen`）。OTHER 的 VIEW 打开开源许可证页（`buildLicenses`，数据在 `screens/shell/Licenses`），带 VIEW 的条目用 `showLicense` 显示全文。 |
 | `WelcomeScreen` | 欢迎画面：开场动画、K & K 标志、TAP TO DESCEND、潜水员切换和设置入口。 |
 
 ### 4.11 `screens/result`：结算画面的组件
@@ -214,18 +216,17 @@
 | 类 | 作用 |
 |---|---|
 | `Choreo` | 结算的时间线：固定节拍、可变阶段（深度、升阶、经验、升级）、跳过和停顿点。 |
-| `EchoTrace` | 判定时间分布图（ECHO TRACE）：−135..+135 ms 的直方图画成对称波形。 |
+| `CornerHud` | 左上玩家块（和地图左上角一样：白圈圆头像、名字、六边形深度标签；加深时深度标签放大发光、右下角浮出装着 ▼ 加深米数的小六边形框，再像里程表一样滚到新值）和右上贝壳胶囊（深度动画之后，左边浮出 +N 贝壳泡、像水滴一样融进胶囊，再数到新值），2026-10-19 起代替底部的潜水员条。点玩家块看深度明细、点贝壳看贝壳明细（弹窗由 `ResultScreen` 画）。 |
 | `FxPool` | 结算画面的装饰粒子（印章火花、升级光点、气泡）。和 `fx/FxPool` 无关。 |
 | `GlyphQuads` | 字体之外的逐字特效：分数格子的错位故障、扫过文字的光带（结算印章；地图和歌曲卡片上 R / R+ 的白光也借它画，见 `map/MapRenderer.grade()`）。 |
-| `GradeStamp` | 评级印章：砸下、冲击、抖动、PURE / S+ 的光泽。 |
-| `JacketBlock` | 标题行和左栏：曲绘的入场、声呐边框、AUTO 水印。 |
-| `ProfileStrip` | 潜水员条：头像、贝壳数的变化、+N 贝壳（点开明细弹窗）、深度的变化和离下一个头像外观的进度。 |
+| `GradeStamp` | 评级印章：砸下、冲击、抖动、PURE / S+ 的光泽；这一局全连时是紫色。 |
+| `JacketBlock` | 全宽标题带（曲名、曲师居中；超过 50 个字符的曲名在带里滚动）和 16:9 曲绘（背后自己颜色的柔光、下部渐暗（三栏时不暗）、入场和声呐边框），曲绘右下角里的难度块（2026-10-19 第八版起，带阴影，`drawChip`），角色区里的 AUTO 水印。 |
 | `ResultKit` | 结算组件共用的绘制环境（服务、临时颜色、文字队列、变换辅助）。 |
-| `ResultLayout` | 当前屏幕比例下结算画面每个元素的位置。 |
+| `ResultLayout` | 当前屏幕比例下结算画面每个元素的位置：16:10（1920 × 1200）是蓝本（`blueprint`），矮的屏幕整体按高度缩小，高的屏幕把多出的高度一半放在曲绘上面、一半放在下面；比 16:10 宽的屏幕把多出的宽度四成放左边、四成放右边、两成放中间；比 16:8.5 宽的手机分三栏（`columns`，2026-10-19 第八版，按 2400 × 1080 的框，比 20:9 窄时中间一栏按比例变窄）：左边曲绘和下面的分数，中间统计，右边角色区。角色区在所有比例上都是 16:10 的形状（720 : 716）。 |
 | `ResultModel` | 结算要显示的全部数值和字符串，在转场遮住画面时一次算好。 |
-| `RoundedImage` | 不用着色器画圆角图片（曲绘）。 |
-| `ScorePanel` | 分数的解码动画和与最高分的对比行。 |
-| `StatsBlock` | 判定数量各行（含 MINES、PERFECT、RESONANCE CHAIN）、EARLY / LATE、准确率和最大连击、通关标记。 |
+| `RoundedImage` | 不用着色器画圆角图片（曲绘），以及同样形状、由上往下渐深的纯色（曲绘下部的渐暗）。 |
+| `ScorePanel` | 分数的解码动画和与最高分的对比行（NEW BEST 等，压在曲绘下部分数上面）。 |
+| `StatsBlock` | 判定数量各行（含 MINES、PERFECT）、RESONANCE CHAIN / MAX COMBO 那条线、EARLY / LATE / AVG 一行、三栏时判定数上面的分隔线，自动游玩时 NEW BEST 位置上的 AUTOPLAY 标签（第八版起没有 CLEAR 等通关标记）。 |
 | `TextQueue` | 结算画面的文字按字体页分组绘制，控制绘制次数。 |
 
 ### 4.12 `screens/shell`：菜单画面共用的部件
@@ -265,7 +266,7 @@
 | `ShellFormat` | 外壳画面共用的文字格式化（不分配内存）。 |
 | `ShellScreen` | 外壳画面的基类：背景、标题栏、返回、转场和弹出卡片的管理。 |
 | `SliderRow` | 设置行：滑块和右侧的数值。 |
-| `StatsTab` | STATS 标签页：四个难度开关（只写难度名，可点亮组合，至少亮一个），亮着的难度合计的 CHARTS CLEARED（通过/总数）/ FULL COMBOS / ALL RESONANCE，和一直到底的最高分直方图（画法同结算界面的 `EchoTrace`）。 |
+| `StatsTab` | STATS 标签页：四个难度开关（只写难度名，可点亮组合，至少亮一个），亮着的难度合计的 CHARTS CLEARED（通过/总数）/ FULL COMBOS / ALL RESONANCE，和一直到底的最高分直方图（画法同以前结算界面的偏差图 `EchoTrace`，那张图 2026-10-19 去掉了）。 |
 | `SwitcherSheet` | 欢迎画面的玩家切换卡片。 |
 | `TabRail` | 设置的分类导航（宽屏在左侧，4:3 在顶部）。 |
 | `TapStats` | 校准点击的统计（中位数和离散度）。 |
@@ -296,7 +297,7 @@
 | `Chip` | 小标签 / 芯片控件，可选中。 |
 | `DepthPalette` | 六个海洋深度层的配色表，按深度（米）插值。 |
 | `DepthParams` | 深度配色算出的一组参数（由 `DepthPalette` 填写）。 |
-| `Draw` | 共用绘图服务：唯一的 SpriteBatch、程序生成的 1024² 图集（所有界面、背景、粒子的小图，含 `ring_water` 水波纹圆环）、ShapeDrawer。`ringArc()` 画抗锯齿的粗圆环（地图的分数环和封面边）。 |
+| `Draw` | 共用绘图服务：唯一的 SpriteBatch、程序生成的 1024² 图集（所有界面、背景、粒子的小图，含 `ring_water` 水波纹圆环）、ShapeDrawer。`ringArc()` 画抗锯齿的粗圆环（地图的分数环和封面边），`convexFill()` / `convexStroke()` 画抗锯齿的凸多边形和描边（地图玩家块两头尖的深度标签）。 |
 | `Fonts` | 字体服务：按“角色”（DISPLAY、NUMBER、UI、UI_BOLD 等）和字高取字体，按屏幕像素栅格化并缓存，中文自动换到中文字体。 |
 | `FrameProbe` | 帧时间探测：背景太慢时自动切到低画质。 |
 | `GlitchState` | 单个元素的故障状态（静止等级、突发、随机种子）。 |
@@ -305,7 +306,8 @@
 | `Icons` | 程序绘制的图标（暂停、设置、返回等）。 |
 | `KkScreen` | 所有画面的基类：世界视口 1920 × 1080、共用的 Batch、把触摸换算成世界坐标、返回键（BACK / Esc → `onBack`）、转场期间锁定输入。 |
 | `KkServices` | 接口：`KkScreen` 依赖的服务（由 `Main` 实现）。 |
-| `Lang` | 界面语言（2026-10-18）：`Lang.of(英文, 中文)` 是跟着语言走的文字（建一次，换语言后自动换字），`Lang.t(英文, 中文)` 取当前语言的一句，`Lang.zh()` 判断当前是不是中文。`Main.applySettings()` 按当前潜水员的 LANGUAGE 设置。选歌地图（`map` 包）不用它，保持英文。 |
+| `Lang` | 界面语言（2026-10-18）：`Lang.of(英文, 中文)` 是跟着语言走的文字（建一次，换语言后自动换字），`Lang.t(英文, 中文)` 取当前语言的一句，`Lang.zh()` 判断当前是不是中文。`Main.applySettings()` 按当前潜水员的 LANGUAGE 设置。选歌地图（`map` 包）不用它，见 §6.6 第 6 条。 |
+| `Marquee` | 放不下的歌名的滚动节奏（2026-10-19）：开头停 1 秒，每秒 80 向左滚，末尾到右边停 2 秒，空 160 接下一遍，循环；还有两端渐隐的宽度。选歌卡片（超过 30 个字符）和结算（超过 50 个字符）共用，见 DESIGN §24.20。 |
 | `Panel` | 卡片、暗幕、分隔线、分节标题的绘制辅助。 |
 | `Pressable` | 所有可按控件的基类：按下缩放、变亮、波纹、触感，抬起时生效。 |
 | `Ripple` | 按下时的波纹。 |
@@ -349,6 +351,7 @@
 | **音符图鉴（NOTE GUIDE，2026-10-18 05:14 起不显示）** | 面板：`gameplay/NoteGuide`（六句玩法 `RULE` / `RULE_ZH`、排版尺寸、小图的长度）；音符名字：`elements/NoteType`；设置列表里的行：`screens/shell/NoteGuideRow`。05:14 以前在 `SettingsScreen.buildOther` 里加在最后（03:25 前在 GAMEPLAY 的 LANGUAGE 后面）；要放回来，在某一页的 build 方法里 `p.add(new NoteGuideRow(...))` | 小图直接用 `NoteRenderer` 的画法画，音符外观改了会自动跟着变。改中文玩法前先按 §6.5 检查字库。规格见 DESIGN §9.2 |
 | **存档** | `profile/ProfileStore`（位置、保存、恢复、导入导出）；内容：`Profile`、`ChartRecord`、`Settings`、`DeviceSettings`；JSON：`PlainJson`；旧存档导入：`LegacyUserDataImporter` | 桌面存档在用户主目录的 `KandKGame/profiles/`（每个潜水员一个 `<id>.json`，加上 `index.json`、`device.json`），导出在 `KandKGame/export/`；Android 在应用自己的存储里 |
 | 歌曲时钟、音频延迟 | `audio/SongClock`、`audio/AudioService`；校准：`screens/CalibrationScreen` | |
+| 目押校准 | 设置：`profile/Settings.hitPointPx`；画：`gameplay/NoteRenderer.hitShift`、`TrailGeometry.setShift`；校准：`screens/HitPointScreen` | 只改画的位置，判定不变。规格见 DESIGN §5.8、§9.7 |
 | 键盘键位 | `gameplay/GameKeys` | |
 | 结算画面 | `screens/ResultScreen` 和 `screens/result/*`（时间线在 `Choreo`，位置在 `ResultLayout`，数值在 `ResultModel`） | |
 | 转场 | `transition/TransitionLayer` | |
@@ -380,7 +383,7 @@
 1. **数据**：跟随潜水员的设置加在 `profile/Settings`，本机设置加在 `profile/DeviceSettings`：加一个带默认值的公共字段，并在 `sanitize()` 里把非法值改回合法范围。`PlainJson` 按字段名自动读写，不用注册；旧存档里没有这个键时用默认值。
 2. **界面**：在 `screens/SettingsScreen` 对应页的 `build…` 方法里加一行，用 `ToggleRow`、`ChoiceRow` 或 `SliderRow`。行的 `get` 读字段，`set` 写字段后调用 `diverChanged()`（潜水员设置）或 `deviceChanged()`（本机设置），它们会标记存档待保存并调用 `Main.applySettings()`。
 3. **生效**：需要通知服务的设置在 `Main.applySettings()` 里处理；游戏中用到的在 `GameplayScreen.begin(...)` 读取（每局开始时）。
-4. 新文字要用英文大写的界面风格，并且都要有中文：标题和说明写成 `Lang.of("ENGLISH", "中文")`（见 §6.6），按 §6.5 检查字库。下潜画面、结算画面和选歌地图只写英文（§6.6 第 4 条）。
+4. 新文字要用英文大写的界面风格，并且都要有中文：标题和说明写成 `Lang.of("ENGLISH", "中文")`（见 §6.6），按 §6.5 检查字库。下潜画面和结算画面只写英文（§6.6 第 4 条），选歌地图见 §6.6 第 6 条。
 5. 在 DESIGN §9.2 的设置表里补上这一行。
 
 ### 6.4 改教程（手写谱面，手排字幕）
@@ -415,8 +418,9 @@ print([c for c in s if ord(c) not in cmap] or '都在字库里')
 1. **固定的文字**（标题、按钮、设置行、标签页）：在建界面时写 `Lang.of("ENGLISH", "中文")`。它是一个 `CharSequence`，每次画的时候读当前语言，所以换语言后不用重建界面。
 2. **每帧拼出来的文字**（分数说明、提示、日期）：用 `Lang.t("ENGLISH ", "中文")` 取当前语言的那一句再 append；缓存了文字的地方要记下缓存时的语言（例如 `WelcomeScreen.refreshChip` 的 `chipZh`、`DiveChart` 的 `tickZh`），语言变了重新拼。语言跟着潜水员走：换潜水员时 `ShellScreen.afterActiveChange` 先按新潜水员设好语言，再刷新各页。
 3. **第一次显示中文会卡一下**：中文字形是用到时才栅格化的。在画面被转场盖住的时候先量一次宽度（`fonts.width(...)`）把字形准备好，例如 `ResultScreen.warmText`、`GameplayHud` 和 `PauseMenu` 的 prewarm、`IntroductionScreen.begin`。
-4. **保持英文的**：选歌地图（`map` 包）、歌名和曲师、难度名（SURFACE 等）、DST 10 / DEEPEST 10 / OVERFLOW、许可证原文；游玩时用 glitch 字体画的判定字（RESONANCE / ECHO / LOST）和结束横幅（CLEAR / FULL COMBO / ALL RESONANCE），因为这个字体没有中文字形；整个下潜画面（AUTOPLAY、COMBO、EARLY / LATE、教程的 HOLD TO SKIP，Kelvin 16:41）和结算画面（16:45），这些地方不用 `Lang`；但结算的 RETRY / CONTINUE、谱面延时确认框和贝壳明细跟着语言（`ResultScreen` 的 `Lang.of`、`ResultModel.zh`，17:22），分数明细和柱状图的 峰值 / 平均 也是（20:34），还有谱面延时提示、特效调低的提示和条上那行小字（`ResultModel.hintText`、`fxNoticeText()`、`stripNote`，21:37）。暂停菜单只写当前语言（`PauseMenu`，17:22）。教程字幕还是跟语言走。
+4. **保持英文的**：歌名和曲师、难度名（SURFACE 等）、DST 10 / DEEPEST 10 / OVERFLOW、许可证原文；游玩时用 glitch 字体画的判定字（RESONANCE / ECHO / LOST）和结束横幅（CLEAR / FULL COMBO / ALL RESONANCE），因为这个字体没有中文字形；整个下潜画面（AUTOPLAY、COMBO、EARLY / LATE、教程的 HOLD TO SKIP，Kelvin 16:41）和结算画面（16:45），这些地方不用 `Lang`；但结算的 RETRY / CONTINUE、谱面延时确认框和贝壳明细跟着语言（`ResultScreen` 的 `Lang.of`、`ResultModel.zh`，17:22），分数明细和柱状图的 峰值 / 平均 也是（20:34），还有谱面延时提示、特效调低的提示和条上那行小字（`ResultModel.hintText`、`fxNoticeText()`、`stripNote`，21:37）。暂停菜单只写当前语言（`PauseMenu`，17:22）。教程字幕还是跟语言走。
 5. **游戏 HUD 的字**：`GameplayHud.label(...)` 逐个字母画（带字距），只有英文（03:1x 到 16:41 之间中文模式用过 `COMBO_ZH` 等整串画的中文，已经去掉）。
+6. **选歌地图**（`map` 包）不用 `Lang`，看 `MapScreen.zh` / `MapRenderer.zh`（`refreshProfile` 换语言后调用 `MapRenderer.refreshLabels` 重建标签和路牌）。中文模式英文中文都画（如 `SINGLES` 下面一行 `单曲`）；英文模式一个中文字也不画（Kelvin 2026-10-20：「如果语言选择是英语就不要出现中文」）：数据里的 `…Zh` 字段不画，英文中文混写的字（如 `"SIDE · 支线"`）用 `MapWorld.latin` 去掉带中文的部分，代码里的提示写成 `zh ? "中文 ENGLISH" : "ENGLISH"`。要每帧画的字在 `refreshLabels` 里先拼好（`signText`、`areaSub`）。唯一的例外是设置里语言选项的「中文」，不然切到英文后认不出怎么切回来。
 
 ---
 

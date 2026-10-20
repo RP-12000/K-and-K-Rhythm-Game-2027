@@ -3,7 +3,7 @@ package org.kelvinizer.map;
 import org.kelvinizer.ui.Ui;
 
 /**
- * 地图的手势识别：按下、拖动、双指缩放、长按（450 ms）、点击和双击（300 ms 内）。
+ * 地图的手势识别：按下、拖动、双指缩放、长按（450 ms）、点击和双击（300 ms 内），双指静止按住 1.5 秒上浮。
  * 不用 libGDX 的 {@code GestureDetector}，这样镜头从第一个像素起就跟手，
  * 双指缩放和平移能同时进行，滑行中按下能“接住”镜头。
  *
@@ -16,7 +16,9 @@ import org.kelvinizer.ui.Ui;
  * starts as PRESS; moving beyond {@link Ui#slop()} turns it into PAN; a second finger turns any
  * state into PINCH (and back to PAN when one finger lifts); holding still for 450 ms turns a
  * PRESS into LONG. Taps (release without becoming a pan, not a catch) are reported on release;
- * two taps within 300 ms and close together report a double tap. No allocation.
+ * two taps within 300 ms and close together report a double tap. Two fingers that stay within twice
+ * {@link Ui#slop()} of where they were when the second one landed, for {@link MapStyle#RISE_HOLD} s,
+ * report a rise hold (Kelvin 2026-10-19 18:46). No allocation.
  */
 final class MapGestures {
     /** Callbacks into the screen. */
@@ -41,6 +43,9 @@ final class MapGestures {
 
         /** The camera was dragged by {@code dist} HUD units this event (bubble wake). */
         void mapDragged(float hx, float hy, float dist);
+
+        /** Two fingers were held still for {@link MapStyle#RISE_HOLD} s. */
+        void mapRiseHold();
     }
 
     private static final int IDLE = 0, PRESS = 1, PAN = 2, PINCH = 3, LONG = 4;
@@ -56,6 +61,9 @@ final class MapGestures {
     private float lastTapTime = -10f, lastTapX, lastTapY;
     private float clock;
     private long frameNanos = System.nanoTime();
+    /** Rise hold: when the second finger landed (−1 once a finger moved off) and where both fingers were then. */
+    private float holdFrom = -1f;
+    private final float[] holdX = new float[2], holdY = new float[2];
 
     MapGestures(MapCamera cam, Listener listener) {
         this.cam = cam;
@@ -83,7 +91,7 @@ final class MapGestures {
         return clock + Math.max(0f, Math.min(0.1f, since));
     }
 
-    /** Per frame: advances the clock and detects long presses. */
+    /** Per frame: advances the clock and detects long presses and the rise hold. */
     void update(float dt) {
         clock += dt;
         frameNanos = System.nanoTime();
@@ -91,6 +99,25 @@ final class MapGestures {
             state = LONG;
             listener.mapLongPress(px[0], py[0]);
         }
+        if (state == PINCH && holdFrom >= 0f && clock - holdFrom >= MapStyle.RISE_HOLD) {
+            holdFrom = -1f;
+            listener.mapRiseHold();
+        }
+    }
+
+    /** Seconds two fingers have been held still (0 when they are not). */
+    float holdTime() {
+        return state == PINCH && holdFrom >= 0f ? clock - holdFrom : 0f;
+    }
+
+    /** HUD x of the point between the two fingers. */
+    float holdCx() {
+        return 0.5f * (px[0] + px[1]);
+    }
+
+    /** HUD y of the point between the two fingers. */
+    float holdCy() {
+        return 0.5f * (py[0] + py[1]);
     }
 
     /** Touch down; returns true (the map takes every touch that reaches it). */
@@ -116,6 +143,11 @@ final class MapGestures {
         py[1] = hy;
         if (state == PRESS || state == LONG) listener.mapPanStart();
         state = PINCH;
+        holdFrom = clock;
+        holdX[0] = px[0];
+        holdY[0] = py[0];
+        holdX[1] = hx;
+        holdY[1] = hy;
         cam.grab();
         return true;
     }
@@ -131,6 +163,8 @@ final class MapGestures {
             float lastDist = (float) Math.sqrt(ldx * ldx + ldy * ldy);
             px[i] = hx;
             py[i] = hy;
+            float hdx = hx - holdX[i], hdy = hy - holdY[i];
+            if (hdx * hdx + hdy * hdy > 4f * Ui.slop() * Ui.slop()) holdFrom = -1f;
             float mx = 0.5f * (px[0] + px[1]), my = 0.5f * (py[0] + py[1]);
             float dx = px[0] - px[1], dy = py[0] - py[1];
             float dist = (float) Math.sqrt(dx * dx + dy * dy);

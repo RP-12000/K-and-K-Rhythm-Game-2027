@@ -53,7 +53,8 @@ public final class GradeStamp implements TextQueue.Deferred {
         letterW = f.width(Fonts.Role.DISPLAY, letterCap, Fonts.GlyphSet.GRADE, m.gradeLetter);
         plusW = m.gradePlus ? f.width(Fonts.Role.DISPLAY, plusCap, Fonts.GlyphSet.GRADE, "+") : 0f;
         gap = m.gradePlus ? letterCap * 0.04f : 0f;
-        float maxW = 2f * l.stampR - 44f;
+        // round 7's fit (2 × 84 − 44 across its r 84 ring) scaled with the ring, as the round-8 mock-ups scale it
+        float maxW = (2f - 44f / 84f) * l.stampR;
         float total = letterW + gap + plusW;
         if (total > maxW && total > 0f) {
             float s = maxW / total;
@@ -70,10 +71,10 @@ public final class GradeStamp implements TextQueue.Deferred {
         return letterCap;
     }
 
-    /** Stamp colour (steady; the gloss of R and R+ is the shimmer band). */
+    /** Stamp colour (steady; the gloss of R and R+ is the shimmer band; purple when this play was a full combo). */
     public Color color(ResultModel m, float t, Color out) {
         if (m.autoplay || m.grade == null) return out.set(Theme.INK3);
-        return out.set(Theme.grade(m.grade));
+        return Theme.gradeColor(Theme.gradeIndex(m.grade), m.fullCombo, out);
     }
 
     /** Settle multiplier {@code u} seconds after an impact: 1 → .96 → 1 with a small overshoot. */
@@ -292,7 +293,9 @@ public final class GradeStamp implements TextQueue.Deferred {
         k.draw.circle(x, y, R, 4f, c, a);
         k.draw.circle(x, y, R - 12f, 2f, c, 0.7f * a);
         Icons.draw(k.shapes, Icons.Icon.CHECK, x, y + R * 0.14f, R * 1.05f, c, a);
-        k.text.text(Fonts.Role.UI_LABEL, 18f, "COMPLETE", x, y - R * 0.42f, Align.center | Fonts.VCENTER, c, a);
+        // 18 at round 7's r 84; scaled with the smaller round-8 rings so the word stays inside the seal
+        k.text.text(Fonts.Role.UI_LABEL, 18f * Math.min(1f, R / 84f), "COMPLETE", x, y - R * 0.42f,
+            Align.center | Fonts.VCENTER, c, a);
         k.popIf(px);
     }
 }

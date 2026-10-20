@@ -285,6 +285,7 @@ final class TrailRenderer {
         if (trailedCount == 0) return;
         float beat = e.visualBeat();
         if (Float.isNaN(beat)) return;
+        geo.setShift(painter.hitShift()); // copies follow the live notes' VISUAL HIT POINT
         // the quality budget, lowered when the live notes leave less room in the shared batch
         liveQuads = painter.quadsBound(e) + Math.max(0, extraQuads);
         budget = TrailPlan.frameBudget(!lowQuality, liveQuads);

@@ -102,6 +102,15 @@ public class Settings {
     public float backgroundDim = 0.35f;
     /** Note size scale 0.8..1.3. */
     public float noteSizeScale = 1.0f;
+    /** {@link #hitPointPx}: range and default (half a size-1.0 key: its edge on the line at the judgement time). */
+    public static final float HIT_POINT_MIN = -100f, HIT_POINT_MAX = 100f, HIT_POINT_DEFAULT = 20f;
+    /**
+     * VISUAL HIT POINT 目押校准 (Kelvin 2026-10-20 03:20), {@link #HIT_POINT_MIN}..{@link #HIT_POINT_MAX} px: how far a
+     * TAP or HOLD key's midline is from its judgement line at the judgement time, measured at note size 1.0 (a larger
+     * key scales it). {@link #HIT_POINT_DEFAULT} 20 is half the key, its edge on the line as before; 0 puts the line
+     * through the key's middle. Every note is drawn that much nearer to (or further past) its line.
+     */
+    public float hitPointPx = HIT_POINT_DEFAULT;
     /** Show the ±108 judgement zone hint. */
     public boolean zoneHint = true;
     /** Approach glow on notes (always on since 2026-10-18 16:19: no row, its effect was too faint to choose). */
@@ -177,6 +186,8 @@ public class Settings {
         artOpacity = clamp(artOpacity, 0f, 1f);
         backgroundDim = clamp(backgroundDim, 0f, 0.9f);
         noteSizeScale = clamp(noteSizeScale, 0.8f, 1.3f);
+        hitPointPx = Float.isNaN(hitPointPx) ? HIT_POINT_DEFAULT : Math.round(clamp(hitPointPx, HIT_POINT_MIN,
+            HIT_POINT_MAX));
         strayTouches = clamp(strayTouches, 0, 2);
         syncHint = clamp(syncHint, 0, 2);
         pauseMode = clamp(pauseMode, 0, 2);
@@ -201,6 +212,7 @@ public class Settings {
         s.artOpacity = artOpacity;
         s.backgroundDim = backgroundDim;
         s.noteSizeScale = noteSizeScale;
+        s.hitPointPx = hitPointPx;
         s.zoneHint = zoneHint;
         s.approachGlow = approachGlow;
         s.fcArIndicator = fcArIndicator;

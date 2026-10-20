@@ -62,6 +62,8 @@ final class MapCamera {
 
     /** True on a level that takes no zoom (the hub): pinches only pan, the wheel and keys do nothing. */
     boolean zoomLocked;
+    /** ALL SONGS: the camera only scrolls up and down (fingers move no x) and never drifts when idle. */
+    boolean lockX;
 
     MapCamera() {
     }
@@ -191,7 +193,7 @@ final class MapCamera {
     }
 
     private float drift() {
-        if (reduceMotion || idle < MapStyle.IDLE_DELAY) return 0f;
+        if (reduceMotion || lockX || idle < MapStyle.IDLE_DELAY) return 0f;
         float ramp = Math.min(1f, (idle - MapStyle.IDLE_DELAY) / 1.5f);
         return MapStyle.IDLE_AMP * ramp * MathUtils.sin(driftT * MathUtils.PI2 / MapStyle.IDLE_PERIOD);
     }
@@ -244,7 +246,7 @@ final class MapCamera {
 
     /** Pans by a HUD-space finger delta (1:1 tracking; the rubber band adds resistance). */
     void panBy(float dxHud, float dyHud) {
-        rx -= dxHud * zoom;
+        if (!lockX) rx -= dxHud * zoom;
         ry -= dyHud * zoom;
         display();
     }
@@ -262,7 +264,7 @@ final class MapCamera {
         computeBounds(z);
         float tx = wx - (midX - HUD_CX) * z;
         float ty = wy - (midY - HUD_CY) * z;
-        rx += tx - x;
+        if (!lockX) rx += tx - x;
         ry += ty - y;
         zoom = z;
         display();
@@ -313,7 +315,7 @@ final class MapCamera {
                     den += dt * dt;
                 }
                 if (den > 1e-6f) {
-                    vx = num1 / den;
+                    vx = lockX ? 0f : num1 / den;
                     vy = num2 / den;
                     float sp = (float) Math.sqrt(vx * vx + vy * vy);
                     if (sp > MapStyle.FLING_MAX) {
@@ -428,6 +430,19 @@ final class MapCamera {
         ry = cy;
         display();
         idle = 0f;
+    }
+
+    /**
+     * Moves the camera and everything it is doing (a drag, a fling, a glide) by {@code dy} in y at once, unclamped:
+     * ALL SONGS keeps a song in place on screen while its grid changes under it.
+     */
+    void shiftY(float dy) {
+        y += dy;
+        ry += dy;
+        prevY += dy;
+        gy0 += dy;
+        gy1 += dy;
+        for (int i = 0; i < SAMPLES; i++) sY[i] += dy;
     }
 
     /** Pans by a world delta immediately (keyboard), clamped. */

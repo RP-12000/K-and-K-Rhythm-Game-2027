@@ -2,12 +2,14 @@ package org.kelvinizer.gameplay;
 
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.math.MathUtils;
+import org.kelvinizer.Params;
+import org.kelvinizer.elements.JudgementLine;
 import org.kelvinizer.elements.Line;
 import org.kelvinizer.profile.Settings;
 import org.kelvinizer.ui.Ui;
 
 /**
- * 右上角暂停键的位置与输入规则：300 ms 内在触摸区双击即暂停，判定了音符的触摸既不计数也不取消。
+ * 右上角暂停键的位置与输入规则：靠右，上下居中在屏幕顶边和天线之间；300 ms 内在触摸区双击即暂停，判定了音符的触摸既不计数也不取消。
  * 纯 Java，不依赖 GL，测试可以直接用真实引擎和事件时间戳驱动它。
  *
  * <p>The top-right pause control (owner decisions 2026-10-12, DESIGN §21.5): where it sits and how
@@ -18,10 +20,13 @@ import org.kelvinizer.ui.Ui;
  * <p><b>Geometry</b> (world units × the HUD scale {@code k = uiScale}): a ring of radius
  * {@link #RING_R} with a {@link #RING_STROKE} stroke and two {@link #BAR_W} × {@link #BAR_H} bars
  * whose centres sit {@link #BAR_DX} either side of the ring centre. The centre is
- * {@link #EDGE_RIGHT}·k + r left of the right edge and {@link #EDGE_TOP}·k below the top edge,
- * where an edge is the visible screen edge less the cutout inset and the Settings edge padding
- * ({@code Ui.safeRight() + Ui.MIN_MARGIN}, {@code Ui.safeTop() + Ui.MIN_MARGIN}). At 1920×1080 and
- * k 1 the centre is (W − 58, 1030) and the ring's right edge is W − 26 (design thread 04:33, P14).
+ * {@link #EDGE_RIGHT}·k + r left of the right edge and, since Kelvin 2026-10-20 05:25, halfway
+ * between the top edge and the default sky line ({@link JudgementLine#DEFAULT_UPPER} of the
+ * 1920×1200 frame, a tenth of the world height under the visible top), where an edge is the visible
+ * screen edge less the cutout inset and the Settings edge padding ({@code Ui.safeRight() +
+ * Ui.MIN_MARGIN}, {@code Ui.safeTop() + Ui.MIN_MARGIN}); the ring never comes closer than
+ * {@link #TOP_CLEAR} to the top edge, which only a large edge padding reaches. At 1920×1080 and k 1
+ * the centre is (W − 58, 1026) and the ring's right edge is W − 26 (design thread 04:33, P14).
  * The hit box is anchored to that top-right corner and reaches the screen edges; it is
  * {@code max(P, P·k)} on each side ({@code P = Ui.touchTarget()}, the §0 minimum), never smaller
  * than the minimum target and always around the whole ring.
@@ -59,8 +64,8 @@ public final class PauseControl {
     public static final float BAR_DX = 7f;
     /** Gap between the ring's right edge and the right edge at HUD scale 1. */
     public static final float EDGE_RIGHT = 26f;
-    /** Distance of the ring centre below the top edge at HUD scale 1. */
-    public static final float EDGE_TOP = 50f;
+    /** Least room between the ring's outer edge and the top edge, clear of the progress hairline. */
+    public static final float TOP_CLEAR = 10f;
     /** Room kept between the ring and the hit box's inner edges at HUD scale 1. */
     public static final float BOX_SLACK = 8f;
     /** Longest interval between the two downs of a double tap (DESIGN §1.1: 300 ms), in ns. */
@@ -85,6 +90,7 @@ public final class PauseControl {
     private float cx;
     private float cy;
     private float r;
+    private float sky;
     private float boxX;
     private float boxY;
     private float boxW;
@@ -109,10 +115,12 @@ public final class PauseControl {
         edgeTop = Ui.safeTop() + Ui.MIN_MARGIN;
         r = RING_R * k;
         cx = edgeRight - EDGE_RIGHT * k - r;
-        cy = edgeTop - EDGE_TOP * k;
+        // the default sky line, from the world height (as Field maps it) so a reset Field cannot move it
+        sky = Ui.top() - Ui.worldH() * (Params.REF_H - JudgementLine.DEFAULT_UPPER) / Params.REF_H;
+        cy = Math.min((edgeTop + sky) * 0.5f, edgeTop - TOP_CLEAR - r - RING_STROKE * k * 0.5f);
         float p = Ui.touchTarget() * Math.max(1f, k);
         float w = Math.max(p, (EDGE_RIGHT + 2f * RING_R + BOX_SLACK) * k);
-        float h = Math.max(p, (EDGE_TOP + RING_R + BOX_SLACK) * k);
+        float h = Math.max(p, edgeTop - cy + (RING_R + BOX_SLACK) * k);
         boxX = edgeRight - w;
         boxY = edgeTop - h;
         // the box reaches the screen edges (a cutout or edge padding only moves the icon)
@@ -135,6 +143,11 @@ public final class PauseControl {
     /** Ring centre y. */
     public float cy() {
         return cy;
+    }
+
+    /** The default sky line's y, the foot of the top band the ring and the HUD score are laid out in. */
+    public float sky() {
+        return sky;
     }
 
     /** Ring radius (centre of the stroke). */

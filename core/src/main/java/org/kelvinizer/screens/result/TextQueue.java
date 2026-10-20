@@ -22,7 +22,7 @@ import org.kelvinizer.ui.Fonts;
  *   <li><b>Shared rasters.</b> Every size of a role is drawn from one raster of that role,
  *       scaled ({@link #raster}): Chakra SemiBold at 22 serves both {@code UI} and the tracked
  *       {@code UI_LABEL} (the 0.10 em tracking is added per glyph here, so both share a page),
- *       Chakra Bold at 34, Mokoto NUMBER at 30 (full set, with fixed digit cells drawn here),
+ *       Chakra Bold at 34, NUMBER (Chakra Bold) at 30 (full set, with fixed digit cells drawn here),
  *       Rubik at 30 / 48. Sizes above a raster's range use their own bucket.</li>
  *   <li><b>Deferred drawing.</b> While {@link #begin() deferring}, text calls only measure and
  *       record; {@link #flush()} then draws every record grouped by texture page, in order of
@@ -50,12 +50,14 @@ public final class TextQueue {
     public static final float UI_RASTER = 22f;
     /** Chakra Bold raster (UI_BOLD up to 36). */
     public static final float BOLD_RASTER = 34f;
-    /** Mokoto NUMBER raster (full set, up to 32). */
+    /** NUMBER (Chakra Petch Bold) raster (full set, up to 32). */
     public static final float NUMBER_RASTER = 30f;
     /** Rubik rasters: small (≤ 32) and alert (≤ 50). */
     public static final float RUBIK_SMALL = 30f, RUBIK_ALERT = 48f;
     /** UI_LABEL tracking in cap heights (FreeType {@code spaceX = 0.10 × size}, size = cap / 0.70). */
     public static final float LABEL_TRACKING = 0.10f / 0.70f;
+    /** Fixed digit cell of the NUMBER face in cap heights (Chakra Petch, as {@code Fonts.cellWidth}). */
+    private static final float DIGIT_CELL = 0.92f;
 
     private static final int MAX = 224, POOL = 8192;
     private static final byte K_RUN = 0, K_FIXED = 1, K_FONTS = 2, K_DEFERRED = 3;
@@ -190,7 +192,7 @@ public final class TextQueue {
         return layout.width + (role == Fonts.Role.UI_LABEL ? LABEL_TRACKING * cap * Math.max(0, glyphs - 1) : 0f);
     }
 
-    /** Width {@link #fixed} uses for {@code text} at {@code cap} (Mokoto NUMBER cells). */
+    /** Width {@link #fixed} uses for {@code text} at {@code cap} (NUMBER cells). */
     public float fixedWidth(float cap, CharSequence text) {
         if (text == null) return 0f;
         float r = raster(Fonts.Role.NUMBER, cap);
@@ -203,8 +205,13 @@ public final class TextQueue {
 
     /** Width of {@code digits} fixed digit cells (with group commas when {@code grouping}). */
     public float digitsWidth(float cap, int digits, boolean grouping) {
-        float w = digits * cap * 1.10f;
-        if (grouping && digits > 3) w += ((digits - 1) / 3) * cap * 0.45f;
+        float w = digits * cap * DIGIT_CELL;
+        if (grouping && digits > 3) {
+            float r = raster(Fonts.Role.NUMBER, cap);
+            BitmapFont font = fonts.get(Fonts.Role.NUMBER, r);
+            scaleTo(font, r, cap);
+            w += ((digits - 1) / 3) * cellW(font, cap, ',');
+        }
         return w;
     }
 
@@ -259,8 +266,8 @@ public final class TextQueue {
     }
 
     /**
-     * Draws a short numeric string in fixed Mokoto NUMBER cells (digit 1.10 × cap, {@code ,} and
-     * {@code .} 0.45, {@code %} 1.16, other chars their advance); returns the width.
+     * Draws a short numeric string in fixed NUMBER cells (each digit 0.92 × cap, as {@code Fonts.cellWidth} for
+     * Chakra Petch; other chars their advance); returns the width.
      */
     public float fixed(float cap, CharSequence text, float x, float y, int align, Color color, float alpha) {
         if (text == null || text.length() == 0) return 0f;
@@ -270,6 +277,21 @@ public final class TextQueue {
         BitmapFont font = fonts.get(Fonts.Role.NUMBER, r);
         return add(K_FIXED, font, Fonts.Role.NUMBER, Fonts.GlyphSet.FULL, r, cap, text, alignX(x, w, align),
             alignBaseline(y, cap, align), Align.left, 0f, color, alpha, -1f, 1f, w);
+    }
+
+    /**
+     * One fixed NUMBER cell of {@code ch} (left edge {@code x}) drawn at once, not queued, and only between
+     * {@code y0} and {@code y1}: an odometer window. For direct drawing (inside a {@code ResultKit.pushIf}).
+     */
+    public void cellClipped(float cap, char ch, float x, float base, float y0, float y1, Color color, float alpha) {
+        if (alpha <= 0.002f) return;
+        float r = raster(Fonts.Role.NUMBER, cap);
+        BitmapFont font = fonts.get(Fonts.Role.NUMBER, r);
+        scaleTo(font, r, cap);
+        float old = batch.getPackedColor();
+        batch.setColor(color.r, color.g, color.b, clamp01(color.a * alpha));
+        quads.clipped(batch, font, ch, x, cellW(font, cap, ch), base, y0, y1);
+        batch.setPackedColor(old);
     }
 
     private final StringBuilder digitSb = new StringBuilder(32);
@@ -451,9 +473,7 @@ public final class TextQueue {
     }
 
     private static float cellW(BitmapFont font, float cap, char c) {
-        if (c >= '0' && c <= '9') return cap * 1.10f;
-        if (c == ',' || c == '.') return cap * 0.45f;
-        if (c == '%') return cap * 1.16f;
+        if (c >= '0' && c <= '9') return cap * DIGIT_CELL;
         BitmapFont.BitmapFontData d = font.getData();
         if (c == ' ') return d.spaceXadvance * d.scaleX;
         BitmapFont.Glyph g = d.getGlyph(c);

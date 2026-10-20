@@ -15,6 +15,7 @@ import org.kelvinizer.ui.Fonts;
 import org.kelvinizer.ui.GlitchState;
 import org.kelvinizer.ui.GlitchText;
 import org.kelvinizer.ui.Icons;
+import org.kelvinizer.ui.Marquee;
 import org.kelvinizer.ui.SonarField;
 import org.kelvinizer.ui.Theme;
 import org.kelvinizer.ui.Ui;
@@ -41,6 +42,8 @@ final class MapRenderer {
     static final float R_UI = 22f, R_NUM = 24f, R_RUBIK = 72f;
     /** Rasters of the song card's own roles: UI_BOLD (titles, chip names) and DISPLAY (DESCEND, grades). */
     static final float R_BOLD = 38f, R_DISPLAY = 40f;
+    /** A level's floor title: small and half see-through, never upstaging the songs (Kelvin 2026-10-19 19:59). */
+    private static final float TITLE_ALPHA = 0.45f;
     /**
      * How far past the screen edges the card, sheet and list occluders reach, so a label that
      * straddles a screen edge under them counts as fully covered.
@@ -56,6 +59,11 @@ final class MapRenderer {
     private static final int PATH_SAMPLES = 26, MAX_SIGNS = 12;
     /** Grade superscript "+" as the result stamp draws it: size and gap after the letters, fractions of their cap. */
     private static final float PLUS_SCALE = 0.55f, PLUS_GAP = 0.04f;
+    /**
+     * A scrolling map title's {@link Marquee} speed and gap (50 / s, 100) and edge fade (16) for the 25 px name, whose cap
+     * is the last; other names scale them by their cap.
+     */
+    private static final float TITLE_SPEED = 0.625f, TITLE_FADE = 16f / Marquee.FADE, TITLE_CAP = 17.5f;
     /** White band through R and R+ as on the result stamp: slope (x per y), half width (× cap) and peak alpha. */
     private static final float BAND_SLOPE = 0.45f, BAND_HALF = 0.32f, BAND_A = 0.85f;
     /** Grade letters without the trailing "+" that {@link #grade} draws as a superscript, by grade index. */
@@ -80,6 +88,10 @@ final class MapRenderer {
     private final int slotCount;
     private MapWorld world;
     private final StringBuilder sb = new StringBuilder(64);
+    /** One glyph of a spaced score. */
+    private final StringBuilder glyph = new StringBuilder(1);
+    /** Letter spacing of the side card's score, as a fraction of its cap (round 5: 0.02). */
+    static final float SCORE_TRACK = 0.02f;
     private final Color c1 = new Color(), c2 = new Color(), c3 = new Color();
     /** Glyph quads of the band sweeping through R and R+ ({@link #grade}). */
     private final GlyphQuads quads = new GlyphQuads();
@@ -120,20 +132,38 @@ final class MapRenderer {
     /** X5 unlock flow: the nodes being unlocked and the gold flow progress 0..1 (−1 = none). */
     MapNode[] flowNodes = new MapNode[0];
     float flowT = -1f;
+    /** The ALL SONGS page (its layout, mask and score row). */
+    GridPage grid;
 
     // derived per frame -------------------------------------------------------------------
     private float zoom, vl, vr, vb, vt, ov, labelCap, labelA;
+    /** On ALL SONGS this frame; its label size (1 on a phone, {@link GridPage#TABLET} on a tablet, 1 elsewhere), a score's width. */
+    private boolean gridOn;
+    private float lk = 1f, gridScoreW;
     /** Per node: label block visibility after HUD occlusion, 0..1. */
     private float[] labelK = new float[0];
     /** Per node label lines (built per level and on refresh). */
     private String[] l1 = new String[0], l2 = new String[0], l3 = new String[0];
     /** Title width at the UI raster per node (lazy, −1 = unknown). */
     private float[] titleW = new float[0];
+    /**
+     * Per song: the width at the UI raster of its first 15 and first 20 half-width characters, 0 when it has no
+     * more (it never scrolls then), and the time its scroll has run (Kelvin 2026-10-19 13:40 / 14:00).
+     */
+    private float[] win15 = new float[0], win20 = new float[0], titleT = new float[0];
+    /** Half-width characters a song title shows before it scrolls: 15 far, 20 close (or four to a row). */
+    private int titleLimit = 15;
+    /** Leading zeros of the ALL SONGS score row: INK1 at α 60. */
+    private static final Color GHOST = new Color(Theme.INK1.r, Theme.INK1.g, Theme.INK1.b, 60f / 255f);
     /** Signposts of this frame: HUD position, direction, alpha and the sign index. */
     private final float[] signX = new float[MAX_SIGNS], signY = new float[MAX_SIGNS], signW = new float[MAX_SIGNS];
+    /** How clear each sign is of the holes on screen (0 = it lies on one and is not drawn). */
+    private final float[] signK = new float[MAX_SIGNS];
     private final int[] signDir = new int[MAX_SIGNS], signIdx = new int[MAX_SIGNS];
     private int signN;
     private String[] signText = new String[0];
+    /** Each floor area's sub line in the current language (built with the labels). */
+    private String[] areaSub = new String[0];
     private float tipX, tipY, tipW, tipA;
 
     // HUD occluders (screen rects; map labels fade where they would slide under the HUD) ---
@@ -165,17 +195,14 @@ final class MapRenderer {
         labelK = new float[n];
         titleW = new float[n];
         java.util.Arrays.fill(titleW, -1f);
+        win15 = new float[n];
+        win20 = new float[n];
+        titleT = new float[n];
         l1 = new String[n];
         l2 = new String[n];
         l3 = new String[n];
         signText = new String[w.signs.size()];
-        for (int i = 0; i < signText.length; i++) {
-            CaveData.Sign g = w.signs.get(i);
-            StringBuilder t = new StringBuilder(g.label);
-            if (!g.labelZh.isEmpty()) t.append(' ').append(g.labelZh);
-            if (!g.sub.isEmpty()) t.append(" · ").append(g.sub);
-            signText[i] = t.toString();
-        }
+        areaSub = new String[w.areas.size()];
         tipNode = null;
         tipT = -1f;
         floaterNode = null;
@@ -185,8 +212,24 @@ final class MapRenderer {
         refreshLabels();
     }
 
-    /** Rebuilds the label lines (after {@code world.refresh}: progress, locks). */
+    /**
+     * Rebuilds the label lines (after {@code world.refresh}: progress, locks, the language). An English screen shows no
+     * Chinese (Kelvin 2026-10-20: 如果语言选择是英语就不要出现中文): no Chinese names, and the Chinese parts of mixed
+     * texts left out.
+     */
     void refreshLabels() {
+        for (int i = 0; i < signText.length; i++) {
+            CaveData.Sign g = world.signs.get(i);
+            StringBuilder t = new StringBuilder(g.label);
+            if (zh && !g.labelZh.isEmpty()) t.append(' ').append(g.labelZh);
+            String sub = zh ? g.sub : MapWorld.latin(g.sub);
+            if (!sub.isEmpty()) t.append(" · ").append(sub);
+            signText[i] = t.toString();
+        }
+        for (int i = 0; i < areaSub.length; i++) {
+            String sub = world.areas.get(i).sub;
+            areaSub[i] = zh ? sub : MapWorld.latin(sub);
+        }
         for (MapNode n : world.all) {
             int i = n.idx;
             CaveData.Spot s = n.spot;
@@ -200,7 +243,8 @@ final class MapRenderer {
                 case MapNode.STORY: {
                     CaveData.Story st = s != null && s.story != null ? data.stories.get(s.story) : null;
                     a = "STORY " + (st != null ? st.number : "") + (n.read ? " · READ" : "");
-                    b = st != null ? (zh && !st.titleZh.isEmpty() ? st.titleZh : st.title + "  " + st.titleZh) : "";
+                    b = st == null ? "" : !zh ? st.title
+                        : !st.titleZh.isEmpty() ? st.titleZh : st.title + "  " + st.titleZh;
                     if (n.locked) c = zh ? "通关 " + n.needsText + " 后解锁" : "CLEAR " + n.needsText + " TO UNLOCK";
                     break;
                 }
@@ -217,16 +261,48 @@ final class MapRenderer {
                     break;
                 default:
                     a = s != null && s.label != null ? s.label : "";
-                    b = s != null && s.labelZh != null ? s.labelZh : "";
+                    b = zh && s != null && s.labelZh != null ? s.labelZh : "";
                     c = s != null ? world.routeSub(zh && s.subZh != null ? s.subZh : s.sub) : "";
-                    if (n.sealed() && c.isEmpty()) c = "COMING SOON · 敬请期待";
+                    if (!zh) c = MapWorld.latin(c);
+                    if (n.sealed() && c.isEmpty()) c = zh ? "COMING SOON · 敬请期待" : "COMING SOON";
                     break;
             }
             l1[i] = a;
             l2[i] = b;
             l3[i] = c;
             titleW[i] = -1f;
+            boolean song = n.kind == MapNode.SONG && !n.glitch;
+            win15[i] = song ? prefixWidth(a, 15) : 0f;
+            win20[i] = song ? prefixWidth(a, 20) : 0f;
         }
+    }
+
+    /** Starts every song title's scroll over (a level switch, a new lens, Kelvin 2026-10-19 14:00). */
+    void resetTitles() {
+        java.util.Arrays.fill(titleT, 0f);
+    }
+
+    /** Half-width units of {@code c}: 2 for CJK and other full-width characters, else 1 (Kelvin 2026-10-19 13:40). */
+    static int units(char c) {
+        return c >= 0x1100 && (c <= 0x115F || (c >= 0x2E80 && c <= 0xA4CF) || (c >= 0xAC00 && c <= 0xD7A3)
+            || (c >= 0xF900 && c <= 0xFAFF) || (c >= 0xFE30 && c <= 0xFE4F) || (c >= 0xFF00 && c <= 0xFF60)
+            || (c >= 0xFFE0 && c <= 0xFFE6)) ? 2 : 1;
+    }
+
+    /**
+     * Width at the UI raster of the start of {@code s} that fits in {@code max} half-width units (measured in the
+     * font the whole title is drawn with), or 0 when all of it fits.
+     */
+    private float prefixWidth(String s, int max) {
+        int u = 0;
+        for (int i = 0; i < s.length(); i++) {
+            u += units(s.charAt(i));
+            if (u > max) {
+                Fonts.Role role = fonts.needsCjk(Fonts.Role.UI, s) ? Fonts.Role.CJK : Fonts.Role.UI;
+                return fonts.width(role, R_UI, s.substring(0, i));
+            }
+        }
+        return 0f;
     }
 
     // =================================================================== occluders
@@ -320,8 +396,14 @@ final class MapRenderer {
         vb = cam.renderY() - hh;
         vt = cam.renderY() + hh;
         float zm = cam.zoomMax();
-        ov = MathUtils.clamp((zoom - 0.84f * zm) / (0.12f * zm), 0f, 1f);
-        labelCap = MathUtils.clamp(21f / zoom, 18f, 26f);
+        gridOn = grid != null && world.isGrid();
+        lk = gridOn ? grid.size : 1f;
+        // the grid's camera stays at zoom 1, its largest: no overview lift there
+        ov = gridOn ? 0f : MathUtils.clamp((zoom - 0.84f * zm) / (0.12f * zm), 0f, 1f);
+        labelCap = gridOn ? GridPage.NAME_CAP * lk : MathUtils.clamp(21f / zoom, 18f, 26f);
+        int limit = gridOn || zoom <= MapStyle.LOD_DETAIL ? 20 : 15;
+        if (limit != titleLimit) resetTitles();
+        titleLimit = limit;
         labelA = alpha * textFade;
         for (MapNode n : world.all) {
             int i = n.idx;
@@ -332,7 +414,13 @@ final class MapRenderer {
                 continue;
             }
             if (titleW[i] < 0f) titleW[i] = Math.max(fonts.width(Fonts.Role.UI, R_UI, l1[i]), fonts.width(Fonts.Role.UI, R_UI, l2[i]));
+            if (gridOn) { // the grid's mask does the clipping; no HUD lies over it
+                labelK[i] = fk;
+                continue;
+            }
             float half = 0.5f * Math.max(Math.min(titleW[i] * labelCap / R_UI, MapStyle.LABEL_MAX_W), MapStyle.CHIP_W);
+            float win = window(i);
+            if (win > 0f) half = 0.5f * Math.max(win * labelCap / R_UI, MapStyle.CHIP_W);
             float x = cam.hudX(n.drawX()), top = labelTop(n);
             labelK[i] = visibility(x - half - 6f, top - labelCap * 3.6f, x + half + 6f, top + 4f) * fk;
         }
@@ -353,13 +441,36 @@ final class MapRenderer {
             float t = Math.min(dx != 0f ? Math.abs((dx > 0 ? x1 - cx : cx - x0) / dx) : 1e9f,
                 dy != 0f ? Math.abs((dy > 0 ? y1 - cy : cy - y0) / dy) : 1e9f);
             t = Math.min(t, 1f);
-            signX[signN] = cx + dx * t;
+            float w = uiWidth(signText[i], 18f) + 76f, in = Math.max(0f, w * 0.5f + 16f - 110f);
+            // the whole pill stays on the map, however long its text
+            signX[signN] = MathUtils.clamp(cx + dx * t, x0 + in, Math.max(x0 + in, x1 - in));
             signY[signN] = cy + dy * t;
             signDir[signN] = Math.abs(dx) * (y1 - y0) >= Math.abs(dy) * (x1 - x0) ? (dx > 0 ? 0 : 2) : (dy > 0 ? 1 : 3);
-            signW[signN] = uiWidth(signText[i], 18f) + 76f;
+            signW[signN] = w;
+            signK[signN] = holeClear(signX[signN] - signW[signN] * 0.5f, signY[signN] - 26f,
+                signX[signN] + signW[signN] * 0.5f, signY[signN] + 26f);
             signIdx[signN] = i;
             signN++;
         }
+    }
+
+    /**
+     * 0..1: how clear a screen rect is of the holes on screen (their rings and the labels under them), fading out
+     * over the last 40 units of the gap, so an edge sign gives way to a hole instead of covering it.
+     */
+    private float holeClear(float x0, float y0, float x1, float y1) {
+        float k = 1f;
+        for (MapNode n : world.all) {
+            if (!visible(n)) continue;
+            float hx = cam.hudX(n.drawX()), hy = cam.hudY(n.drawY(time, reduceMotion)), r = n.r * sc(n) * 1.2f / zoom;
+            float lw = Math.min(Math.max(titleW[n.idx], 0f) * labelCap / R_UI, MapStyle.LABEL_MAX_W);
+            float half = Math.max(r, 0.5f * lw);
+            float top = hy + r, bottom = Math.min(hy - r, labelTop(n) - labelCap * 3.6f);
+            float gap = Math.max(Math.max(x0 - (hx + half), hx - half - x1), Math.max(y0 - top, bottom - y1));
+            k = Math.min(k, MathUtils.clamp(gap / 40f, 0f, 1f));
+            if (k <= 0f) return 0f;
+        }
+        return k;
     }
 
     private void frameTip() {
@@ -378,15 +489,22 @@ final class MapRenderer {
     }
 
     private float labelTop(MapNode n) {
+        if (gridOn) return cam.hudY(n.drawY(time, reduceMotion)) - GridPage.NAME_DY * lk + labelCap;
         return cam.hudY(n.drawY(time, reduceMotion) - n.r * sc(n) * 1.06f) - 8f;
     }
 
     private float chipTop(MapNode n) {
-        return labelTop(n) - labelCap - 12f;
+        return labelTop(n) - labelCap - (gridOn ? GridPage.CHIP_DY * lk : 12f);
     }
 
-    /** Advances the floater, the tooltip and the unlock flow. */
+    /** Width at the UI raster of song {@code i}'s scroll window at this frame's limit, 0 when its title fits. */
+    private float window(int i) {
+        return titleLimit == 20 ? win20[i] : win15[i];
+    }
+
+    /** Advances the floater, the tooltip, the unlock flow and the title scrolls. */
     void updateFx(float dt) {
+        for (int i = 0; i < titleT.length; i++) titleT[i] += dt;
         if (floaterNode != null) {
             floaterT += dt;
             if (floaterT > MapStyle.FLOATER_T + 0.6f) {
@@ -413,6 +531,7 @@ final class MapRenderer {
     // =================================================================== world pass
     /** World pass (map projection set on the batch, which is drawing). */
     void drawWorld(Batch b) {
+        if (gridOn) grid.maskGrid(b);
         for (float[] p : world.level.pools) {
             if (p[0] + p[2] < vl || p[0] - p[2] > vr || p[1] + p[2] < vb || p[1] - p[2] > vt) continue;
             draw.glowDot(p[0], p[1], p[2] * 2f, Theme.GROUND_SIG, p[3] * alpha);
@@ -427,6 +546,7 @@ final class MapRenderer {
         for (MapNode n : world.all) if (visible(n)) drawThumbs(b, n);
         for (MapNode n : world.all) if (visible(n)) drawOver(n);
         drawFloorText(b);
+        if (gridOn) grid.unmask(b);
     }
 
     private static float bez(float a, float m, float b, float t) {
@@ -436,7 +556,8 @@ final class MapRenderer {
 
     /** Curved paths: solid when both ends are cleared, dashed otherwise; arrows on main / side paths. */
     private void drawPaths() {
-        float wk = Math.max(1f, zoom * 0.9f);
+        // the grid draws them as a map does at its default zoom, and straight, so that they make a net
+        float wk = gridOn ? GridPage.LOOK * lk : Math.max(1f, zoom * 0.9f);
         for (int i = 0; i < world.la.length; i++) {
             MapNode a = world.all[world.la[i]], c = world.all[world.lb[i]];
             float ax = a.drawX(), ay = a.drawY(time, reduceMotion), bx = c.drawX(), by = c.drawY(time, reduceMotion);
@@ -446,19 +567,33 @@ final class MapRenderer {
             }
             float dx = bx - ax, dy = by - ay, len = (float) Math.sqrt(dx * dx + dy * dy);
             if (len < 1f) continue;
-            float bend = (Anim.hash01(i * 7 + world.la[i], 13) - 0.5f) * 0.3f * len;
+            float bend = gridOn ? 0f : (Anim.hash01(i * 7 + world.la[i], 13) - 0.5f) * 0.3f * len;
             float mx = 0.5f * (ax + bx) - dy / len * bend, my = 0.5f * (ay + by) + dx / len * bend;
             float t0 = Math.min(0.45f, a.r * sc(a) * 0.95f / len), t1 = Math.max(0.55f, 1f - c.r * sc(c) * 0.95f / len);
             boolean solid = world.lcleared[i];
             Color col = world.lcolor[i];
-            float al = alpha * (solid ? 0.85f : 0.55f) * Math.min(a.wake, c.wake) * Math.min(a.vis(), c.vis()) * 1.2f;
+            // capped at 1: past it the packed colour's alpha wraps round to nearly clear
+            float al = Math.min(1f,
+                alpha * (solid ? 0.85f : 0.55f) * Math.min(a.wake, c.wake) * Math.min(a.vis(), c.vis()) * 1.2f);
             if (al <= 0.01f) continue;
             float w = (solid ? 6f : 4.5f) * wk;
+            // a grid line leaves past its upper song's name, and breaks off round a long one
+            float gx0 = 0f, gx1 = 0f, gy0 = 0f, gy1 = 0f;
+            if (gridOn) {
+                float win = window(a.idx), tw = win > 0f ? win : Math.max(titleW[a.idx], 0f);
+                float half = 0.5f * Math.min(tw * labelCap / R_UI, MapStyle.LABEL_MAX_W) + 12f * lk;
+                gx0 = ax - half;
+                gx1 = ax + half;
+                gy0 = ay - (GridPage.NAME_DY + 12f) * lk;
+                gy1 = ay - (GridPage.NAME_DY - 8f) * lk + labelCap;
+            }
             float px = bez(ax, mx, bx, t0), py = bez(ay, my, by, t0);
             for (int j = 1; j <= PATH_SAMPLES; j++) {
                 float t = t0 + (t1 - t0) * j / PATH_SAMPLES;
                 float qx = bez(ax, mx, bx, t), qy = bez(ay, my, by, t);
-                if (solid || (j & 1) == 0) draw.line(px, py, qx, qy, w, col, al);
+                float cx = 0.5f * (px + qx), cy = 0.5f * (py + qy);
+                boolean gap = gridOn && cx > gx0 && cx < gx1 && cy > gy0 && cy < gy1;
+                if ((solid || (j & 1) == 0) && !gap) draw.line(px, py, qx, qy, w, col, al);
                 px = qx;
                 py = qy;
             }
@@ -587,16 +722,38 @@ final class MapRenderer {
         if (locked) return;
         drawArcs(n, cx, cy, s, a);
         if (ov >= 1f) return;
-        float da = (0.15f + 0.20f * n.selected + (n.pressed ? 0.2f : 0f)) * (1f - ov) * a;
-        float dr = MapStyle.DASH_R * s, step = 15f * MathUtils.degreesToRadians;
         float base = n.dashAngle * MathUtils.degreesToRadians;
-        for (int i = 0; i < 24; i++) draw.arc(cx, cy, dr, base + i * step, 8f * MathUtils.degreesToRadians, 3f, Theme.INK1, da);
+        if (gridOn) {
+            drawGridRing(n, cx, cy, base, a);
+        } else {
+            float da = (0.15f + 0.20f * n.selected + (n.pressed ? 0.2f : 0f)) * (1f - ov) * a;
+            float dr = MapStyle.DASH_R * s, step = 15f * MathUtils.degreesToRadians;
+            for (int i = 0; i < 24; i++) {
+                draw.arc(cx, cy, dr, base + i * step, 8f * MathUtils.degreesToRadians, 3f, Theme.INK1, da);
+            }
+        }
         if (n.isNew()) {
             float pulse = reduceMotion ? 1f : 0.7f + 0.3f * MathUtils.sin(time * MathUtils.PI2 / 1.2f);
             float nx = cx + MapStyle.NEW_R * 0.7071f * s, ny = cy + MapStyle.NEW_R * 0.7071f * s;
             draw.glowDot(nx, ny, MapStyle.NEW_D * 3f, Theme.GROUND_SIG, 0.35f * pulse * a * (1f - ov));
             draw.disc(nx, ny, MapStyle.NEW_D * 0.5f, Theme.GROUND_SIG, pulse * a * (1f - ov));
         }
+    }
+
+    /**
+     * ALL SONGS: the outer ring of 28 dashes at {@link GridPage#ringR}, and for the selected song (the card's) a solid
+     * CYAN ring 1 outside it, 3 wide, with a soft glow, in place of the leader line (Kelvin 2026-10-19 14:01).
+     */
+    private void drawGridRing(MapNode n, float cx, float cy, float base, float a) {
+        float rr = GridPage.ringR(n) * n.scale(), sel = n.selected;
+        float da = (80f / 255f + (n.pressed ? 0.2f : 0f)) * (1f - sel) * a;
+        float step = MathUtils.PI2 / 28f, len = 7.5f * MathUtils.degreesToRadians;
+        if (da > 0.01f) for (int i = 0; i < 28; i++) draw.arc(cx, cy, rr, base + i * step, len, 2f, Theme.INK1, da);
+        if (sel <= 0.01f) return;
+        float px = zoom * Ui.worldPerPx(), r1 = rr + 1f;
+        draw.ringArc(cx, cy, r1, 0f, MathUtils.PI2, 17f, px, GridPage.CYAN, 0.05f * sel * a);
+        draw.ringArc(cx, cy, r1, 0f, MathUtils.PI2, 9f, px, GridPage.CYAN, 0.10f * sel * a);
+        draw.ringArc(cx, cy, r1, 0f, MathUtils.PI2, 3f, px, GridPage.CYAN, 240f / 255f * sel * a);
     }
 
     /**
@@ -659,7 +816,7 @@ final class MapRenderer {
         return Math.max(0f, (Math.min(best, 100_000_000) - 60_000_000) / 40_000_000f);
     }
 
-    /** Story entrance: about 70 % of a song hole, an open book; read stories are dimmer. */
+    /** Story entrance: a disc the size of a song hole's rim (at the default r), an open book; read ones are dimmer. */
     private void drawStory(MapNode n) {
         float cx = n.drawX(), cy = n.drawY(time, reduceMotion), R = n.r * sc(n);
         float a = alpha * n.vis() * (n.read ? 0.6f : 1f);
@@ -860,16 +1017,20 @@ final class MapRenderer {
     private void drawFloorText(Batch b) {
         float a = alpha * textFade;
         if (a <= 0.01f) return;
-        for (CaveData.Area ar : world.areas) {
+        for (int i = 0; i < areaSub.length; i++) {
+            CaveData.Area ar = world.areas.get(i);
             if (ar.x + 900f < vl || ar.x - 900f > vr || ar.y + 200f < vb || ar.y - 200f > vt) continue;
-            float k = (0.2f + 0.6f * ov) * a;
-            fonts.drawScaled(b, Fonts.Role.UI_BOLD, R_BOLD, 64f / R_BOLD, ar.name, ar.x, ar.y + 40f, Align.center, 0f, 1f,
+            float k = (0.2f + 0.25f * ov) * a; // half see-through even on the overview (Kelvin 2026-10-19 19:59)
+            fonts.drawScaled(b, Fonts.Role.UI_BOLD, R_BOLD, 44f / R_BOLD, ar.name, ar.x, ar.y + 28f, Align.center, 0f, 1f,
                 ar.color, k);
-            fonts.drawScaled(b, Fonts.Role.UI, R_UI, 34f / R_UI, ar.nameZh, ar.x, ar.y - 34f, Align.center, 0f, 1f, ar.color,
-                k);
-            if (!ar.sub.isEmpty()) {
-                fonts.drawScaled(b, Fonts.Role.UI, R_UI, 22f / R_UI, ar.sub, ar.x, ar.y - 84f, Align.center, 0f, 1f, Theme.INK2,
-                    0.8f * k);
+            // in English the sub takes the Chinese name's line
+            if (zh) {
+                fonts.drawScaled(b, Fonts.Role.UI, R_UI, 26f / R_UI, ar.nameZh, ar.x, ar.y - 22f, Align.center, 0f, 1f,
+                    ar.color, k);
+            }
+            if (!areaSub[i].isEmpty()) {
+                fonts.drawScaled(b, Fonts.Role.UI, R_UI, 18f / R_UI, areaSub[i], ar.x, ar.y - (zh ? 60f : 22f),
+                    Align.center, 0f, 1f, Theme.INK2, 0.8f * k);
             }
         }
         CaveData.Level l = world.level;
@@ -877,10 +1038,12 @@ final class MapRenderer {
             sb.setLength(0);
             if (!l.numeral.isEmpty()) sb.append(l.numeral).append("  ");
             sb.append(l.title);
-            fonts.drawScaled(b, Fonts.Role.UI_BOLD, R_BOLD, 54f / R_BOLD, sb, l.titleX, l.titleY + 40f, Align.center, 0f, 1f,
-                Theme.INK1, 0.85f * a);
-            fonts.drawScaled(b, Fonts.Role.UI, R_UI, 30f / R_UI, l.titleZh, l.titleX, l.titleY - 26f, Align.center, 0f, 1f,
-                Theme.INK2, 0.85f * a);
+            fonts.drawScaled(b, Fonts.Role.UI_BOLD, R_BOLD, 34f / R_BOLD, sb, l.titleX, l.titleY + 10f, Align.center, 0f, 1f,
+                Theme.INK1, TITLE_ALPHA * a);
+            if (zh) {
+                fonts.drawScaled(b, Fonts.Role.UI, R_UI, 20f / R_UI, l.titleZh, l.titleX, l.titleY - 24f, Align.center,
+                    0f, 1f, Theme.INK1, TITLE_ALPHA * a);
+            }
             // no stats line under the title (Kelvin 2026-10-16)
         }
         for (CaveData.Text t : world.texts) {
@@ -957,6 +1120,69 @@ final class MapRenderer {
         return fonts.width(Fonts.Role.UI_BOLD, R_BOLD, text) * cap / R_BOLD;
     }
 
+    /**
+     * Chakra Bold text from the UI_BOLD raster (CJK when it needs it) drawn only inside {@code [x0, x1]}, fading in
+     * over {@code fadeL} and out over {@code fadeR} ({@link GlyphQuads#faded}; the card's scrolling title).
+     */
+    void boldFaded(Batch b, CharSequence text, float cap, float x, float y, int align, Color c, float a, float x0,
+                   float x1, float fadeL, float fadeR) {
+        if (a <= 0.002f || text == null || text.length() == 0) return;
+        Fonts.Role role = fonts.needsCjk(Fonts.Role.UI_BOLD, text) ? Fonts.Role.CJK : Fonts.Role.UI_BOLD;
+        BitmapFont font = fonts.get(role, R_BOLD);
+        BitmapFont.BitmapFontData d = font.getData();
+        float s0 = d.scaleX;
+        d.setScale(s0 * cap / R_BOLD);
+        quads.faded(b, font, text, x, y, align, cap, c, a, x0, x1, fadeL, fadeR);
+        d.setScale(s0);
+    }
+
+    /**
+     * As {@link #boldFaded} from the UI raster (CJK when it needs it), from {@code x} on the baseline {@code y}: a
+     * scrolling map title.
+     */
+    void uiFaded(Batch b, CharSequence text, float cap, float x, float y, Color c, float a, float x0, float x1,
+                 float fadeL, float fadeR) {
+        if (a <= 0.002f || text == null || text.length() == 0) return;
+        Fonts.Role role = fonts.needsCjk(Fonts.Role.UI, text) ? Fonts.Role.CJK : Fonts.Role.UI;
+        BitmapFont font = fonts.get(role, R_UI);
+        BitmapFont.BitmapFontData d = font.getData();
+        float s0 = d.scaleX;
+        d.setScale(s0 * cap / R_UI);
+        quads.faded(b, font, text, x, y, Align.left, cap, c, a, x0, x1, fadeL, fadeR);
+        d.setScale(s0);
+    }
+
+    /**
+     * A score in Chakra Bold digits rasterised at {@code cap} itself (a small DIGITS set, sharp at the side card's
+     * large size): {@code lead}, the dim leading chars, in {@code leadC}, then {@code rest}, from {@code x} on the
+     * baseline {@code y}, each advance {@link #SCORE_TRACK} of the cap wider than the font's.
+     */
+    void boldScore(Batch b, CharSequence lead, CharSequence rest, float cap, float x, float y, Color c, Color leadC,
+                   float a) {
+        if (a <= 0.002f) return;
+        BitmapFont font = fonts.get(Fonts.Role.UI_BOLD, cap, Fonts.GlyphSet.DIGITS);
+        BitmapFont.BitmapFontData d = font.getData();
+        float leadBits = Color.toFloatBits(leadC.r, leadC.g, leadC.b, leadC.a * a);
+        float bits = Color.toFloatBits(c.r, c.g, c.b, c.a * a);
+        int nl = lead.length(), n = nl + rest.length();
+        // a lone glyph is drawn with its ink at the x given, so each goes at its pen plus its left bearing, less the
+        // first glyph's (the first ink stays at x, as in one layout)
+        float pen = 0f, bear0 = 0f;
+        BitmapFont.Glyph prev = null;
+        for (int i = 0; i < n; i++) {
+            char ch = i < nl ? lead.charAt(i) : rest.charAt(i - nl);
+            BitmapFont.Glyph g = d.getGlyph(ch);
+            if (g == null) continue;
+            if (prev == null) bear0 = g.xoffset * d.scaleX;
+            else pen += (prev.xadvance + prev.getKerning(ch)) * d.scaleX + SCORE_TRACK * cap;
+            glyph.setLength(0);
+            glyph.append(ch);
+            quads.text(b, font, glyph, x + pen + g.xoffset * d.scaleX - bear0, y, Align.left, cap,
+                i < nl ? leadBits : bits);
+            prev = g;
+        }
+    }
+
     /** Mokoto display text from the single DISPLAY raster. */
     float display(Batch b, CharSequence text, float cap, float x, float y, int align, Color c, float a) {
         return fonts.drawScaled(b, Fonts.Role.DISPLAY, R_DISPLAY, cap / R_DISPLAY, text, x, y, align, 0f, 1f, c, a);
@@ -970,12 +1196,24 @@ final class MapRenderer {
      */
     void grade(Batch b, Fonts.Role role, float raster, int g, float cap, float maxW, float x, float y, Color c,
                float a) {
+        grade(b, role, raster, Fonts.GlyphSet.FULL, g, cap, maxW, x, y, c, a);
+    }
+
+    /**
+     * As {@link #grade(Batch, Fonts.Role, float, int, float, float, float, float, Color, float)} from glyph set
+     * {@code set}: a set other than FULL (the small GRADE set of the card's large ring letter) is rasterised at the
+     * cap itself, so a big letter stays sharp ({@code raster} is unused then).
+     */
+    void grade(Batch b, Fonts.Role role, float raster, Fonts.GlyphSet set, int g, float cap, float maxW, float x,
+               float y, Color c, float a) {
         if (g < 0 || g >= GRADE_LETTERS.length || a <= 0.002f) return;
         String letters = GRADE_LETTERS[g];
         boolean plus = letters.length() < Theme.GRADES[g].length();
+        boolean own = set != Fonts.GlyphSet.FULL;
+        if (own) raster = cap;
         float pc = cap * PLUS_SCALE, gap = plus ? cap * PLUS_GAP : 0f;
-        float lw = fonts.width(role, raster, letters) * cap / raster;
-        float pw = plus ? fonts.width(role, raster, "+") * pc / raster : 0f;
+        float lw = fonts.width(role, raster, set, letters) * cap / raster;
+        float pw = plus ? fonts.width(role, raster, set, "+") * pc / raster : 0f;
         float w = lw + gap + pw;
         if (maxW > 0f && w > maxW) {
             float f = maxW / w;
@@ -986,14 +1224,31 @@ final class MapRenderer {
             w = maxW;
         }
         float x0 = x - w * 0.5f, px = x0 + lw + gap, top = y + cap * 0.5f;
-        fonts.drawScaled(b, role, raster, cap / raster, letters, x0, y, Align.left | Fonts.VCENTER, 0f, 1f, c, a);
-        if (plus) fonts.drawScaled(b, role, raster, pc / raster, "+", px, top, Align.left | Align.top, 0f, 1f, c, a);
+        BitmapFont font = fonts.get(role, raster, set);
+        BitmapFont.BitmapFontData d = font.getData();
+        float s0 = d.scaleX;
+        if (own) {
+            float packed = Color.toFloatBits(c.r, c.g, c.b, c.a * a);
+            d.setScale(s0 * cap / raster);
+            quads.text(b, font, letters, x0, y, Align.left | Fonts.VCENTER, cap, packed);
+            if (plus) {
+                d.setScale(s0 * pc / raster);
+                quads.text(b, font, "+", px, top, Align.left | Align.top, pc, packed);
+            }
+            d.setScale(s0);
+        } else {
+            fonts.drawScaled(b, role, raster, cap / raster, letters, x0, y, Align.left | Fonts.VCENTER, 0f, 1f, c, a);
+            if (plus) {
+                fonts.drawScaled(b, role, raster, pc / raster, "+", px, top, Align.left | Align.top, 0f, 1f, c, a);
+            }
+        }
         float sw = Theme.sweep(g, time);
         if (sw < 0f) return;
         // the band crosses letters and superscript as one diagonal; each takes it at its own left / baseline
-        BitmapFont font = fonts.get(role, raster);
-        BitmapFont.BitmapFontData d = font.getData();
-        float s0 = d.scaleX, half = cap * BAND_HALF;
+        font = fonts.get(role, raster, set);
+        d = font.getData();
+        s0 = d.scaleX;
+        float half = cap * BAND_HALF;
         float from = -BAND_SLOPE * cap - half, pos = from + (w + half - from) * sw;
         d.setScale(s0 * cap / raster);
         quads.shimmer(b, font, letters, x0, y, Align.left | Fonts.VCENTER, cap, pos, half, BAND_SLOPE, Theme.WHITE,
@@ -1104,30 +1359,33 @@ final class MapRenderer {
     /** Text pass, atlas: lens chips, detail grade and NEW pills, signposts and the tooltip panel. */
     void drawTextShapes() {
         int d = lens.ordinal();
+        if (gridOn) grid.maskGrid(draw.batch());
         for (MapNode n : world.nodes) {
             float la = labelA * labelK[n.idx];
             if (la <= 0.01f || lockShown(n)) continue;
             if (saleShown(n)) {
-                float px = cam.hudX(n.drawX()), py = labelTop(n) - labelCap - 12f - 9f;
-                float tw = uiWidth(l3[n.idx], 18f);
-                draw.shell(px - (tw + 30f) * 0.5f + 11f, py, 22f, Theme.GOLD, SHELL_RIB, la);
+                float px = cam.hudX(n.drawX()), py = labelTop(n) - labelCap - 21f * lk;
+                float tw = uiWidth(l3[n.idx], 18f * lk);
+                draw.shell(px - (tw + 30f * lk) * 0.5f + 11f * lk, py, 22f * lk, Theme.GOLD, SHELL_RIB, la);
                 continue;
             }
             float x = cam.hudX(n.drawX()), y = chipTop(n);
-            float h = MapStyle.CHIP_H, w = MapStyle.CHIP_W;
+            float h = MapStyle.CHIP_H * lk, w = MapStyle.CHIP_W * lk, cr = 10f * lk;
             if (n.glitch) {
-                draw.roundRect(x - w * 0.5f, y - h, w, h, 10f, Theme.INK1, 0.9f * la);
+                draw.roundRect(x - w * 0.5f, y - h, w, h, cr, Theme.INK1, 0.9f * la);
                 continue;
             }
             if (n.missing(lens)) {
-                draw.roundRectStroke(x - w * 0.5f, y - h, w, h, 10f, 2f, Theme.INK3, 0.8f * la);
+                draw.roundRectStroke(x - w * 0.5f, y - h, w, h, cr, 2f, Theme.INK3, 0.8f * la);
             } else {
-                draw.roundRect(x - w * 0.5f, y - h, w, h, 10f, Theme.difficultyFill(d), la);
+                draw.roundRect(x - w * 0.5f, y - h, w, h, cr, Theme.difficultyFill(d), la);
                 Color border = Theme.difficultyBorder(d);
-                if (border != null) draw.roundRectStroke(x - w * 0.5f, y - h, w, h, 10f, 2f, border, la);
+                if (border != null) draw.roundRectStroke(x - w * 0.5f, y - h, w, h, cr, 2f, border, la);
             }
-            if (zoom <= MapStyle.LOD_DETAIL && n.played[d]) {
-                gradeColor(n.grade[d], c3);
+            if (gridOn) {
+                if (!n.missing(lens)) gridPill(n, x, d, la);
+            } else if (zoom <= MapStyle.LOD_DETAIL && n.played[d]) {
+                Theme.gradeColor(n.grade[d], n.fullCombo[d], c3);
                 float py = y - h - 10f;
                 draw.pill(x + 70f, py - 34f, 64f, 34f, c3, 0.22f * la);
                 draw.roundRectStroke(x + 70f, py - 34f, 64f, 34f, 14f, 2f, c3, 0.8f * la);
@@ -1137,10 +1395,11 @@ final class MapRenderer {
                 draw.roundRectStroke(x - 38f, py - 34f, 76f, 34f, 14f, 2f, Theme.GROUND_SIG, 0.8f * la);
             }
         }
+        if (gridOn) grid.unmask(draw.batch());
         for (int i = 0; i < signN; i++) {
             CaveData.Sign g = world.signs.get(signIdx[i]);
             float w = signW[i], h = 52f, x = signX[i] - w * 0.5f, y = signY[i] - h * 0.5f;
-            float k = visibility(x, y, x + w, y + h) * labelA;
+            float k = visibility(x, y, x + w, y + h) * signK[i] * labelA;
             if (k <= 0.01f) continue;
             draw.pill(x, y, w, h, Theme.PANEL, 0.9f * k);
             draw.roundRectStroke(x, y, w, h, h * 0.5f, 2f, g.color, 0.8f * k);
@@ -1154,18 +1413,99 @@ final class MapRenderer {
         }
     }
 
-    /** Grade colour of grade index {@code g} into {@code out}; ink1 when unknown. */
-    void gradeColorOf(int g, Color out) {
-        gradeColor(g, out);
+    // ------------------------------------------------------------------- ALL SONGS score row
+    /** Baseline of the grid's score row under song {@code n}: {@link GridPage#SCORE_DY} under its name's. */
+    private float gridRowBase(MapNode n) {
+        return labelTop(n) - labelCap - GridPage.SCORE_DY * lk;
     }
 
-    private void gradeColor(int g, Color out) {
-        if (g >= 0 && g < Theme.GRADES.length) Theme.gradeColor(Theme.GRADES[g], time, out);
-        else out.set(Theme.INK1);
+    /** Width of the grid's 9-digit score at the UI digit raster. */
+    private float gridScoreW() {
+        if (gridScoreW <= 0f) gridScoreW = fonts.digitsWidth(Fonts.Role.UI, R_UI, 9, true);
+        return gridScoreW * GridPage.SCORE_CAP * lk / R_UI;
+    }
+
+    /** Width of the grid's pill for grade index {@code g}, or NEW's when {@code g} &lt; 0. */
+    private float gridPillW(int g) {
+        float cap = GridPage.GRADE_CAP * lk;
+        return g < 0 ? numWidth("NEW", cap) + 30f * lk : gradeWidth(g, cap) + 2f * GridPage.PILL_PAD * lk;
+    }
+
+    /** Left edge of a played song's score row centred on {@code x}: the score, the gap, a pill {@code pillW} wide. */
+    private float gridRowLeft(float x, float pillW) {
+        return x - 0.5f * (gridScoreW() + GridPage.SCORE_GAP * lk + pillW);
+    }
+
+    /** Width of grade index {@code g} at {@code cap} as {@link #grade} draws it from the NUMBER raster. */
+    private float gradeWidth(int g, float cap) {
+        if (g < 0 || g >= GRADE_LETTERS.length) return 0f;
+        String letters = GRADE_LETTERS[g];
+        float w = fonts.width(Fonts.Role.NUMBER, R_NUM, letters) * cap / R_NUM;
+        if (letters.length() == Theme.GRADES[g].length()) return w;
+        return w + cap * PLUS_GAP + fonts.width(Fonts.Role.NUMBER, R_NUM, "+") * cap * PLUS_SCALE / R_NUM;
+    }
+
+    /**
+     * ALL SONGS: the grade's pill after the best score, in the grade's colour (purple after a full
+     * combo), or the NEW pill alone when unplayed (Kelvin 2026-10-19 13:26–14:01). Atlas phase.
+     */
+    private void gridPill(MapNode n, float x, int d, float a) {
+        float h = GridPage.PILL_H * lk, y0 = gridRowBase(n) - (GridPage.PILL_H - GridPage.PILL_UP) * lk;
+        if (!n.played[d]) {
+            float w = gridPillW(-1);
+            draw.pill(x - w * 0.5f, y0, w, h, GridPage.CYAN, 36f / 255f * a);
+            draw.roundRectStroke(x - w * 0.5f, y0, w, h, h * 0.5f, 2f, GridPage.CYAN, 220f / 255f * a);
+            return;
+        }
+        Theme.gradeColor(n.grade[d], n.fullCombo[d], c3);
+        float w = gridPillW(n.grade[d]), px = gridRowLeft(x, w) + gridScoreW() + GridPage.SCORE_GAP * lk;
+        draw.pill(px, y0, w, h, c3, 50f / 255f * a);
+        draw.roundRectStroke(px, y0, w, h, h * 0.5f, 2f, c3, 210f / 255f * a);
+    }
+
+    /** ALL SONGS: the grade in its pill, or NEW. NUMBER raster. */
+    private void gridGrade(Batch b, MapNode n, float x, int d, float a) {
+        float cy = gridRowBase(n) + (GridPage.PILL_UP - GridPage.PILL_H * 0.5f) * lk, cap = GridPage.GRADE_CAP * lk;
+        if (!n.played[d]) {
+            num(b, "NEW", cap, x, cy, Align.center | Fonts.VCENTER, GridPage.CYAN, a);
+            return;
+        }
+        int g = n.grade[d];
+        if (g < 0 || g >= Theme.GRADES.length) return;
+        Theme.gradeColor(g, n.fullCombo[d], c3);
+        float w = gridPillW(g), px = gridRowLeft(x, w) + gridScoreW() + GridPage.SCORE_GAP * lk;
+        grade(b, Fonts.Role.NUMBER, R_NUM, g, cap, 0f, px + w * 0.5f, cy, c3, a);
+    }
+
+    /**
+     * A song's title under its hole: centred, or when longer than this frame's limit (15 or 20 half-width characters)
+     * scrolling in a window as wide as its first 15 / 20 with {@link Marquee} timing at 50 / s and a 100 gap (at the
+     * 25 px name), each title on its own clock (Kelvin 2026-10-19 13:40 / 14:00). Shadow first.
+     */
+    private void drawTitle(Batch b, int i, float x, float y, float a) {
+        float win = window(i);
+        if (win <= 0f) {
+            uiFit(b, l1[i], labelCap, x + 2f, y - 2f, Align.center | Align.top, MapStyle.LABEL_MAX_W, Theme.SHADOW,
+                0.9f * a);
+            uiFit(b, l1[i], labelCap, x, y, Align.center | Align.top, MapStyle.LABEL_MAX_W, Theme.INK1, a);
+            return;
+        }
+        if (titleW[i] < 0f) titleW[i] = fonts.width(Fonts.Role.UI, R_UI, l1[i]);
+        float k = labelCap / R_UI, tw = titleW[i] * k, ww = win * k, f = labelCap / TITLE_CAP;
+        float ms = TITLE_SPEED * f, fs = TITLE_FADE * f;
+        float x0 = x - ww * 0.5f, x1 = x0 + ww, span = tw + Marquee.GAP * ms, base = y - labelCap;
+        float dist = Marquee.distance(titleT[i], tw - ww, span, ms);
+        float fl = Marquee.fadeLeft(dist, span, fs), fr = Marquee.fadeRight(dist, tw - ww, span, fs);
+        for (float tx = x0 - dist % span; tx < x1; tx += span) {
+            uiFaded(b, l1[i], labelCap, tx + 2f, base - 2f, Theme.SHADOW, 0.9f * a, x0 + 2f, x1 + 2f, fl, fr);
+            uiFaded(b, l1[i], labelCap, tx, base, Theme.INK1, a, x0, x1, fl, fr);
+        }
     }
 
     /** Text pass, UI raster: labels of every hole, contact / slot marks, signposts and the tooltip. */
     void drawTextUi(Batch b) {
+        int d = lens.ordinal();
+        if (gridOn) grid.maskGrid(b);
         for (MapNode n : world.all) {
             float la = labelA * labelK[n.idx];
             int i = n.idx;
@@ -1182,23 +1522,28 @@ final class MapRenderer {
                 GlitchState gs = n.labelGlitch;
                 if (n.glitch) {
                     glitch.draw(b, Fonts.Role.UI, R_UI, l1[i], x, y, Align.center | Align.top, Theme.INK2, la, gs, time);
-                    ui(b, "??", 18f, x, chipTop(n) - MapStyle.CHIP_H * 0.5f, Align.center | Fonts.VCENTER, Theme.ABYSS_BLACK, la);
+                    ui(b, "??", 18f * lk, x, chipTop(n) - MapStyle.CHIP_H * lk * 0.5f, Align.center | Fonts.VCENTER,
+                        Theme.ABYSS_BLACK, la);
                     continue;
                 }
                 if (gs.isBursting(time)) {
                     glitch.draw(b, Fonts.Role.UI, R_UI, l1[i], x, y, Align.center | Align.top, Theme.INK1, la, gs, time);
                 } else {
-                    uiFit(b, l1[i], labelCap, x + 2f, y - 2f, Align.center | Align.top, MapStyle.LABEL_MAX_W, Theme.SHADOW,
-                        0.9f * la);
-                    uiFit(b, l1[i], labelCap, x, y, Align.center | Align.top, MapStyle.LABEL_MAX_W, Theme.INK1, la);
+                    drawTitle(b, i, x, y, la);
                 }
                 if (lockShown(n)) {
                     uiFit(b, l3[i], 18f, x, y - labelCap - 12f, Align.center | Align.top, MapStyle.LABEL_MAX_W, Theme.GOLD, la);
                 } else if (saleShown(n)) {
                     // the price after a small shell (drawn in the atlas pass)
-                    ui(b, l3[i], 18f, x + 15f, y - labelCap - 12f, Align.center | Align.top, Theme.GOLD, la);
+                    ui(b, l3[i], 18f * lk, x + 15f * lk, y - labelCap - 12f * lk, Align.center | Align.top, Theme.GOLD,
+                        la);
                 } else if (n.missing(lens)) {
-                    ui(b, "—", 18f, x, chipTop(n) - MapStyle.CHIP_H * 0.5f, Align.center | Fonts.VCENTER, Theme.INK3, la);
+                    ui(b, "—", 18f * lk, x, chipTop(n) - MapStyle.CHIP_H * lk * 0.5f, Align.center | Fonts.VCENTER,
+                        Theme.INK3, la);
+                } else if (gridOn && n.played[d]) {
+                    // the best score, its leading zeros as ghosts (the grade's pill follows)
+                    fonts.drawDigits(b, Fonts.Role.UI, GridPage.SCORE_CAP * lk, R_UI, n.best[d], 9, true,
+                        gridRowLeft(x, gridPillW(n.grade[d])), gridRowBase(n), Align.left, Theme.INK1, GHOST, la, null);
                 }
                 continue;
             }
@@ -1218,9 +1563,10 @@ final class MapRenderer {
                 uiFit(b, l3[i], 17f, x, yy, Align.center | Align.top, 420f, c, la);
             }
         }
+        if (gridOn) grid.unmask(b);
         for (int i = 0; i < signN; i++) {
             float w = signW[i], x = signX[i] - w * 0.5f, y = signY[i] - 26f;
-            float k = visibility(x, y, x + w, y + 52f) * labelA;
+            float k = visibility(x, y, x + w, y + 52f) * signK[i] * labelA;
             if (k > 0.01f) ui(b, signText[signIdx[i]], 18f, x + 52f, signY[i], Align.left | Fonts.VCENTER, Theme.INK1, k);
         }
         if (tipA > 0.01f) ui(b, tipText, 20f, tipX, tipY + 26f, Align.center | Fonts.VCENTER, Theme.GOLD, tipA);
@@ -1229,17 +1575,20 @@ final class MapRenderer {
     /** Text pass, NUMBER raster: lens chip constants and the close-zoom scores and grades (NEW when unplayed). */
     void drawTextNumbers(Batch b) {
         int d = lens.ordinal();
+        if (gridOn) grid.maskGrid(b);
         for (MapNode n : world.nodes) {
             float la = labelA * labelK[n.idx];
             if (la <= 0.01f || n.missing(lens) || lockShown(n) || saleShown(n) || n.glitch) continue;
-            float x = cam.hudX(n.drawX()), y = chipTop(n) - MapStyle.CHIP_H * 0.5f;
+            float x = cam.hudX(n.drawX()), y = chipTop(n) - MapStyle.CHIP_H * lk * 0.5f;
             String ct = n.song.constantBase(lens);
             if (ct != null) {
-                constant(b, ct, n.song.constantMark(lens), MapStyle.CHIP_CAP, x, y, Theme.difficultyText(d), la);
+                constant(b, ct, n.song.constantMark(lens), MapStyle.CHIP_CAP * lk, x, y, Theme.difficultyText(d), la);
             } else {
-                num(b, "--", MapStyle.CHIP_CAP, x, y, Align.center | Fonts.VCENTER, Theme.difficultyText(d), la);
+                num(b, "--", MapStyle.CHIP_CAP * lk, x, y, Align.center | Fonts.VCENTER, Theme.difficultyText(d), la);
             }
-            if (zoom <= MapStyle.LOD_DETAIL) {
+            if (gridOn) {
+                gridGrade(b, n, x, d, la);
+            } else if (zoom <= MapStyle.LOD_DETAIL) {
                 float py = y - MapStyle.CHIP_H * 0.5f - 10f - 17f;
                 if (!n.played[d]) {
                     num(b, "NEW", 18f, x, py, Align.center | Fonts.VCENTER, Theme.GROUND_SIG, la);
@@ -1248,11 +1597,12 @@ final class MapRenderer {
                 score(b, n.best[d], 18f, x - 130f, py, Fonts.VCENTER, Theme.INK1, la);
                 int g = n.grade[d];
                 if (g >= 0 && g < Theme.GRADES.length) {
-                    gradeColor(g, c3);
+                    Theme.gradeColor(g, n.fullCombo[d], c3);
                     grade(b, Fonts.Role.NUMBER, R_NUM, g, 18f, 0f, x + 100f, py, c3, la);
                 }
             }
         }
+        if (gridOn) grid.unmask(b);
     }
 
     /** Text pass, bold raster: the return floater (NEW BEST, FIRST CLEAR). */
@@ -1271,6 +1621,7 @@ final class MapRenderer {
     // =================================================================== hit tests
     /** The tappable spot under HUD (hx, hy) (closest within its hit radius), or null. */
     MapNode nodeAt(float hx, float hy) {
+        if (grid != null && world.isGrid()) return grid.hit(hx, hy);
         float wx = cam.worldX(hx), wy = cam.worldY(hy);
         MapNode best = null;
         float bestD = Float.MAX_VALUE;

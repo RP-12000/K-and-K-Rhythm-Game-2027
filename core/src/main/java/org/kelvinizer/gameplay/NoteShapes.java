@@ -1,6 +1,7 @@
 package org.kelvinizer.gameplay;
 
 import com.badlogic.gdx.math.MathUtils;
+import org.kelvinizer.Params;
 import org.kelvinizer.elements.Note;
 
 /**
@@ -39,9 +40,14 @@ public final class NoteShapes {
     // ================================================================== lane note anchor
     /**
      * Distance from its line (reference units) within which a lane note or mine eases from its centred place
-     * back to touching the line ({@link #centreShiftY}).
+     * back to touching the line ({@link #centreShiftY}): 333.33 (300 in the old 1080-high frame).
      */
-    public static final float CENTRE_EASE = 300f;
+    public static final float CENTRE_EASE = 1000f / 3f;
+    /**
+     * Height of the reference body in reference units per world unit of a size-1.0 body: it is measured on a
+     * 16 : 9 screen (1080 high) and the frame is 1200 high, so 1200 / 1080 (it was 1 before 2026-10-19).
+     */
+    static final float BODY_REF_K = Params.REF_H / 1080f;
 
     /**
      * x part of {@link #centreShiftY}: the stretch across the travel is {@code kx}.
@@ -69,7 +75,7 @@ public final class NoteShapes {
     public static float centreShiftY(float pos, float refH, float h, float rot) {
         float e = centreEase(pos);
         if (e == 0f) return 0f;
-        return MathUtils.cosDeg(rot) * (refH * 0.5f * Field.ky() - h * 0.5f) * e;
+        return MathUtils.cosDeg(rot) * (refH * 0.5f * BODY_REF_K * Field.ky() - h * 0.5f) * e;
     }
 
     /** @return 0 at or behind the line, rising (smoothstep) to 1 at {@link #CENTRE_EASE} from it. */
@@ -98,8 +104,9 @@ public final class NoteShapes {
      * a hold or LANE MINE: of its base, the tail left out). The pivot {@code (px, py)} is in reference units in
      * the note's own frame (stretched like positions, {@code kx} and {@code ky}; a sky note's frame is turned
      * 180° with it, so + y points away from the line on both lines) and stays where it is while the body
-     * turns {@code rot} about it. At the authored angle 0 the pivot changes nothing; pivot (0, −refH/2), the
-     * edge facing the line, is the turn of the notes before 2026-10-16.
+     * turns {@code rot} about it. At the authored angle 0 the pivot changes nothing; pivot (0, −refH/2) is the
+     * edge facing the line on a 16 : 10 screen ({@code ky} 1), the turn of the notes before 2026-10-16 there
+     * (a format v2 chart's (0, −refH/2) loads as (0, −refH·{@link #BODY_REF_K}/2): that turn on a 16 : 9 screen).
      *
      * @param pos the note's world distance from its line ({@link Field#dist} of its chart distance)
      * @param rot drawn angle in degrees (the authored angle, +180 on the sky line)
@@ -107,7 +114,7 @@ public final class NoteShapes {
      * @return world y shift of the leading-edge centre from {@code lineY ± pos}
      */
     public static float pivotShiftY(float pos, float refH, float h, float rot, boolean up, float px, float py) {
-        float d = (refH * 0.5f * Field.ky() - h * 0.5f) * centreEase(pos) + h * 0.5f + py * Field.ky();
+        float d = (refH * 0.5f * BODY_REF_K * Field.ky() - h * 0.5f) * centreEase(pos) + h * 0.5f + py * Field.ky();
         float vx = px * Field.kx();
         float vy = py * Field.ky() + h * 0.5f;
         return (up ? -d : d) - MathUtils.sinDeg(rot) * vx - MathUtils.cosDeg(rot) * vy;

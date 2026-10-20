@@ -103,6 +103,10 @@ public class Profile {
     public float mapZoom = 1f;
     /** MAIN in chapter mode (every chapter entrance on one layer) instead of story mode (Kelvin 2026-10-16). */
     public boolean mainChapterMode;
+    /** Unused since ALL SONGS has one layout (Kelvin 2026-10-19 21:18): kept so that older saves still load. */
+    public boolean gridFour;
+    /** Unused since ALL SONGS lost its pack box (Kelvin 2026-10-20): kept so that older saves still load. */
+    public List<String> gridPacksOff = new ArrayList<>();
     /** Local day (yyyymmdd) of the last completed play, 0 = never (daily shell bonus). */
     public int lastPlayDay;
     /** Diver-scoped settings. */
@@ -315,6 +319,7 @@ public class Profile {
         if (exp > 0) shells += exp;
         exp = 0;
         if (ownedSongs == null) ownedSongs = new ArrayList<>();
+        if (gridPacksOff == null) gridPacksOff = new ArrayList<>();
         if (records != null) {
             for (Map.Entry<String, Map<String, ChartRecord>> e : records.entrySet()) {
                 if (e.getKey() == null || e.getValue() == null) continue;
@@ -380,6 +385,7 @@ public class Profile {
         if (seenChapters == null) seenChapters = new ArrayList<>();
         if (flags == null) flags = new ArrayList<>();
         if (ownedSongs == null) ownedSongs = new ArrayList<>();
+        if (gridPacksOff == null) gridPacksOff = new ArrayList<>();
         ownedSongs.removeAll(Collections.singleton((String) null));
         if (shells < 0) shells = 0;
         exp = 0;

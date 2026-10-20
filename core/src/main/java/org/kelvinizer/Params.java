@@ -3,7 +3,7 @@ package org.kelvinizer;
 import org.kelvinizer.play.Judgement;
 
 /**
- * 全局常量：版本号、参考尺寸 1920 × 1080、判定窗口和计分权重、水雷窗口、判定区半高、结束延迟等。
+ * 全局常量：版本号、游玩场地和谱面的参考画面 1920 × 1200、判定窗口和计分权重、水雷窗口、判定区半高、结束延迟等。
  * 判定窗口和计分常量在 {@link Judgement} 里定义，这里只是别名；不放 GL 对象，也没有可变状态。
  *
  * <p>Game-wide constants (ARCHITECTURE §5). Constants only: no GL objects and no mutable state
@@ -21,10 +21,14 @@ public final class Params {
      */
     public static final String VERSION = "1.0.0";
 
-    /** Reference (minimum) world width of every viewport. */
+    /** Width of the reference frame of the playfield and the charts. */
     public static final float REF_W = 1920f;
-    /** Reference (minimum) world height of every viewport. */
-    public static final float REF_H = 1080f;
+    /**
+     * Height of the reference frame of the playfield and the charts: 1200 since 2026-10-19 (Kelvin 03:51:
+     * 「坐标系我们现在修改为1920*1200」; it was 1080, and format v1 / v2 charts are converted on load). The UI
+     * viewports are still at least 1920 × 1080 ({@code Ui.REF_H}).
+     */
+    public static final float REF_H = 1200f;
 
     /** Tier-1 window half width (66.67 ms): RESONANCE. */
     public static final float TIER1_MS = Judgement.TIER1_MS;
@@ -60,9 +64,12 @@ public final class Params {
      * Half height of each judgement zone, in ref units above and below the line: 0.4 of the screen
      * height (Kelvin 10-12), so the sky line takes the upper half and the ground line the lower half.
      */
-    public static final float JUDGE_ZONE_HALF = 432f;
-    /** Half height of the band drawn and kept clear around a line (the at-lane words sit just outside it). */
-    public static final float JUDGE_BAND_HALF = 108f;
+    public static final float JUDGE_ZONE_HALF = 480f;
+    /**
+     * Half height of the band drawn and kept clear around a line (the at-lane words sit just outside it): 0.1 of
+     * the screen height.
+     */
+    public static final float JUDGE_BAND_HALF = 120f;
     /** Releasing a STREAM or TIDE STREAM within this many ms of its end still counts as completed: there is no
      * tail judgement (Kelvin 10-12 21:09: 0.25 s). */
     public static final float HOLD_RELEASE_GRACE_MS = 250f;

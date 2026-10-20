@@ -35,6 +35,16 @@ public final class Panel {
         d.rect(x + r, y + h - 2f, w - 2f * r, 1f, Theme.PANEL_HIGHLIGHT, alpha * 1.4f);
     }
 
+    private static final Color SOLID_HI = new Color(Theme.PANEL_HI.r, Theme.PANEL_HI.g, Theme.PANEL_HI.b, 1f);
+
+    /** {@link #cardHi} with an opaque fill, for popovers over text (nothing under them shows through). */
+    public static void cardSolid(Draw d, float x, float y, float w, float h, float radius, float alpha) {
+        d.roundRect(x, y, w, h, radius, SOLID_HI, alpha);
+        d.roundRectStroke(x, y, w, h, radius, 1f, Theme.STROKE, alpha);
+        float r = Math.min(radius, Math.min(w, h) * 0.5f);
+        d.rect(x + r, y + h - 2f, w - 2f * r, 1f, Theme.PANEL_HIGHLIGHT, alpha * 1.4f);
+    }
+
     /** Soft drop shadow under a card (a stretched glow, cheap). */
     public static void shadow(Draw d, float x, float y, float w, float h, float alpha) {
         d.sprite(d.softDot(), x + w * 0.5f, y + h * 0.5f - 14f, w + 140f, h + 140f, Theme.SHADOW, 0.55f * alpha);

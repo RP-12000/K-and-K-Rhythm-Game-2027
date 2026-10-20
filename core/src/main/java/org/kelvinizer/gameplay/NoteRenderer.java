@@ -92,7 +92,9 @@ import org.kelvinizer.ui.Ui;
  * <p>Positions are stretched with the field ({@link Field}): lane spans and line y come stretched from the
  * engine, a note's distance from its line and its tail length are multiplied by {@code ky} after the
  * {@link Note#HIDDEN_POSITION} test on the raw value ({@code drawPos}, {@link #tailDraw}); body thickness,
- * pearls, glows and rotation are not stretched.
+ * pearls, glows and rotation are not stretched. The player's VISUAL HIT POINT ({@link #setHitPoint}) then moves every
+ * note the same distance along its path ({@link #hitShift()}), so a key's midline crosses its line where the player
+ * sees the hit (Kelvin 2026-10-20 03:20).
  *
  * <p>The sprite work of each note type lives in the {@code paint*} methods, which
  * {@link TrailRenderer} also uses for afterimage copies (ARCHITECTURE §17: "same sprites as the
@@ -212,6 +214,8 @@ final class NoteRenderer {
     private int start;
     private int end;
     private float noteSize = 1f;
+    /** {@link Settings#hitPointPx} of this frame (20 = a key's edge on its line at the judgement time). */
+    private float hitPoint = Settings.HIT_POINT_DEFAULT;
     private boolean high;
     /** How notes that share their beat are marked ({@link Settings#syncHint}). */
     private int syncHint = Settings.SYNC_HINT_HIGHLIGHT;
@@ -390,6 +394,20 @@ final class NoteRenderer {
     void setStyle(float noteSizeScale, boolean highQuality) {
         noteSize = MathUtils.clamp(noteSizeScale, 0.8f, 1.3f);
         high = highQuality;
+    }
+
+    /** Sets the VISUAL HIT POINT for this frame ({@link Settings#hitPointPx}; not set: the default, 20). */
+    void setHitPoint(float px) {
+        hitPoint = MathUtils.clamp(px, Settings.HIT_POINT_MIN, Settings.HIT_POINT_MAX);
+    }
+
+    /**
+     * @return how far every note is drawn along its path toward its line (negative: back from it) for the VISUAL HIT
+     *         POINT: half a size-1.0 key less the setting, scaled with the key, so a TAP or HOLD key's midline is
+     *         {@code hitPointPx × size} from its line at the judgement time; 0 at the default (the edge on the line)
+     */
+    float hitShift() {
+        return (NOTE_H * 0.5f - hitPoint) * noteSize;
     }
 
     /**
@@ -772,17 +790,18 @@ final class NoteRenderer {
 
     /**
      * World distance of note i from its line at {@code beat} ({@link EdgeEntry#position} stretched by
-     * {@link Field#dist}), or NaN while it is parked at {@link Note#HIDDEN_POSITION} (tested on the raw value).
+     * {@link Field#dist}, less {@link #hitShift()}), or NaN while it is parked at {@link Note#HIDDEN_POSITION} (tested
+     * on the raw value).
      */
     private float drawPos(int i, Note n, float beat) {
         float p = entry.position(i, n, beat);
-        return Math.abs(p) >= Note.HIDDEN_POSITION - 1f ? Float.NaN : Field.dist(p);
+        return Math.abs(p) >= Note.HIDDEN_POSITION - 1f ? Float.NaN : Field.dist(p) - hitShift();
     }
 
     /** {@link #drawPos(int, Note, float)} by the note's chart index. */
     private float drawPos(Note n, float beat) {
         float p = entry.position(n, beat);
-        return Math.abs(p) >= Note.HIDDEN_POSITION - 1f ? Float.NaN : Field.dist(p);
+        return Math.abs(p) >= Note.HIDDEN_POSITION - 1f ? Float.NaN : Field.dist(p) - hitShift();
     }
 
     /**

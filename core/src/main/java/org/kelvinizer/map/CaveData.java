@@ -115,11 +115,14 @@ final class CaveData {
         Color color = new Color(0.66f, 0.71f, 0.84f, 1f);
     }
 
-    /** ALL SONGS pack group. */
+    /** ALL SONGS pack: songs the page shows (listed by id, every song, or a level's); no pack box since 2026-10-20. */
     static final class Pack {
         String title = "", titleZh = "", note = "", noteZh = "";
         /** Song ids, or null for every song. */
         String[] songs;
+        /** A level id: the songs placed on that level (and, on a collecting level, the songs placed nowhere). */
+        String level;
+        /** Unused since the pack box (Kelvin 2026-10-19); kept so the map editor round-trips it. */
         int placeholders;
         /** {@link #HIDDEN} or {@link #GLITCH} until revealed (null: none). */
         String secret;
@@ -285,6 +288,7 @@ final class CaveData {
             JsonValue songs = s.get("songs");
             // "all" (any string) = every song; no "songs" = none (MAP_FORMAT §5), not every song
             p.songs = songs == null ? new String[0] : songs.isString() ? null : strings(songs);
+            p.level = s.getString("level", null);
             p.placeholders = s.getInt("placeholders", 0);
             p.secret = s.getString("secret", null);
             l.packs.add(p);
@@ -298,7 +302,7 @@ final class CaveData {
     static float defaultRadius(String type) {
         switch (type) {
             case STORY:
-                return 76f;
+                return 96f;
             case SHAFT:
                 return 156f;
             case PORTAL:

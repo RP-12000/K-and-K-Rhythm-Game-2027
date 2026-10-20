@@ -11,8 +11,8 @@ package org.kelvinizer.ui;
  * titles built once relabel themselves without being rebuilt (layouts that measure text re-run
  * anyway, because {@code applySettings} re-lays out every screen). {@link #t(String, String)}
  * picks one of the two strings now, for text drawn every frame or appended to a builder. The map
- * package keeps its English and does not use this class. Nothing here allocates after
- * construction.
+ * keeps its English but for the rise ring's word and the titles of the screens it opens. Nothing
+ * here allocates after construction.
  */
 public final class Lang {
     private static boolean zh;

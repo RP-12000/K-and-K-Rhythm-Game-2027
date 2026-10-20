@@ -124,6 +124,10 @@ public class SettingsScreen extends ShellScreen {
     private static final CharSequence OFFSET_DESC = Lang.of("ADJUST THE SYNCHRONIZATION OF MUSIC", "调整音乐的同步性"),
         OFFSET_EARLY = Lang.of("MOSTLY EARLY → TAP – TO DECREASE", "EARLY 较多 → 点击减少（–）"),
         OFFSET_LATE = Lang.of("MOSTLY LATE → TAP + TO INCREASE", "LATE 较多 → 点击增加（+）");
+    private static final CharSequence HIT_DESC = Lang.of("FROM A TAP OR HOLD KEY'S MIDDLE TO THE LINE AT THE HIT",
+            "判定时 TAP、HOLD 按键中线到判定线的距离"),
+        HIT_EDGE = Lang.of("20 = BOTTOM EDGE ON THE LINE (DEFAULT)", "20 = 按键下边缘碰线（默认）"),
+        HIT_MIDDLE = Lang.of("0 = THE LINE THROUGH THE KEY'S MIDDLE", "0 = 判定线横穿按键中间");
 
     // descriptions that depend on other values (refreshDynamic)
     private static final CharSequence HIT_ON = Lang.of("ADJUST THE VOLUME OF NOTE SOUND EFFECTS", "调整音符的打击音效音量"),
@@ -310,6 +314,31 @@ public class SettingsScreen extends ShellScreen {
 
     // ------------------------------------------------------------------ VISUAL
     private void buildVisual(SettingsPage p) {
+        // VISUAL HIT POINT 目押校准 first, before GAMEPLAY VISUALS (Kelvin 2026-10-20 03:20): laid out like CHART
+        // OFFSET, in px, with CALIBRATE… opening a screen of its own
+        SliderRow hitRow = p.add(new SliderRow(game, HitPointScreen.TITLE, HIT_DESC, false, Settings.HIT_POINT_MIN,
+            Settings.HIT_POINT_MAX, 1f, 1f, false, false, "px", new SliderRow.Value() {
+                @Override
+                public float get() {
+                    return s().hitPointPx;
+                }
+
+                @Override
+                public void set(float v, boolean finished) {
+                    s().hitPointPx = Math.round(v);
+                    if (finished) diverChanged();
+                }
+            }));
+        hitRow.setNudges(new float[]{-10f, -1f, 1f, 10f}, new CharSequence[]{"–10", "–1", "+1", "+10"});
+        hitRow.setDescription2(HIT_EDGE);
+        hitRow.setDescription3(HIT_MIDDLE);
+        hitRow.setLead(new Button(game.draw(), game.fonts(), Button.Variant.PRIMARY, Lang.of("CALIBRATE…", "校准…")))
+            .setOnTap(new Runnable() {
+                @Override
+                public void run() {
+                    openScreen(game.hitPoint(), HitPointScreen.TITLE);
+                }
+            });
         // the settings the preview shows sit behind this row (Kelvin 2026-10-18 04:06), on a screen of their own like
         // calibration since 15:17
         ActionRow live = p.add(new ActionRow(game, VisualsScreen.TITLE,

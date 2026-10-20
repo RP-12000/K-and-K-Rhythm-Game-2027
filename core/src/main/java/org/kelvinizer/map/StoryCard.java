@@ -74,7 +74,10 @@ final class StoryCard {
         return open;
     }
 
-    /** Opens {@code st} from the hole at HUD (holeX, holeY); {@code zh} picks the Chinese pages when there are some. */
+    /**
+     * Opens {@code st} from the hole at HUD (holeX, holeY); {@code zh} picks the Chinese pages when there are some, and
+     * an English card shows no Chinese (Kelvin 2026-10-20).
+     */
     void open(CaveData.Story st, float holeX, float holeY, boolean zh) {
         open = true;
         t = 0f;
@@ -85,9 +88,9 @@ final class StoryCard {
         x = hx < Ui.CX ? hx + 140f : hx - 140f - w;
         x = MathUtils.clamp(x, Ui.safeLeft() + 24f, Ui.safeRight() - w - 24f);
         y = MathUtils.clamp(hy - h * 0.5f, Ui.safeBottom() + 140f, Ui.safeTop() - h - 160f); // clear of the HUD rows
-        head = "STORY " + st.number + " · " + st.minutes + " MIN · 剧情";
-        title = st.titleZh.isEmpty() || st.titleZh.equals(st.title) ? st.title : st.titleZh + "  " + st.title;
-        String[] src = zh && st.pagesZh.length > 0 ? st.pagesZh : st.pages.length > 0 ? st.pages : st.pagesZh;
+        head = "STORY " + st.number + " · " + st.minutes + " MIN" + (zh ? " · 剧情" : "");
+        title = !zh || st.titleZh.isEmpty() || st.titleZh.equals(st.title) ? st.title : st.titleZh + "  " + st.title;
+        String[] src = !zh ? st.pages : st.pagesZh.length > 0 ? st.pagesZh : st.pages;
         pages.clear();
         for (String p : src) pages.add(wrap(p, 24f, w - 96f));
         if (pages.isEmpty()) pages.add(wrap("……", 24f, w - 96f));
@@ -115,7 +118,7 @@ final class StoryCard {
         prev.setBounds(x + 32f, y + 28f, bs, 72f);
         next.setBounds(x + w - 32f - bs * 1.6f, y + 28f, bs * 1.6f, 72f);
         prev.setVisible(page > 0);
-        next.setLabel(page >= pages.size() - 1 ? "DONE · 完成" : "NEXT ›");
+        next.setLabel(page >= pages.size() - 1 ? r.zh ? "DONE · 完成" : "DONE" : "NEXT ›");
     }
 
     /** Greedy wrap: CJK breaks anywhere, Latin at spaces. */

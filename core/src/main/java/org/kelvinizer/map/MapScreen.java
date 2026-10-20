@@ -57,8 +57,8 @@ import java.util.Map;
  * up from the arrival point. Locked holes shake and show what to clear first; sealed ones say
  * they are coming. A song without a chart for the lens difficulty only shakes (Kelvin 2026-10-16).
  *
- * <p><b>Input priority:</b> story card → sort panel → card → HUD → map; each pointer is owned by
- * the layer that claimed its touchDown. On the map a hole takes the press state at once, but the
+ * <p><b>Input priority:</b> story card → sort panel → card → HUD → map; each pointer is
+ * owned by the layer that claimed its touchDown. On the map a hole takes the press state at once, but the
  * action waits for the tap / pan decision ({@link MapGestures}).
  *
  * <p><b>The Descent</b> (§3.12, X2c): DESCEND closes the card, slides the HUD off and zooms the
@@ -80,13 +80,6 @@ public class MapScreen extends KkScreen<Main>
     private static final float WELCOME_RISE = 900f;
     /** Height of the plain arrival (shown with no transition running). */
     private static final float ARRIVAL_RISE = 600f;
-    /**
-     * The overview chip (Kelvin 2026-10-17 19:39): lit {@code CHIP_SHOW} s after a pinch that reaches
-     * the overview (held while the fingers stay on), then fading over {@code CHIP_FADE} s; a pinch
-     * that starts at the overview counts once it pulls {@code PINCH_PULL} (× the overview zoom) on
-     * past it. On the wheel one scroll is one pinch: notches less than {@code WHEEL_GAP} s apart.
-     */
-    private static final float CHIP_SHOW = 1f, CHIP_FADE = 0.3f, PINCH_PULL = 0.08f, WHEEL_GAP = 0.25f;
     static final String HUB = "hub", ALL = "all";
 
     private final CaveData data;
@@ -101,8 +94,10 @@ public class MapScreen extends KkScreen<Main>
     private final MapHud hud;
     private final SongCard card;
     private final MapFilter filter;
-    /** ALL SONGS layout, order and filter, opened by the HUD's SORT button. */
+    /** ALL SONGS order and filter, opened by the HUD's SORT button. */
     private final SortPanel sortPanel;
+    /** ALL SONGS: the grid's layout, mask and scroll. */
+    private final GridPage grid;
     private final PeekTip peek;
     private final StoryCard story;
     private final CaveFx fx;
@@ -118,8 +113,9 @@ public class MapScreen extends KkScreen<Main>
     private boolean modeAvailable;
     /** Per level id: the spot last taken down from it (a rise lands there). */
     private final Map<String, String> downVia = new HashMap<>();
-    private boolean gridFlat;
     private int gridSort;
+    /** ALL SONGS: the page's alpha. */
+    private float gridA = 1f;
 
     private Profile profile;
     private int profileRev = Integer.MIN_VALUE;
@@ -128,11 +124,6 @@ public class MapScreen extends KkScreen<Main>
     private float dwell = -1f;
     private boolean arriving, fromWelcome, shownOnce;
     private float mouseX = Ui.CX, mouseY = Ui.CY;
-
-    // the overview chip and the double-pinch rise ----------------------------------------------
-    private boolean wasPinching, pinchFromOverview, pinchArmed, pinchCounted;
-    /** When the overview chip was last lit (it shows {@link #CHIP_SHOW} s, then fades) and the last wheel notch. */
-    private float chipAt = -100f, wheelAt = -100f;
 
     private float peekT = -1f;
     private boolean peekShown;
@@ -182,6 +173,8 @@ public class MapScreen extends KkScreen<Main>
         renderer = new MapRenderer(game.draw(), game.fonts(), game.glitch(), thumbs, slots, lib.size(), sonar, bubbles, data);
         renderer.cam = cam;
         hud = new MapHud(game.draw(), game.fonts(), game.avatars(), cam, renderer, this);
+        grid = new GridPage(game.draw(), renderer, cam);
+        renderer.grid = grid;
         filter = new MapFilter();
         world = build(HUB);
         card = new SongCard(game.draw(), game.fonts(), world, thumbs, renderer, game.library(), game.profiles(), this);
@@ -215,7 +208,7 @@ public class MapScreen extends KkScreen<Main>
             l.title = "ALL SONGS";
             l.titleZh = "所有曲目";
         }
-        return new MapWorld(data, l, game.library(), profile, gridSort, gridFlat, lens, filter);
+        return new MapWorld(data, l, game.library(), profile, gridSort, lens, filter);
     }
 
     /** Makes {@code w} the current level (renderer, card, HUD, camera bounds). */
@@ -224,6 +217,10 @@ public class MapScreen extends KkScreen<Main>
         renderer.zh = zh;
         renderer.setWorld(w);
         card.world = w;
+        boolean g = w.isGrid();
+        if (g) grid.setWorld(w);
+        cam.lockX = g;
+        card.pinned = g;
         applyLevelBounds();
         hud.setLevel(w);
         selected = null;
@@ -239,16 +236,12 @@ public class MapScreen extends KkScreen<Main>
     }
 
     /**
-     * Snaps the camera onto {@code at} (or the level centre) at zoom 1. ALL SONGS opens at
-     * {@link MapStyle#GRID_ZOOM} ({@link MapStyle#GRID_ZOOM_PHONE} on a phone-sized screen) with
-     * the grid's top-left corner just under the badge, inside the safe left edge.
+     * Snaps the camera onto {@code at} (or the level centre) at the closest zoom (the hub, which does not zoom, at 1);
+     * ALL SONGS opens at its first row.
      */
     private void startCamera(MapNode at) {
         if (world.isGrid()) {
-            float z = Math.min(Ui.compactScreen() ? MapStyle.GRID_ZOOM_PHONE : MapStyle.GRID_ZOOM, cam.zoomMax());
-            float top = Ui.safeTop() - (MapStyle.BADGE_H + 24f) * MapUi.k();
-            cam.snap(MapCamera.centreFor(world.contentLeft, Ui.safeLeft(), z),
-                MapCamera.centreForY(world.contentTop, top, z), z);
+            grid.scrollTo(0f);
             return;
         }
         float x = at != null ? at.x : 0.5f * (world.minX + world.maxX);
@@ -258,7 +251,8 @@ public class MapScreen extends KkScreen<Main>
             y = world.startY;
         }
         if (world.isHub() && !Float.isNaN(world.level.titleX)) y = 0.5f * (y + world.level.titleY) - 60f;
-        cam.snap(MapCamera.centreFor(x, Ui.CX, 1f), MapCamera.centreForY(y, Ui.CY, 1f), 1f);
+        float z = world.isHub() ? 1f : MapStyle.ZOOM_MIN;
+        cam.snap(MapCamera.centreFor(x, Ui.CX, z), MapCamera.centreForY(y, Ui.CY, z), z);
     }
 
     /** Lights the level up from ({@code ox}, {@code oy}) (the wake light spreads along the paths). */
@@ -276,7 +270,14 @@ public class MapScreen extends KkScreen<Main>
      */
     private void goTo(final String id, final int how, MapNode from) {
         if (fx.busy() || diving() || !data.levels.containsKey(id)) return;
-        deselect();
+        // rising from ALL SONGS its card stays where it is and leaves with the page at the swap (Kelvin 2026-10-20
+        // 18:45 「全部歌曲上浮的过程中侧板会收起来。我要上浮的时候侧板也保持不动。」)
+        if (how == CaveFx.RISE && world.isGrid() && card.isOpen()) {
+            dwell = -1f;
+            game.audio().duckMenu(1f, 0.8f);
+        } else {
+            closeCard();
+        }
         story.close();
         sortPanel.close();
         peekCancel();
@@ -292,8 +293,9 @@ public class MapScreen extends KkScreen<Main>
                 Interpolation.exp5In);
         }
         CaveData.Level next = data.levels.get(id);
-        String name = (next.numeral.isEmpty() ? "" : next.numeral + " ") + next.title + "  " + next.titleZh;
-        String line = "第 " + layer(next) + " 层 · LEVEL " + layer(next);
+        // an English screen shows no Chinese (Kelvin 2026-10-20: 如果语言选择是英语就不要出现中文)
+        String name = (next.numeral.isEmpty() ? "" : next.numeral + " ") + next.title + (zh ? "  " + next.titleZh : "");
+        String line = (zh ? "第 " + layer(next) + " 层 · " : "") + "LEVEL " + layer(next);
         Haptics.medium();
         game.audio().stopPreview(0.3f);
         fx.start(how, hx, hy, name, line, new Runnable() {
@@ -305,6 +307,10 @@ public class MapScreen extends KkScreen<Main>
     }
 
     private void enter(String id, String prev, int how, String atSpot) {
+        if (card.isOpen()) { // kept through a rise from ALL SONGS (see goTo): gone with the old page
+            card.snapClosed();
+            card.releaseJacket();
+        }
         applyLevel(build(id));
         MapNode at = world.start;
         if (how == CaveFx.RISE) { // land on the spot taken down, else one leading to where we rose from
@@ -333,7 +339,7 @@ public class MapScreen extends KkScreen<Main>
             lx = world.startX;
             ly = world.startY;
         }
-        if (!reduceMotion && how != CaveFx.RISE) {
+        if (!reduceMotion && how != CaveFx.RISE && !world.isGrid()) { // the grid does not zoom
             cam.glideFrom(cam.x, cam.y, cam.zoom * 0.7f, 0.7f, Interpolation.exp5Out);
         }
         wake(lx, ly);
@@ -342,19 +348,25 @@ public class MapScreen extends KkScreen<Main>
             sonar.ping(lx, ly, 900f, 1.2f, Theme.GROUND_SIG, 0.3f, 2);
         }
         game.backdrop().setDepth(world.level.depth);
+        if (world.isGrid()) openGridCard(profile != null ? world.node(profile.lastSongId) : null);
         saveState();
     }
 
     /**
-     * The double pinch, BACK, Esc or PAGE UP: up one level. Nothing rises from the hub (Kelvin
-     * 2026-10-16: no way back to the title once on the routes) or while a song card is open
-     * (2026-10-17 19:42: 「这个界面下就不允许上浮」).
+     * Two fingers held still ({@link MapStyle#RISE_HOLD} s, Kelvin 2026-10-19 18:46), BACK, Esc or
+     * PAGE UP: up one level. Nothing rises from the hub (Kelvin 2026-10-16: no way back to the title
+     * once on the routes) or while a song card is open (2026-10-17 19:42: 「这个界面下就不允许上浮」).
      */
     public void rise() {
-        if (fx.busy() || diving() || world.isHub() || card.isOpen()) return;
+        String parent = riseTarget();
+        if (parent != null) goTo(parent, CaveFx.RISE, null);
+    }
+
+    /** The level a rise goes up to now, or null when nothing rises (see {@link #rise()}). */
+    private String riseTarget() {
+        if (fx.busy() || diving() || world.isHub() || (card.isOpen() && !world.isGrid())) return null;
         String parent = !chapterMode() && world.level.storyParent != null ? world.level.storyParent : world.level.parent;
-        if (parent == null || !data.levels.containsKey(parent)) return;
-        goTo(parent, CaveFx.RISE, null);
+        return parent != null && data.levels.containsKey(parent) ? parent : null;
     }
 
     /** MAIN in chapter mode: chosen by the diver and offered (every chapter open). */
@@ -390,24 +402,45 @@ public class MapScreen extends KkScreen<Main>
     }
 
     @Override
-    public void gridLayout(boolean flat, int sort) {
-        if (flat == gridFlat && sort == gridSort) return;
-        gridFlat = flat;
+    public void gridSort(int sort) {
+        if (sort == gridSort) return;
         gridSort = sort;
-        relayoutGrid(false);
+        relayoutGrid();
         Haptics.light();
     }
 
     /**
-     * Lays ALL SONGS out again (its layout, order, filter or the lens behind them changed). The
-     * camera stays, or with {@code anchor} (other songs shown) goes back to the grid's top left.
+     * Lists ALL SONGS again (its packs, order, filter or the lens behind them changed): the grid starts at its first
+     * row, the card keeps its song while the grid still has it, and every title's scroll starts over.
      */
-    private void relayoutGrid(boolean anchor) {
-        float x = cam.x, y = cam.y, z = cam.zoom;
-        deselect();
+    private void relayoutGrid() {
+        MapNode keep = selected;
         applyLevel(build(world.level.id));
-        if (anchor) startCamera(world.start);
-        else cam.snap(x, y, z);
+        grid.scrollTo(0f);
+        openGridCard(keep != null && keep.song != null ? world.node(keep.song.id()) : null);
+        renderer.resetTitles();
+    }
+
+    /**
+     * ALL SONGS keeps its card open (Kelvin 2026-10-19 13:14): on {@code n} when it opens, else on the first song that
+     * does, its row scrolled into view; closed only while no song is left (a filter with no match).
+     */
+    private void openGridCard(MapNode n) {
+        if (n == null || !opens(n)) {
+            n = null;
+            for (MapNode m : world.nodes) {
+                if (opens(m)) {
+                    n = m;
+                    break;
+                }
+            }
+        }
+        if (n == null) {
+            closeCard();
+            return;
+        }
+        if (n != selected || !card.isOpen()) selectNode(n, false);
+        grid.reveal(n, false);
     }
 
     // =================================================================== public API
@@ -508,6 +541,7 @@ public class MapScreen extends KkScreen<Main>
             selectNode(resume, false);
             focusNow(resume); // back from a song: centred beside the card at once (Kelvin 2026-10-13)
         }
+        if (world.isGrid() && !card.isOpen()) openGridCard(profile != null ? world.node(profile.lastSongId) : null);
 
         arriving = false;
         exitK = 0f;
@@ -515,14 +549,14 @@ public class MapScreen extends KkScreen<Main>
             exitK = 1f;
         } else if (welcome || !busy) {
             if (welcome && world.start != null) wake(world.start.x, world.start.y);
-            if (!reduceMotion) {
+            if (!reduceMotion && !world.isGrid()) {
                 cam.glideFrom(cam.x, cam.y + (welcome ? WELCOME_RISE : ARRIVAL_RISE), cam.zoom, welcome ? 1f : 0.8f,
                     Interpolation.exp5Out);
                 arriving = true;
             }
         } else if (iris) {
             exitK = 1f;
-            if (returning && !reduceMotion) {
+            if (returning && !reduceMotion && !world.isGrid()) {
                 float z = MapStyle.RETURN_ZOOM;
                 cam.glideFrom(MapCamera.centreFor(back.x, focusX(), z), MapCamera.centreForY(back.y, focusY(), z), z,
                     MapStyle.RETURN_GLIDE, Interpolation.exp5Out);
@@ -548,7 +582,8 @@ public class MapScreen extends KkScreen<Main>
         if (!returnCleared && n.anyPlayed) {
             renderer.floaterNode = n;
             renderer.floaterT = -0.35f;
-            renderer.floaterText = "首次通关 FIRST CLEAR" + (g >= 0 && g < Theme.GRADES.length ? " · " + Theme.GRADES[g] : "");
+            renderer.floaterText = (zh ? "首次通关 FIRST CLEAR" : "FIRST CLEAR")
+                + (g >= 0 && g < Theme.GRADES.length ? " · " + Theme.GRADES[g] : "");
         } else if (n.played[o] && n.best[o] > returnBest) {
             renderer.floaterNode = n;
             renderer.floaterT = -0.35f;
@@ -581,7 +616,7 @@ public class MapScreen extends KkScreen<Main>
         renderer.flowNodes = new MapNode[0];
         renderer.flowT = -1f;
         renderer.refreshLabels();
-        game.toasts().show("新解锁 " + f.length + " 首 · " + f.length + " UNLOCKED", Theme.GOLD);
+        game.toasts().show((zh ? "新解锁 " + f.length + " 首 · " : "") + f.length + " UNLOCKED", Theme.GOLD);
         Haptics.medium();
         MapNode first = f[0];
         flyTo(MapCamera.centreFor(first.x, Ui.CX, cam.zoom), MapCamera.centreForY(first.y, Ui.CY, cam.zoom), cam.zoom);
@@ -647,6 +682,12 @@ public class MapScreen extends KkScreen<Main>
 
     private void applyLevelBounds() {
         MapWorld w = world;
+        if (w.isGrid()) { // the page sets the camera's bounds (x locked, zoom 1) as it places the songs
+            grid.layout();
+            grid.place();
+            cam.zoomLocked = true;
+            return;
+        }
         float zx = (w.maxX - w.minX) / Math.max(1f, Ui.worldW()), zy = (w.maxY - w.minY) / Math.max(1f, Ui.worldH());
         float zMax = w.level.overviewZoom > 0f ? w.level.overviewZoom : MathUtils.clamp(Math.max(zx, zy), w.isGrid() ? 1.6f : 1.15f, 3.2f);
         cam.setLevel(w.minX, w.maxX, w.minY, w.maxY, zMax);
@@ -657,6 +698,7 @@ public class MapScreen extends KkScreen<Main>
     public void dispose() {
         card.releaseJacket();
         thumbs.dispose();
+        grid.dispose();
     }
 
     /** Saves level, camera, lens and selection; during a descent the camera from before the zoom. */
@@ -678,7 +720,8 @@ public class MapScreen extends KkScreen<Main>
         Profile p = profile;
         if (!fresh && !world.isHub() && p != null && p.mapCamSaved && world.level.id.equals(p.mapLevel) && !Float.isNaN(p.mapCamX)
             && !Float.isNaN(p.mapCamY)) {
-            cam.snap(p.mapCamX, p.mapCamY, p.mapZoom > 0f ? p.mapZoom : 1f);
+            if (world.isGrid()) grid.scrollTo(Ui.CY - p.mapCamY);
+            else cam.snap(p.mapCamX, p.mapCamY, p.mapZoom > 0f ? p.mapZoom : 1f);
             return;
         }
         startCamera(world.start);
@@ -728,6 +771,10 @@ public class MapScreen extends KkScreen<Main>
     }
 
     private void glideToFocus(MapNode n, float dur) {
+        if (world.isGrid()) { // the grid only scrolls the song's row into view
+            grid.reveal(n, true);
+            return;
+        }
         float z = cam.zoom > 1.2f ? 1f : cam.zoom;
         float cx = MapCamera.centreFor(n.x, focusX(), z), cy = MapCamera.centreForY(n.y, focusY(), z);
         cam.keepReachable(cx, cy); // also near the level's edge (Kelvin 2026-10-13)
@@ -742,6 +789,10 @@ public class MapScreen extends KkScreen<Main>
      * saved camera was clamped once the dive closed the card).
      */
     private void focusNow(MapNode n) {
+        if (world.isGrid()) {
+            grid.reveal(n, false);
+            return;
+        }
         float z = cam.zoom > 1.2f ? 1f : cam.zoom;
         float cx = MapCamera.centreFor(n.x, focusX(), z), cy = MapCamera.centreForY(n.y, focusY(), z);
         cam.keepReachable(cx, cy);
@@ -756,7 +807,7 @@ public class MapScreen extends KkScreen<Main>
     private void selectNode(MapNode n, boolean glide) {
         boolean changed = n != selected;
         selected = n;
-        n.popSelect();
+        if (!world.isGrid()) n.popSelect(); // the grid's ring marks it, at its own size
         n.labelGlitch.trigger(GlitchText.Level.G2, time);
         sonar.ping(n.x, n.y, 420f, 0.6f, accentOf(n), 0.35f, 2);
         sonar.setHeartbeat(n.x, n.y, Anim.HEARTBEAT, 900f, 0.18f, accentOf(n));
@@ -770,7 +821,12 @@ public class MapScreen extends KkScreen<Main>
         }
     }
 
+    /** Closes the card, except on ALL SONGS, where it stays open beside the grid (Kelvin 2026-10-19). */
     private void deselect() {
+        if (!world.isGrid()) closeCard();
+    }
+
+    private void closeCard() {
         if (selected == null && !card.isOpen()) return;
         card.close();
         selected = null;
@@ -814,7 +870,8 @@ public class MapScreen extends KkScreen<Main>
         n.shake = 0.45f;
         Haptics.light();
         deselect();
-        renderer.showTip(n, "未解锁 LOCKED · 先通关 " + n.needsText + " 才能打开");
+        renderer.showTip(n, zh ? "未解锁 LOCKED · 先通关 " + n.needsText + " 才能打开"
+            : "LOCKED · CLEAR " + n.needsText + " FIRST");
     }
 
     /** A garbled secret song: it only flickers, no card (Kelvin 2026-10-16). */
@@ -836,13 +893,15 @@ public class MapScreen extends KkScreen<Main>
     private void sealTap(MapNode n) {
         n.shake = 0.45f;
         Haptics.light();
-        renderer.showTip(n, n.kind == MapNode.SLOT ? "敬请期待 · COMING SOON" : "未开放 SEALED · 敬请期待 COMING SOON");
+        boolean slot = n.kind == MapNode.SLOT;
+        if (zh) renderer.showTip(n, slot ? "敬请期待 · COMING SOON" : "未开放 SEALED · 敬请期待 COMING SOON");
+        else renderer.showTip(n, slot ? "COMING SOON" : "SEALED · COMING SOON");
     }
 
     private void openStory(MapNode n) {
         CaveData.Story st = n.spot != null && n.spot.story != null ? data.stories.get(n.spot.story) : null;
         if (st == null) {
-            renderer.showTip(n, "剧情待定 · STORY COMING SOON");
+            renderer.showTip(n, zh ? "剧情待定 · STORY COMING SOON" : "STORY COMING SOON");
             return;
         }
         deselect();
@@ -1055,9 +1114,15 @@ public class MapScreen extends KkScreen<Main>
         hud.setLens(d);
         Haptics.light();
         MapNode n = selected;
+        if (world.isGrid()) {
+            renderer.resetTitles();
+            if (gridSort == MapWorld.SORT_LEVEL || gridSort == MapWorld.SORT_BEST || filter.active()) relayoutGrid();
+            // a song without this difficulty hands the card to the first one with it (Kelvin 2026-10-19 14:01)
+            else if (n != null && n.missing(d)) openGridCard(null);
+            return;
+        }
         if (n != null && n.missing(d)) deselect();
         else if (n != null && !n.launch) sonar.ping(n.x, n.y, 320f, 0.5f, Theme.difficultyAccent(d.ordinal()), 0.3f, 1);
-        if (world.isGrid() && (gridSort == MapWorld.SORT_LEVEL || filter.active())) relayoutGrid(filter.active());
     }
 
     private void flyTo(float cx, float cy, float z) {
@@ -1098,7 +1163,7 @@ public class MapScreen extends KkScreen<Main>
     /** The filter changed: ALL SONGS shows only the songs it keeps. */
     @Override
     public void filterChanged() {
-        if (world.isGrid()) relayoutGrid(true);
+        if (world.isGrid()) relayoutGrid();
         Haptics.light();
     }
 
@@ -1148,7 +1213,7 @@ public class MapScreen extends KkScreen<Main>
             tapSpot(n);
             return;
         }
-        if (card.isOpen()) deselect();
+        deselect();
         game.backdrop().touch(hx, hy);
         bubbles.burst(cam.worldX(hx), cam.worldY(hy), 8, 18f * cam.zoom);
     }
@@ -1159,7 +1224,7 @@ public class MapScreen extends KkScreen<Main>
             mapTap(hx, hy);
             return;
         }
-        if (world.isHub()) return; // no zoom on the hub
+        if (world.isHub() || world.isGrid()) return; // no zoom on the hub or the grid
         float far = cam.zoomMax();
         float tz = cam.zoom < 0.5f * (1f + far) ? far : 1f;
         float wx = cam.worldX(hx), wy = cam.worldY(hy);
@@ -1196,6 +1261,11 @@ public class MapScreen extends KkScreen<Main>
     @Override
     public void mapDragged(float hx, float hy, float dist) {
         bubbles.wake(cam.worldX(hx), cam.worldY(hy), dist * cam.zoom);
+    }
+
+    @Override
+    public void mapRiseHold() {
+        rise();
     }
 
     // =================================================================== input routing
@@ -1310,25 +1380,16 @@ public class MapScreen extends KkScreen<Main>
         if (card.isOpen() && mouseX >= card.left() && !SongCard.sheet()) return true;
         if (card.isOpen() && SongCard.sheet() && mouseY <= card.top()) return true;
         if (world.isHub()) return true; // no zoom and nothing to rise to on the hub
-        boolean newScroll = time - wheelAt >= WHEEL_GAP;
-        wheelAt = time;
+        if (world.isGrid()) { // the grid does not zoom (Kelvin 2026-10-19 21:16): the wheel scrolls it
+            grid.scrollTo(grid.scroll() + amountY * 120f);
+            return true;
+        }
         if (amountY > 0f && cam.zoom >= cam.zoomMax() * 0.99f && !cam.isGliding()) {
-            // at the overview the map gives a little and springs back; with no card open a notch
-            // lights the chip again, and a new scroll while it is lit rises one level (the pinch's rule)
-            cam.bump(0.06f);
-            if (card.isOpen()) return true;
-            boolean rises = newScroll && time - chipAt <= CHIP_SHOW;
-            chipAt = time;
-            if (rises) {
-                chipAt = -100f;
-                rise();
-            }
+            cam.bump(0.06f); // at the overview the map gives a little and springs back
             return true;
         }
         cam.zoomAbout(mouseX, mouseY, (float) Math.pow(1.1, amountY));
         cam.poke();
-        // a notch that reaches the overview lights its chip
-        if (amountY > 0f && !card.isOpen() && cam.targetZoom() >= cam.zoomMax() * 0.99f) chipAt = time;
         return true;
     }
 
@@ -1347,7 +1408,7 @@ public class MapScreen extends KkScreen<Main>
             sortPanel.close();
             return;
         }
-        if (card.isOpen()) {
+        if (card.isOpen() && !world.isGrid()) {
             deselect();
             return;
         }
@@ -1360,11 +1421,11 @@ public class MapScreen extends KkScreen<Main>
             case Input.Keys.PLUS:
             case Input.Keys.EQUALS:
             case Input.Keys.NUMPAD_ADD:
-                cam.zoomAbout(Ui.CX, Ui.CY, 1f / 1.25f);
+                if (!world.isGrid()) cam.zoomAbout(Ui.CX, Ui.CY, 1f / 1.25f); // the grid does not zoom
                 return true;
             case Input.Keys.MINUS:
             case Input.Keys.NUMPAD_SUBTRACT:
-                cam.zoomAbout(Ui.CX, Ui.CY, 1.25f);
+                if (!world.isGrid()) cam.zoomAbout(Ui.CX, Ui.CY, 1.25f);
                 return true;
             case Input.Keys.PAGE_UP:
                 rise();
@@ -1411,6 +1472,7 @@ public class MapScreen extends KkScreen<Main>
         if (Gdx.input.isKeyPressed(Input.Keys.D) || Gdx.input.isKeyPressed(Input.Keys.RIGHT)) dx += 1f;
         if (Gdx.input.isKeyPressed(Input.Keys.W) || Gdx.input.isKeyPressed(Input.Keys.UP)) dy += 1f;
         if (Gdx.input.isKeyPressed(Input.Keys.S) || Gdx.input.isKeyPressed(Input.Keys.DOWN)) dy -= 1f;
+        if (world.isGrid()) dx = 0f;
         if (dx == 0f && dy == 0f) return;
         float k = MapStyle.KEY_PAN * cam.zoom * dt;
         cam.nudge(dx * k, dy * k);
@@ -1418,37 +1480,14 @@ public class MapScreen extends KkScreen<Main>
 
     // =================================================================== frame
     /**
-     * The overview chip and the double-pinch rise (Kelvin 2026-10-17 19:39 / 19:40 / 19:42): a pinch
-     * that reaches the overview lights the chip for {@link #CHIP_SHOW} s after the fingers lift;
-     * once it has faded, a pinch pulling on past the overview (the map gives a little and springs
-     * back) lights it again; a pinch that starts while it is lit rises one level when the fingers
-     * lift at the overview. No chip and no rise on the hub or while a song card is open: the zoom
-     * just stops at the overview.
+     * The rise ring (Kelvin 2026-10-19 18:46, which dropped the overview chip and the double-pinch
+     * rise): two fingers held still fill it over {@link MapStyle#RISE_HOLD} s, shown from
+     * {@link MapStyle#RISE_RING} s on, and rise one level when it closes; none where nothing rises.
      */
     private void updateRise() {
-        boolean pinching = cam.isPinching(), off = world.isHub() || card.isOpen();
-        float zm = cam.zoomMax();
-        float at = MathUtils.clamp((cam.zoom - 0.95f * zm) / (0.04f * zm), 0f, 1f);
-        if (pinching && !wasPinching) {
-            pinchFromOverview = cam.zoom >= zm * 0.97f;
-            pinchArmed = !off && time - chipAt <= CHIP_SHOW;
-            pinchCounted = false;
-        }
-        if (pinching && !off) {
-            if (pinchFromOverview ? cam.rawZoom() >= zm * (1f + PINCH_PULL) : at >= 1f) pinchCounted = true;
-            if (pinchCounted && at > 0f) chipAt = time; // held while the fingers stay on
-        }
-        if (!pinching && wasPinching && pinchCounted && !off && at >= 1f) {
-            chipAt = time;
-            if (pinchArmed) {
-                chipAt = -100f;
-                rise();
-            }
-        }
-        wasPinching = pinching;
-        float since = time - chipAt;
-        float chip = off ? 0f : since <= CHIP_SHOW ? 1f : Math.max(0f, 1f - (since - CHIP_SHOW) / CHIP_FADE);
-        hud.setOverview(at * chip);
+        float held = riseTarget() != null ? gestures.holdTime() : 0f;
+        hud.setRiseHold((held - MapStyle.RISE_RING) / (MapStyle.RISE_HOLD - MapStyle.RISE_RING),
+            gestures.holdCx(), gestures.holdCy());
     }
 
     private void update(float dt) {
@@ -1461,6 +1500,12 @@ public class MapScreen extends KkScreen<Main>
         else if (exitK > 0f) exitK = Math.max(0f, exitK - dt / 0.2f);
         fx.update(dt);
         if (!card.isOpen()) cam.clearReachable();
+        if (world.isGrid()) {
+            grid.masking = !diving();
+            grid.layout();
+            grid.place();
+            hud.setGridRight(grid.areaR);
+        }
         cam.update(dt);
         if (arriving && !cam.isGliding()) arriving = false;
         card.update(dt, time, sonar.heartbeatPhase());
@@ -1473,14 +1518,16 @@ public class MapScreen extends KkScreen<Main>
         float k = MapUi.k();
         updatePeek(dt);
         updateRise();
-        hud.setExit(diving() ? MathUtils.clamp(diveT / 0.2f, 0f, 1f) : exitK);
+        float exit = diving() ? MathUtils.clamp(diveT / 0.2f, 0f, 1f) : exitK;
+        hud.setExit(exit);
         hud.layout(mapRight, mapBottom, card.amount(), 1f - 0.7f * fx.cover());
+        gridA = (1f - 0.7f * fx.cover()) * (1f - exit);
         game.toasts().setAnchorTop(hud.globalToastTop());
         // the sort panel rises from the SORT button and closes when the button goes away
         if (sortPanel.isOpen() && !hud.sort.isVisible()) sortPanel.close();
         sortPanel.layout(hud.sort.x() + hud.sort.width(), hud.sort.y() + hud.sort.height() + 16f * k,
             hud.clusterBottom() - 20f * k);
-        sortPanel.update(dt, gridFlat, gridSort);
+        sortPanel.update(dt, gridSort);
         hud.setSortOpen(sortPanel.isOpen());
         hud.update(dt, time);
         renderer.clearOccluders();
@@ -1549,7 +1596,8 @@ public class MapScreen extends KkScreen<Main>
     /**
      * Draw order is grouped by texture: backdrop, world pass, then the screen pass by phase
      * (atlas shapes, card jacket, avatar, UI raster, NUMBER raster, bold, DISPLAY), then the
-     * overlays (filter panel, peek, story card) and the level transition on top.
+     * overlays (filter panel, peek, story card) and the level transition on top. On ALL SONGS the
+     * grid's UI and NUMBER text comes before the HUD's atlas phase, so the player block covers it.
      */
     @Override
     protected void draw(float delta) {
@@ -1563,7 +1611,16 @@ public class MapScreen extends KkScreen<Main>
         phaseCalls[1] = batch.renderCalls;
         batch.setProjectionMatrix(camera.combined);
         renderer.drawTextShapes();
-        if (!SongCard.sheet() && card.isOpen() && selected != null) {
+        boolean gridOn = world.isGrid();
+        if (gridOn) {
+            grid.drawShapes(gridA);
+            // ALL SONGS' titles, scores and constants before the HUD and the card, so the player block stays on top
+            // of songs scrolled under it (Kelvin 2026-10-20 18:45 「我要profile的图层最大」); two more texture
+            // switches than the maps, whose labels fade out under the block instead
+            renderer.drawTextUi(batch);
+            grid.drawUi(batch, zh, filter, gridA);
+            renderer.drawTextNumbers(batch);
+        } else if (!SongCard.sheet() && card.isOpen() && selected != null) {
             renderer.drawLeader(selected, card.left(), hud.gaugeLeft(), card.accent(), card.amount());
         }
         hud.drawShapes(batch);
@@ -1572,14 +1629,15 @@ public class MapScreen extends KkScreen<Main>
         card.drawJacket(batch);
         hud.drawAvatar(batch);
         phaseCalls[3] = batch.renderCalls;
-        renderer.drawTextUi(batch);
+        if (!gridOn) renderer.drawTextUi(batch);
         hud.drawUi(batch);
         card.drawUi(batch);
-        renderer.drawTextNumbers(batch);
+        if (!gridOn) renderer.drawTextNumbers(batch);
         hud.drawNumbers(batch);
         card.drawNumbers(batch);
         renderer.drawTextRubik(batch);
         phaseCalls[4] = batch.renderCalls;
+        hud.drawBold(batch);
         card.drawBold(batch);
         card.drawDisplay(batch);
         phaseCalls[5] = batch.renderCalls;

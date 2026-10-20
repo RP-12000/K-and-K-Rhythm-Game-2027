@@ -21,9 +21,12 @@ import java.util.List;
  * camera frame ({@link ChartMapper}).
  */
 public final class JudgementLine {
-    /** Default sky line y. */
-    public static final float DEFAULT_UPPER = 960f;
-    /** Default ground line y. */
+    /**
+     * Default sky line y: 1080, 120 under the top of the reference frame (Kelvin 2026-10-19 14:55: 「我觉得换成1080/120」;
+     * 1066.67 in chart format v3, 960 in the old 1080-high frame).
+     */
+    public static final float DEFAULT_UPPER = 1080f;
+    /** Default ground line y: 120 (133.33 in chart format v3, 120 in the old 1080-high frame). */
     public static final float DEFAULT_LOWER = 120f;
     /** Reference screen left x; also the default left of an old format v2 window ({@link ChartMapper}). */
     public static final float DEFAULT_LEFT = 0f;
@@ -62,7 +65,7 @@ public final class JudgementLine {
         this.cameraEvents = Events.sortedCopy(cameraFrameEvents);
     }
 
-    /** @return format-v2 defaults: lines at 960 / 120, lane scale 1, camera frame 0, no events. */
+    /** @return the defaults: lines at 1080 / 120, lane scale 1, camera frame 0, no events. */
     public static JudgementLine defaults() {
         return new JudgementLine(DEFAULT_UPPER, DEFAULT_LOWER, null, null, 1f, null, 0f, null);
     }

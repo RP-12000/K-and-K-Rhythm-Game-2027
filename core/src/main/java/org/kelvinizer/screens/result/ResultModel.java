@@ -7,7 +7,6 @@ import org.kelvinizer.library.SongMeta;
 import org.kelvinizer.play.Judgement;
 import org.kelvinizer.play.PlayResult;
 import org.kelvinizer.play.RecordOutcome;
-import org.kelvinizer.play.ScoreKeeper;
 import org.kelvinizer.play.ShellBreakdown;
 import org.kelvinizer.profile.AvatarSpec;
 import org.kelvinizer.profile.DeviceSettings;
@@ -35,9 +34,6 @@ public final class ResultModel {
     /** Best-line variants (DESIGN §6.2 "Best line", §6.6). */
     public enum BestKind { NEW_BEST, BEST, FIRST_DIVE, AUTO, NONE }
 
-    /** Clear-badge variants (§6.2, §12 badges). */
-    public enum BadgeKind { ALL_RESONANCE, FULL_COMBO, CLEAR, AUTO }
-
     /** Minimum non-LOST hits before the offset hint is offered (§6.5). */
     public static final int HINT_MIN_HITS = 50;
     /** Mean offset (ms) above which the offset hint is offered (§6.5). */
@@ -60,9 +56,9 @@ public final class ResultModel {
     public boolean newBest;
     /** Recorded repeat play that did not beat the best (stamp uses 1 ring, ink3 best line). */
     public boolean noImprovement;
-    /** No LOST (FULL COMBO badge). */
+    /** No LOST: a full combo (the stamp turns purple; no badge since round 8). */
     public boolean fullCombo;
-    /** Every note RESONANCE (ALL RESONANCE badge). */
+    /** Every note RESONANCE (ALL RESONANCE, shown by the R / R+ grade since round 8). */
     public boolean allResonance;
     /** Grade R+, the theoretical maximum (iridescent stamp, motes, constant shimmer). */
     public boolean rPlus;
@@ -73,21 +69,12 @@ public final class ResultModel {
     /** The new depth unlocked avatar options ({@link #unlocks} is not empty): the UNLOCKED alert plays. */
     public boolean unlockUp;
     /**
-     * Language = 中文: the shell breakdown rows, the offset sheet's question, the offset hint, the auto-drop notice and
-     * the strip note are Chinese (the hint, notice and note since Kelvin 2026-10-18 21:37).
+     * Language = 中文: the shell and depth breakdown rows, the offset sheet's question, the offset hint and the note
+     * shown in its place are Chinese (the hint and note since Kelvin 2026-10-18 21:37).
      */
     public boolean zh;
-    /** The MINES row is shown (minesTotal &gt; 0). */
-    public boolean hasMines;
     /** The offset hint link is offered (P1, §6.5). */
     public boolean hasHint;
-    /**
-     * Hit effects dropped to Low during this run (DESIGN §5.9): {@link #fxNoticeText()} shows in the
-     * hint slot. Set by the screen from {@code HitFx.consumeAutoDropNotice()}, not by {@link #set}.
-     */
-    public boolean fxNotice;
-    /** The one-line auto-drop notice, English and 中文. */
-    public static final String FX_NOTICE = "EFFECTS SET TO LOW FOR SMOOTHER PLAY", FX_NOTICE_ZH = "为了更流畅，粒子质量已自动调低";
 
     // ------------------------------------------------------------------ song
     /** Song (may be null when the library no longer has it). */
@@ -100,8 +87,6 @@ public final class ResultModel {
     public String chipText = "";
     /** Superscript after {@link #chipText}: the chart constant's mark ({@code ConstantLabel}). */
     public String chipMark = "";
-    /** Meta text at the top right, e.g. {@code CHART DEPTH -4,194 m · DST 10 #3 · LOCAL #1 / 3}. */
-    public String meta = "";
     /** Layer numeral of the song's chapter ("02"), or empty. */
     public String layerNumeral = "";
 
@@ -120,8 +105,8 @@ public final class ResultModel {
     public int perfect;
     /** Longest resonance chain ({@code m_r}). */
     public int maxChain;
-    /** Chain total text ({@code / 1,693}) and the PERFECT label. */
-    public String chainTotalText = "", perfectLabel = "PERFECT";
+    /** Note count at the end of the chain line ({@code 1,693}) and the PERFECT label. */
+    public String notesText = "", perfectLabel = "PERFECT";
     /**
      * Score breakdown (DESIGN §18.2 [P1], shown when the score is tapped): the accuracy part
      * {@code 100,000,000 · (r + 0.55e)/t}, the chain part {@code 10,000 · m_r/t} (the two add up
@@ -174,20 +159,10 @@ public final class ResultModel {
     public int accuracyHundredths;
     /** Final accuracy text, truncated to 2 decimals ({@code 99.12%}). */
     public String accuracyText = "";
-    /** Combo total text ({@code / 1,693}). */
-    public String comboTotalText = "";
     /** Mines text ({@code 2 / 14}). */
     public String minesText = "";
-    /** 27-bin histogram of hit offsets (10 ms bins over −135..+135). */
-    public final short[] histogram = new short[ScoreKeeper.HISTOGRAM_BINS];
-    /** Largest histogram bin. */
-    public int histogramPeak;
-    /** Clear badge. */
-    public BadgeKind badge = BadgeKind.CLEAR;
-    /** Badge text. */
-    public String badgeText = "CLEAR";
 
-    // ------------------------------------------------------------------ profile strip
+    // ------------------------------------------------------------------ player frame and shell capsule
     /** Diver name. */
     public String name = "";
     /** Avatar of the diver. */
@@ -204,11 +179,20 @@ public final class ResultModel {
     public final List<String> shellRowValues = new ArrayList<>();
     /** Depth before and after (whole metres). */
     public int depthBefore, depthAfter;
-    /** Depth delta text after the triangle, e.g. {@code +24 m}. */
-    public String depthDeltaText = "";
+    /** Metres deeper ({@code depthAfter - depthBefore}; never negative in practice). */
+    public int depthGain;
+    /** {@link #depthGain} after the ▼ in the player frame, e.g. {@code 212}. */
+    public String depthGainText = "";
+    /**
+     * Depth breakdown rows (tap the player frame, round 7): DEPTH {@code -2,486 → -2,698 m}, CHART DEPTH, DST 10 and
+     * LOCAL (the meta line at the top right until 2026-10-19), labels in the language like the shell breakdown.
+     */
+    public final List<String> depthRows = new ArrayList<>();
+    /** Values of {@link #depthRows}. */
+    public final List<String> depthRowValues = new ArrayList<>();
     /** Avatar options unlocked by the new depth. */
     public final List<String> unlocks = new ArrayList<>();
-    /** Strip text replacing the depth block (autoplay / tutorial). */
+    /** Note in the offset hint's place (autoplay / tutorial; the profile strip's until 2026-10-19). */
     public String stripNote = "";
 
     // ------------------------------------------------------------------ offset hint
@@ -285,7 +269,6 @@ public final class ResultModel {
         totalNotes = Math.max(r.totalNotes(), counts[0] + counts[1] + counts[2]);
         minesTotal = r.minesTotal();
         minesTouched = r.minesTouched();
-        hasMines = minesTotal > 0;
         maxCombo = r.maxCombo();
         accuracy = r.accuracy();
         early = r.early();
@@ -301,8 +284,7 @@ public final class ResultModel {
         StringBuilder acc = new StringBuilder(12);
         appendPercent(acc, accuracyHundredths);
         accuracyText = acc.toString();
-        comboTotalText = "/ " + group(totalNotes);
-        chainTotalText = comboTotalText;
+        notesText = group(totalNotes);
         long chainPart = r.totalNotes() > 0 ? Judgement.chainScore(maxChain, totalNotes) : 0L;
         // the accuracy part is the rest of the base, so the two parts add up to it exactly
         // (floor(chain) + floor(accuracy) may be one short of floor(chain + accuracy))
@@ -313,39 +295,10 @@ public final class ResultModel {
         minesText = minesTouched + " / " + minesTotal;
         int mean = Math.round(meanOffset);
         meanText = (mean > 0 ? "+" : (mean < 0 ? "–" : "±")) + Math.abs(mean) + " ms";
-        r.deltaHistogram(histogram);
-        histogramPeak = r.histogramPeak();
         fullCombo = r.fullCombo() || (totalNotes > 0 && maxCombo >= totalNotes);
         allResonance = r.allResonance();
-        if (autoplay) {
-            badge = BadgeKind.AUTO;
-            badgeText = "AUTOPLAY";
-        } else if (allResonance) {
-            badge = BadgeKind.ALL_RESONANCE;
-            badgeText = "ALL RESONANCE";
-        } else if (fullCombo) {
-            badge = BadgeKind.FULL_COMBO;
-            badgeText = "FULL COMBO";
-        } else {
-            badge = BadgeKind.CLEAR;
-            badgeText = "CLEAR";
-        }
 
-        // meta ------------------------------------------------------------------------------
-        StringBuilder sb = new StringBuilder(64);
-        if (autoplay) {
-            sb.append("AUTOPLAY");
-        } else if (!tutorial) {
-            sb.append("CHART DEPTH ").append(group(-Depth.meters(o.playDepth()))).append(" m");
-            // DST 10, the Profile tab's name in both languages (TOP 10 until 2026-10-18)
-            if (o.topTenIndex() >= 0) sb.append("  ·  DST 10 #").append(o.topTenIndex() + 1);
-            if (o.localCount() >= 2 && o.localRank() > 0) {
-                sb.append("  ·  LOCAL #").append(o.localRank()).append(" / ").append(o.localCount());
-            }
-        }
-        meta = sb.toString();
-
-        // profile strip ---------------------------------------------------------------------
+        // player frame and shell capsule ----------------------------------------------------
         name = p != null && p.name != null ? p.name : "";
         if (p != null && p.avatar != null) {
             AvatarSpec a = p.avatar;
@@ -375,9 +328,20 @@ public final class ResultModel {
         hasDepth = recorded && !tutorial && !autoplay;
         depthBefore = o.depthBefore();
         depthAfter = o.depthAfter();
-        int dd = depthAfter - depthBefore;
-        // depths read negative: deeper is -24 m
-        depthDeltaText = dd > 0 ? "-" + group(dd) + " m" : (dd < 0 ? "+" + group(-dd) + " m" : "±0 m");
+        depthGain = depthAfter - depthBefore;
+        depthGainText = group(Math.abs(depthGain));
+        // depths read negative (below the surface); DST 10 is the Profile tab's name in both languages
+        depthRows.clear();
+        depthRowValues.clear();
+        if (hasDepth) {
+            String after = group(-depthAfter) + " m";
+            addDepthRow(zh ? "深度" : "DEPTH", depthGain != 0 ? group(-depthBefore) + " → " + after : after);
+            addDepthRow(zh ? "谱面深度" : "CHART DEPTH", group(-Depth.meters(o.playDepth())) + " m");
+            if (o.topTenIndex() >= 0) addDepthRow("DST 10", "#" + (o.topTenIndex() + 1));
+            if (o.localCount() >= 2 && o.localRank() > 0) {
+                addDepthRow(zh ? "本机排名" : "LOCAL", "#" + o.localRank() + " / " + o.localCount());
+            }
+        }
         unlockUp = hasDepth && !unlocks.isEmpty();
         if (autoplay) stripNote = zh ? "AUTOPLAY  ·  不记录成绩" : "AUTOPLAY  ·  NOT RECORDED";
         else if (tutorial) stripNote = zh ? "下一步  ·  在地图上选一首歌" : "NEXT  ·  PICK A SONG ON THE MAP";
@@ -440,15 +404,15 @@ public final class ResultModel {
         return sb;
     }
 
+    private void addDepthRow(String label, String value) {
+        depthRows.add(label);
+        depthRowValues.add(value);
+    }
+
     private void addShellRow(String label, int value) {
         if (value <= 0) return;
         shellRows.add(label);
         shellRowValues.add("+" + value);
-    }
-
-    /** The auto-drop notice in the result's language. */
-    public String fxNoticeText() {
-        return zh ? FX_NOTICE_ZH : FX_NOTICE;
     }
 
     private static String signed(int v) {

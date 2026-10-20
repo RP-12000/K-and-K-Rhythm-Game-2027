@@ -59,7 +59,7 @@ public final class GuidingText {
 
     /** What (x, y) is relative to. The screen resolves non-absolute anchors each frame. */
     public enum Anchor {
-        /** Point of the reference 1920×1080 frame, stretched with the playfield ({@link Field}). */
+        /** Point of the reference 1920×1200 frame, stretched with the playfield ({@link Field}). */
         WORLD,
         /** x relative to the safe left edge. */
         SAFE_LEFT,
@@ -69,7 +69,7 @@ public final class GuidingText {
         GROUND,
         /** y relative to the sky line (the offset stretched by ky). */
         SKY,
-        /** Beside the score and accuracy, top left (resolved by the screen). */
+        /** Beside the score, top left (resolved by the screen). */
         HUD_SCORE,
         /** Beside the pause control, top right (resolved by the screen). */
         HUD_PAUSE,

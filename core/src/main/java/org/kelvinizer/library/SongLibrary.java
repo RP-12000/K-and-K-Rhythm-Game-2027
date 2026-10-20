@@ -44,9 +44,10 @@ import java.util.concurrent.Executors;
  * transition covers the screen. Jackets are loaded lazily as mipmapped textures, either
  * synchronously by {@link #jacket(SongMeta)} or without a hitch by {@link #requestJacket(SongMeta)}
  * (decode on a worker) + {@link #jacketIfReady(SongMeta)} (upload), and released with
- * {@link #releaseJackets()}. The 16×16 jacket {@link #wash(FileHandle) wash} shared by gameplay and
- * result (DESIGN §2.7, §6.2) is computed once per jacket, off the render thread by
- * {@link #prepareWash(FileHandle)} alongside the chart parse.
+ * {@link #releaseJackets()}. The 16×16 jacket {@link #wash(FileHandle) wash} shared by gameplay,
+ * result and the song card's glow (DESIGN §2.7, §6.2, §4.3) is computed once per jacket, off the render thread by
+ * {@link #prepareWash(FileHandle)} alongside the chart parse or from {@link #requestJacket}'s own decode
+ * ({@link #washIfReady(SongMeta)}).
  *
  * <p>Discovery order: the manifest {@code Charts/index.json}; folders on disk that the
  * manifest does not list go into the last charted chapter. Without a manifest, folders come
@@ -84,6 +85,8 @@ public final class SongLibrary implements Disposable {
     /** 16×16 wash pixmaps by jacket path (any thread) and their textures (render thread). */
     private final Map<String, Pixmap> washPixmaps = new ConcurrentHashMap<>();
     private final Set<String> washFailed = ConcurrentHashMap.newKeySet();
+    /** Washes queued by {@link #washIfReady} and not prepared yet (by jacket path). */
+    private final Set<String> wantedWashes = ConcurrentHashMap.newKeySet();
     private final Map<String, Texture> washes = new HashMap<>();
     /** Asset index from assets.txt: folder path relative to the root → file names. Null if absent. */
     private Map<String, List<String>> assetIndex;
@@ -386,6 +389,13 @@ public final class SongLibrary implements Disposable {
                     log("Jacket failed for " + id + ": " + e.getMessage());
                     return;
                 }
+                // the wash from the same decode, so washIfReady never decodes the jacket a second time
+                try {
+                    washFrom(file.path(), pm);
+                } catch (RuntimeException e) {
+                    washFailed.add(file.path());
+                    log("Jacket wash failed for " + file.path() + ": " + e.getMessage());
+                }
                 Pixmap old = decodedJackets.put(id, pm);
                 if (old != null) disposeQuietly(old);
                 // released while decoding: drop it unless the render thread already took it
@@ -514,7 +524,20 @@ public final class SongLibrary implements Disposable {
         Pixmap src = null;
         try {
             src = new Pixmap(jacket);
-            Pixmap cur = src;
+            washFrom(key, src);
+        } catch (RuntimeException e) {
+            washFailed.add(key);
+            log("Jacket wash failed for " + key + ": " + e.getMessage());
+        } finally {
+            if (src != null) src.dispose();
+        }
+    }
+
+    /** The wash of the decoded jacket {@code src} under {@code key} unless it exists ({@code src} stays theirs). */
+    private void washFrom(String key, Pixmap src) {
+        if (washPixmaps.containsKey(key)) return;
+        Pixmap cur = src;
+        try {
             while (cur.getWidth() > 32 || cur.getHeight() > 32) {
                 int w = Math.max(16, cur.getWidth() / 2), h = Math.max(16, cur.getHeight() / 2);
                 Pixmap next = new Pixmap(w, h, Pixmap.Format.RGBA8888);
@@ -526,13 +549,9 @@ public final class SongLibrary implements Disposable {
             Pixmap out = new Pixmap(16, 16, Pixmap.Format.RGBA8888);
             out.setFilter(Pixmap.Filter.BiLinear);
             out.drawPixmap(cur, 0, 0, cur.getWidth(), cur.getHeight(), 0, 0, 16, 16);
-            if (cur != src) cur.dispose();
             if (washPixmaps.putIfAbsent(key, out) != null) out.dispose();
-        } catch (RuntimeException e) {
-            washFailed.add(key);
-            log("Jacket wash failed for " + key + ": " + e.getMessage());
         } finally {
-            if (src != null) src.dispose();
+            if (cur != src) cur.dispose();
         }
     }
 
@@ -558,6 +577,32 @@ public final class SongLibrary implements Disposable {
     /** {@link #wash(FileHandle)} of the song's jacket (null for a null song). */
     public Texture wash(SongMeta song) {
         return song != null ? wash(song.jacket()) : null;
+    }
+
+    /**
+     * The wash of the song's jacket when it is ready (uploading the prepared 16 × 16 pixmap on this call), else
+     * null after queueing {@link #prepareWash} on the decoder thread, so the render thread never decodes for it (the
+     * song card's glow; {@link #requestJacket} prepares it from its own decode). Render thread.
+     */
+    public Texture washIfReady(SongMeta song) {
+        final FileHandle file = song != null ? song.jacket() : null;
+        if (file == null) return null;
+        final String key = file.path();
+        Texture t = washes.get(key);
+        if (t != null) return t;
+        if (washPixmaps.containsKey(key)) return wash(file);
+        if (washFailed.contains(key) || !wantedWashes.add(key)) return null;
+        decoder().execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    prepareWash(file);
+                } finally {
+                    wantedWashes.remove(key);
+                }
+            }
+        });
+        return null;
     }
 
     /** Disposes every loaded jacket. */

@@ -15,15 +15,15 @@ import org.kelvinizer.ui.Theme;
  *
  * <p>A text chip / small button of the overlays: {@code panelHi} with a stroke, filled in
  * {@code groundSig} when selected, label UI_BOLD 20 (essential) with an optional icon. A label
- * that does not fit on one line at its cap wraps at the space nearest its middle (split once at
- * construction); only a single word too long for the chip is shrunk (to 0.85). Shapes in
+ * that does not fit on one line at its cap wraps at the space nearest its middle (split when the
+ * label is set); only a single word too long for the chip is shrunk (to 0.85). Shapes in
  * {@link #draw}, the label in {@link #drawText}.
  */
 final class TextChip extends Pressable {
     private final MapRenderer r;
-    private final CharSequence label;
+    private CharSequence label;
     /** The two lines of a wrapped label (null when the label has no space). */
-    private final String line1, line2;
+    private String line1, line2;
     private final Icons.Icon icon;
     boolean selected;
     private float selK;
@@ -36,8 +36,14 @@ final class TextChip extends Pressable {
     TextChip(Draw draw, MapRenderer r, CharSequence label, Icons.Icon icon) {
         super(draw);
         this.r = r;
-        this.label = label;
         this.icon = icon;
+        setLabel(label);
+    }
+
+    /** Sets the label and where it wraps (allocates: on a language change only). */
+    void setLabel(CharSequence label) {
+        this.label = label;
+        wrapCap = -1f;
         String t = label.toString();
         int best = -1;
         for (int i = 0; i < t.length(); i++) {

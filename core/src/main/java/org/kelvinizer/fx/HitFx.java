@@ -160,7 +160,7 @@ public final class HitFx implements Disposable {
     // auto-drop ------------------------------------------------------------------------------------
     private Runnable onAutoDrop;
     private boolean autoDropEnabled = true;
-    private boolean autoDropped, autoDropNotice;
+    private boolean autoDropped;
     private float probeWarmup = AUTO_DROP_WARMUP_SEC, probeTime;
     private int probeFrames;
 
@@ -240,16 +240,6 @@ public final class HitFx implements Disposable {
     /** True once the quality was dropped automatically this session (it is never re-armed). */
     public boolean autoDropped() {
         return autoDropped;
-    }
-
-    /**
-     * Returns true exactly once after an automatic drop, so the result screen can show
-     * "EFFECTS SET TO LOW FOR SMOOTHER PLAY" a single time.
-     */
-    public boolean consumeAutoDropNotice() {
-        boolean n = autoDropNotice;
-        autoDropNotice = false;
-        return n;
     }
 
     // ------------------------------------------------------------------ spawning
@@ -573,7 +563,6 @@ public final class HitFx implements Disposable {
         probeFrames = 0;
         if (fps >= AUTO_DROP_FPS) return;
         autoDropped = true;
-        autoDropNotice = true;
         quality = QUALITY_LOW;
         if (onAutoDrop != null) onAutoDrop.run();
     }

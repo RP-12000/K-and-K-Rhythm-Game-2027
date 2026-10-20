@@ -3,13 +3,13 @@
   "title": "CAVE MOUTH", "titleZh": "洞口", "route": "CAVE MOUTH", "routeZh": "洞口",
   "parent": "title", "start": "main", "depth": 12,
   "sub": "LEVEL 0 · CAVE MOUTH", "subZh": "第 0 层 · 洞口",
-  "pools": [[960, 520, 760, 0.75], [470, 560, 420, 0.3], [1450, 560, 420, 0.3]],
+  "pools": [[960, 520, 760, 0.75], [430, 560, 460, 0.3], [1490, 560, 460, 0.3]],
   "spots": [
-    {"id": "singles", "type": "route", "to": "singles", "art": "songs", "x": 470, "y": 560, "r": 140,
+    {"id": "singles", "type": "route", "to": "singles", "art": "songs", "x": 430, "y": 560, "r": 170,
      "label": "SINGLES", "labelZh": "单曲", "sub": "@progress", "color": "#7FE7FF"},
     {"id": "main", "type": "route", "to": "main", "storyTo": "main_c1", "art": "shaft", "x": 960, "y": 520, "r": 230,
      "label": "MAIN", "labelZh": "主线", "color": "#4FD8FF"},
-    {"id": "collab", "type": "route", "art": "shaft", "sealed": true, "x": 1450, "y": 560, "r": 140,
+    {"id": "collab", "type": "route", "art": "shaft", "sealed": true, "x": 1490, "y": 560, "r": 170,
      "label": "COLLAB", "labelZh": "联动", "sub": "COMING SOON", "subZh": "敬请期待", "color": "#FF5CA8"}
   ]
 }
