@@ -28,7 +28,7 @@ public final class ResetDialog extends Modal {
     private static final CharSequence WHAT = Lang.of("SCORES, DEPTH, GAME LOG, SHELLS AND BOUGHT SONGS.",
         "成绩、深度、下潜记录、贝壳和买下的曲目。");
     private static final CharSequence UNDO = Lang.of("THIS CANNOT BE UNDONE.", "清空后无法恢复。");
-    private static final CharSequence TYPE = Lang.of("TYPE THE DIVER NAME IN FULL TO RESET",
+    private static final CharSequence TYPE = Lang.of("TYPE THE PLAYER NAME IN FULL TO RESET",
         "把玩家名完整输入一遍才能重置");
 
     private final Button cancel, confirm, reset;

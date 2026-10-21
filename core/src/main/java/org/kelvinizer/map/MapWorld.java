@@ -38,7 +38,9 @@ final class MapWorld {
     /** Sort orders of the ALL SONGS grid. */
     static final int SORT_DEFAULT = 0, SORT_TITLE = 1, SORT_LEVEL = 2, SORT_BEST = 3, SORT_RECENT = 4;
     static final String[] SORT_NAMES = {"DEFAULT", "TITLE", "LEVEL", "BEST", "RECENT"};
-    /** Collected songs: the hex lattice of the placed songs (pitch, row height) and the clearance a free point keeps. */
+    /**
+     * Collected songs: the hex lattice of the placed songs (pitch, row height) and the clearance a free point keeps.
+     */
     private static final float COLLECT_PITCH = 500f, COLLECT_ROW = 230f, COLLECT_FREE = 300f;
     /** Secret states of a song for a diver (special unlock): none, garbled, hidden. */
     static final int SECRET_NONE = 0, SECRET_GLITCH = 1, SECRET_HIDDEN = 2;
@@ -66,7 +68,10 @@ final class MapWorld {
     final List<CaveData.Text> texts;
     /** Level bounds (world) including a margin. */
     final float minX, maxX, minY, maxY;
-    /** Left and top edges of the content (the bounds without the margin): ALL SONGS opens with this corner under the badge. */
+    /**
+     * Left and top edges of the content (the bounds without the margin): ALL SONGS opens with this corner under the
+     * badge.
+     */
     final float contentLeft, contentTop;
     /** ALL SONGS: sort order and whether no song is left to show. */
     final int sort;
@@ -351,7 +356,8 @@ final class MapWorld {
                     }
                 }
                 if (!free) continue;
-                songNodes.add(new MapNode(null, MapNode.SONG, s, songNodes.size(), p[0], p[1], CaveData.defaultRadius(CaveData.SONG)));
+                songNodes.add(new MapNode(null, MapNode.SONG, s, songNodes.size(), p[0], p[1],
+                    CaveData.defaultRadius(CaveData.SONG)));
                 taken.add(new float[]{p[0], p[1]});
                 break;
             }
@@ -385,7 +391,8 @@ final class MapWorld {
         }
         List<String> on = new ArrayList<>();
         for (CaveData.Pack pk : level.packs) {
-            int packSecret = pk.secret == null || (p != null && p.hasFlag(packRevealFlag(pk))) ? SECRET_NONE : secret(pk.secret);
+            int packSecret = pk.secret == null || (p != null && p.hasFlag(packRevealFlag(pk)))
+                ? SECRET_NONE : secret(pk.secret);
             if (packSecret != SECRET_HIDDEN) on.addAll(packSongs(data, pk, lib));
         }
         for (SongMeta s : list) {
@@ -581,7 +588,8 @@ final class MapWorld {
                 Collections.sort(list, new Comparator<SongMeta>() {
                     @Override
                     public int compare(SongMeta a, SongMeta b) {
-                        return Float.compare(a.has(lens) ? a.constant(lens) : 99f, b.has(lens) ? b.constant(lens) : 99f);
+                        return Float.compare(a.has(lens) ? a.constant(lens) : 99f,
+                            b.has(lens) ? b.constant(lens) : 99f);
                     }
                 });
                 break;
@@ -722,7 +730,10 @@ final class MapWorld {
         return false;
     }
 
-    /** Shells single {@code songId} costs: its spot's {@code price}, else its level's, else {@link Shells#DEFAULT_PRICE}. */
+    /**
+     * Shells single {@code songId} costs: its spot's {@code price}, else its level's, else
+     * {@link Shells#DEFAULT_PRICE}.
+     */
     static int priceOf(CaveData data, String songId) {
         int levelPrice = 0;
         for (CaveData.Level l : data.levels.values()) {

@@ -87,9 +87,4 @@ public final class Grades {
     public static boolean isBetterGrade(String a, String b) {
         return gradeIndex(a) < gradeIndex(b);
     }
-
-    /** @return the RGBA8888 colour of a grade (F's colour for unknown). */
-    public static int gradeRgba(String grade) {
-        return GRADE_RGBA[Math.min(gradeIndex(grade), F)];
-    }
 }

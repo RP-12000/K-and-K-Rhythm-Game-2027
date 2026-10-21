@@ -11,16 +11,18 @@ import org.kelvinizer.ui.Ui;
 
 /**
  * 教学关卡的一条定时字幕：按歌曲拍数淡入淡出，位置可以挂在安全边、判定线、HUD 元素或潮汐叠音上。
+ * 文字为空的字幕是占位：拍点和位置都留着，但什么都不画。
  * One timed tutorial caption (DESIGN §10.2), ported from the pre-redesign
  * {@code screens/GuidingText}: visible from {@code startBeat} to {@code endBeat} with linear fades
- * measured in song beats (so captions freeze with a pause).
+ * measured in song beats (so captions freeze with a pause). A caption with no text is a placeholder
+ * (Kelvin 2026-10-21): it keeps its beats and place but draws nothing, no plate either.
  *
  * <p>Changes from the original: world coordinates through the ExtendViewport with an
  * {@link Anchor} (safe edges, judgement lines, the corner HUD elements or the tutorial's TIDE stack,
  * resolved by the screen), pre-split lines whose widths are cached per viewport generation, a
  * {@link Style} per role (instructions on a {@code panel @ .6} plate, headings, story beats in RUBIK,
  * grade lines with the judgement word in its own face and colour, the EARLY / LATE line with both tags
- * in their colours, and the {@code K and K} finale in DISPLAY_SOFT with the LOGO glyph set), and alpha
+ * in their colours, and the {@code K & K} finale in DISPLAY_SOFT with the LOGO glyph set), and alpha
  * through {@link Fonts#draw} (shared fonts are never mutated).
  *
  * <p><b>Font pages (DESIGN §14).</b> Captions draw from a few shared rasters through
@@ -76,12 +78,7 @@ public final class GuidingText {
         /** Beside the difficulty chip and title, bottom left (resolved by the screen). */
         HUD_CHIP,
         /** Beside the time readout, bottom right (resolved by the screen). */
-        HUD_TIME,
-        /**
-         * On the tutorial's stacked TIDE bar: x relative to the lane window's right edge, y relative to
-         * the bar's leading edge while it approaches, then to its line (resolved by the screen).
-         */
-        TIDE_STACK
+        HUD_TIME
     }
 
     /** Raster cap of the UI_BOLD caption page (HEADING 40, LABEL 26, TIMING tags 28). */
@@ -109,6 +106,8 @@ public final class GuidingText {
     private final Anchor anchor;
     private final Judgement grade;
     private final float[] widths;
+    /** No text: nothing is drawn or prewarmed. */
+    private final boolean placeholder;
     private float gradeWordW;
     private float earlyW;
     private float slashW;
@@ -125,8 +124,8 @@ public final class GuidingText {
      * Creates a caption.
      *
      * @param content lines separated by {@code \n} (split once here)
-     * @param x       centre x (absolute, or an offset for SAFE_LEFT / SAFE_RIGHT / HUD / TIDE_STACK anchors)
-     * @param y       centre y (absolute, or an offset for GROUND / SKY / HUD / TIDE_STACK anchors)
+     * @param x       centre x (absolute, or an offset for SAFE_LEFT / SAFE_RIGHT / HUD anchors)
+     * @param y       centre y (absolute, or an offset for GROUND / SKY / HUD anchors)
      * @param cap     cap height (STORY, NARRATIVE, FINALE; other styles use their fixed size)
      * @param grade   the judgement of a {@link Style#GRADE} line, else null
      */
@@ -134,6 +133,7 @@ public final class GuidingText {
                        float x, float y, float cap, Style style, Anchor anchor, Judgement grade) {
         this.lines = content.split("\n");
         for (int i = 0; i < lines.length; i++) lines[i] = lines[i].trim();
+        this.placeholder = content.trim().isEmpty();
         this.startBeat = startBeat;
         this.endBeat = endBeat;
         this.fadeInBeats = Math.max(1e-3f, fadeInBeats);
@@ -155,7 +155,7 @@ public final class GuidingText {
         return 1f - (beat - endBeat) / fadeOutBeats;
     }
 
-    /** @return the anchor (the screen resolves HUD and TIDE_STACK anchors). */
+    /** @return the anchor (the screen resolves the HUD anchors). */
     public Anchor anchor() {
         return anchor;
     }
@@ -301,6 +301,7 @@ public final class GuidingText {
      * it never generates a FreeType page or CJK glyph mid-song.
      */
     void prewarm(Fonts fonts) {
+        if (placeholder) return;
         generation = -1;
         measure(fonts);
         if (grade != null || style == Style.TIMING) {
@@ -335,7 +336,7 @@ public final class GuidingText {
      */
     public float draw(Batch batch, Fonts fonts, Draw draw, float beat, float cx, float cy) {
         float a = alphaAt(beat);
-        if (a <= 0.003f) return 0f;
+        if (a <= 0.003f || placeholder) return 0f;
         measure(fonts);
         float c = capFor();
         float lh = c * (style == Style.FINALE ? 1.2f : 1.6f);
@@ -386,7 +387,7 @@ public final class GuidingText {
     /** Draws a world-anchored caption at its own point (compatibility with the stub API). */
     public void draw(Batch batch, Fonts fonts, float beat) {
         float a = alphaAt(beat);
-        if (a <= 0f) return;
+        if (a <= 0f || placeholder) return;
         float c = capFor();
         float lh = c * 1.6f;
         float top = y + (lines.length - 1) * lh * 0.5f;

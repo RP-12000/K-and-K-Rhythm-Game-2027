@@ -113,8 +113,8 @@ final class PeekTip {
         // drawn last in the frame, so every raster it touches is one more flush)
         float rx = x + w - pad;
         CharSequence title = n.launch ? "LAUNCH POINT" : n.song != null ? n.song.title() : "";
-        r.boldFit(b, title, MapUi.cap(26f, ks), x + pad, y + h - 34f * ks, Align.left | Fonts.VCENTER, w - 2f * pad, 0.7f,
-            n.launch ? Theme.GOLD : Theme.INK1, a);
+        r.boldFit(b, title, MapUi.cap(26f, ks), x + pad, y + h - 34f * ks, Align.left | Fonts.VCENTER, w - 2f * pad,
+            0.7f, n.launch ? Theme.GOLD : Theme.INK1, a);
         if (n.launch) {
             r.bold(b, "THE TWO SIGNAL LINES · THE BASICS", c18, x + pad, y + 30f * ks, Align.left | Fonts.VCENTER,
                 Theme.INK2, a);
@@ -132,8 +132,8 @@ final class PeekTip {
         for (int i = 0; i < 4; i++) {
             if (score[i].length() == 0) continue;
             float cy = rowTop - i * row - row * 0.5f;
-            r.fixed(b, score[i], MapUi.cap(22f, ks), rx, cy, Align.right | Fonts.VCENTER, Theme.INK1, Theme.LEADING_ZERO,
-                lead[i], a, 1f);
+            r.fixed(b, score[i], MapUi.cap(22f, ks), rx, cy, Align.right | Fonts.VCENTER, Theme.INK1,
+                Theme.LEADING_ZERO, lead[i], a, 1f);
         }
     }
 

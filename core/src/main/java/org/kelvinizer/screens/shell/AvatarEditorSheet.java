@@ -22,8 +22,8 @@ import java.util.Random;
  *
  * <p>Avatar editor (DESIGN §8.5 full, §8.6 unlocks; P1): a large preview with REROLL and ‹ ›
  * steppers for shape, pattern, palette, glyph and frame. Every option can be previewed; locked
- * ones show a lock and the depth needed (metres, since 2026-10-17), and SAVE refuses (shake) while one is selected. Edits
- * the active diver.
+ * ones show a lock and the depth needed (metres, since 2026-10-17), and SAVE refuses (shake) while one is selected.
+ * Edits the active diver.
  */
 public final class AvatarEditorSheet extends Modal {
     private static final int PARAMS = 5;
@@ -240,7 +240,8 @@ public final class AvatarEditorSheet extends Modal {
             alpha);
         for (int i = 0; i < PARAMS; i++) {
             float cy = prev[i].centerY();
-            fonts.draw(b, Fonts.Role.UI_LABEL, 18f, LABELS[i], rowsX, cy, Align.left | Fonts.VCENTER, Theme.INK2, alpha);
+            fonts.draw(b, Fonts.Role.UI_LABEL, 18f, LABELS[i], rowsX, cy, Align.left | Fonts.VCENTER,
+                Theme.INK2, alpha);
             int v = value(i);
             int need = unlockMeters(i, v);
             float mid = (prev[i].centerX() + next[i].centerX()) * 0.5f;

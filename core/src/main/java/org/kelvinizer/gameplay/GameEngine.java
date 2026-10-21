@@ -34,7 +34,8 @@ import java.util.Arrays;
  *       the screen by {@link Field} (line y with {@code ky}, window bounds with {@code kx}).</li>
  * </ul>
  *
- * <h2>Judging (one tap judges one target, a TIDE group counts as one; plus its sync partner where the zones overlap)</h2>
+ * <h2>Judging (one tap judges one target, a TIDE group counts as one; plus its sync partner where the zones
+ * overlap)</h2>
  * <ul>
  *   <li>A touch is in a line's zone when {@code |y − lineY| ≤ 480·ky} ({@link Field#zoneHalf}: 0.4 of the screen
  *       height, so roughly half the screen per line). Outside both zones it judges nothing. Where the zones overlap,
@@ -83,16 +84,16 @@ import java.util.Arrays;
  *       completes it at once; reaching the end completes it with the head grade. A pause never
  *       breaks it; after the resume it has {@link #HOLD_LEAVE_MS} to be covered again. It is one note
  *       for score, combo and totals, like a hold. Autoplay completes it.</li>
- *   <li>Mines: touched when, within ±{@link #MINE_WINDOW_MS} of the mine (owner 2026-10-13: the
- *       RESONANCE window, ±66.67 ms; was ±100 ms), a down pointer is in the mine line's zone and inside the central 70 % of the mine lane
- *       (checked on down / drag / up with event times and every frame for resting pointers), or the
- *       lane's key is down. Each mine triggers at most once ({@link ScoreKeeper#mineTouched()}:
+ *   <li>Mines: touched when, within ±{@link #MINE_WINDOW_MS} of the mine (Kelvin 2026-10-13: the
+ *       RESONANCE window, ±66.67 ms; was ±100 ms), a down pointer is in the mine line's zone and inside the central
+ *       70 % of the mine lane (checked on down / drag / up with event times and every frame for resting pointers), or
+ *       the lane's key is down. Each mine triggers at most once ({@link ScoreKeeper#mineTouched()}:
  *       combo 0, no score change) and emits one {@link GameEvent#MINE}. Autoplay never touches
  *       mines.</li>
  *   <li><b>LANE MINEs</b> (ARCHITECTURE §20) block their lane on their line over
  *       {@code [T − LANE_MINE_LEAD_MS, end)} = {@code [T, end)}: only once they reach the line
- *       (owner 2026-10-13; was {@code [T − MINE_WINDOW_MS, end)}). Contact = a down pointer in that line's zone inside the
- *       central {@link #LANE_MINE_BOX} (80 %) of the lane's current span, or the lane's key down.
+ *       (Kelvin 2026-10-13; was {@code [T − MINE_WINDOW_MS, end)}). Contact = a down pointer in that line's zone inside
+ *       the central {@link #LANE_MINE_BOX} (80 %) of the lane's current span, or the lane's key down.
  *       Each contact triggers once: a touch-down in the box, a drag entering it, a pointer already
  *       resting in it when the block starts, a key press, or a key already held when it starts; a
  *       pointer that stays in the box triggers again only after leaving it and coming back. The
@@ -100,7 +101,7 @@ import java.util.Arrays;
  *       {@link ScoreKeeper#laneMineContact()} (combo 0 again; the MINES row counts the lane mine
  *       once). Every contact emits one {@link GameEvent#MINE} with {@link GameEvent#FLAG_LANE_MINE}.
  *       A LANE MINE never judges or consumes a tap; autoplay never touches it.</li>
- *   <li><b>Mine priority</b> (owner 2026-10-14): a tap or STREAM head whose RESONANCE window
+ *   <li><b>Mine priority</b> (Kelvin 2026-10-14): a tap or STREAM head whose RESONANCE window
  *       {@code [T − TIER1, T + TIER1]} meets the danger span of a MINE ({@code [T − MINE_WINDOW_MS,
  *       T + MINE_WINDOW_MS]}) or LANE MINE ({@code [T, end)}) in its own lane and line is judged
  *       first: the mine sleeps over that window (no contact of any finger or key there; one still
@@ -163,10 +164,6 @@ public final class GameEngine {
      * in the screen ({@code GameplayScreen}), not on the song clock.
      */
     public static final float START_EPS_MS = 1f;
-    /** Unused since 2026-10-16 (the music plays to its end); kept for code built against the engine. */
-    public static final float MUSIC_FADE_DELAY_MS = 500f;
-    /** Unused since 2026-10-16 (the music plays to its end); kept for code built against the engine. */
-    public static final float MUSIC_FADE_SECONDS = 1.0f;
     /** Pointers tracked (libGDX reports up to 20). */
     public static final int MAX_POINTERS = 20;
     /** Event ring capacity (the oldest events are dropped when the consumer falls behind). */
@@ -309,7 +306,6 @@ public final class GameEngine {
     private double bestAbs;
     private int bestKind;
     private int bestLane;
-    private int bestLine;
     private float bestLineDist;
     private Judgement lastJudgement;
     private int lastInputLane = -1;
@@ -356,7 +352,8 @@ public final class GameEngine {
 
     /**
      * Resets everything for a new run of {@code chart} and prepares the clock at its start time
-     * ({@link #leadInMs()}: {@code min(0, floor(first visibleFrom) − START_EPS_MS)}), paused. Allocates only when the chart is larger than any before it.
+     * ({@link #leadInMs()}: {@code min(0, floor(first visibleFrom) − START_EPS_MS)}), paused. Allocates only when the
+     * chart is larger than any before it.
      *
      * @param chart    the chart to play
      * @param autoplay true for a perfect, deterministic autoplay run (input never judges)
@@ -495,10 +492,19 @@ public final class GameEngine {
      * @return true when the engine was running
      */
     public boolean pause() {
+        if (phase == Phase.PAUSED) clock.pause(); // drops a resume primed in the countdown (the menu opened again)
         if (phase != Phase.RUNNING) return false;
         clock.pause();
         phase = Phase.PAUSED;
         return true;
+    }
+
+    /**
+     * Starts the music of the paused run {@code clock().resumeLeadMs()} before the {@link #resume()} that ends the
+     * countdown, so its sound is back as the run goes on ({@link SongClock#primeResume()}). No-op unless paused.
+     */
+    public void primeResume() {
+        if (phase == Phase.PAUSED) clock.primeResume();
     }
 
     /**
@@ -600,7 +606,8 @@ public final class GameEngine {
                     if (n.judgementMs() > t) break;
                     float x = (frameLayout.windowLeft() + frameLayout.windowRight()) * 0.5f;
                     float y = lineY(n.line(), frameLowerY, frameUpperY);
-                    judgeGroup(n, Judgement.RESONANCE, 0f, n.judgementMs(), PTR_ENGINE, x, y, x, y, GameEvent.FLAG_AUTO);
+                    judgeGroup(n, Judgement.RESONANCE, 0f, n.judgementMs(), PTR_ENGINE, x, y, x, y,
+                        GameEvent.FLAG_AUTO);
                 }
                 c++;
             }
@@ -878,7 +885,8 @@ public final class GameEngine {
             return INPUT_STRAY;
         }
         if (autoplay) {
-            emitEmpty(x, zone == Line.UPPER.ordinal() ? evUpperY : evLowerY, own, zone, pointer, t, GameEvent.FLAG_AUTO);
+            emitEmpty(x, zone == Line.UPPER.ordinal() ? evUpperY : evLowerY, own, zone, pointer, t,
+                GameEvent.FLAG_AUTO);
             return INPUT_EMPTY;
         }
         int minesBefore = mineEvents;
@@ -894,11 +902,11 @@ public final class GameEngine {
             if (dist > Field.zoneHalf()) continue;
             int c = own >= 0 ? laneCandidate(l, own, t) : -1;
             if (c >= 0) {
-                consider(c, KIND_OWN, own, l, dist, t);
+                consider(c, KIND_OWN, own, dist, t);
             } else if (nb >= 0) {
-                consider(laneCandidate(l, nb, t), KIND_NEIGHBOUR, nb, l, dist, t);
+                consider(laneCandidate(l, nb, t), KIND_NEIGHBOUR, nb, dist, t);
             }
-            consider(universalCandidate(l, t), KIND_UNIVERSAL, -1, l, dist, t);
+            consider(universalCandidate(l, t), KIND_UNIVERSAL, -1, dist, t);
         }
         if (bestNote < 0) {
             emitEmpty(x, zone == Line.UPPER.ordinal() ? evUpperY : evLowerY, own, zone, pointer, t, 0);
@@ -932,7 +940,9 @@ public final class GameEngine {
         if (g >= 0) judgeGroup(notes[g], j, d, t, pointer, x, ly, x, y, GameEvent.FLAG_JOINT);
     }
 
-    /** @return a pending tap / hold of {@code lane} on {@code line} whose judgement beat is exactly {@code beat}, or −1 */
+    /**
+     * @return a pending tap / hold of {@code lane} on {@code line} whose judgement beat is exactly {@code beat}, or −1
+     */
     private int pendingLaneAt(int line, int lane, float beat) {
         if (lane < 0) return -1;
         int k = line * laneCount + lane;
@@ -1061,8 +1071,8 @@ public final class GameEngine {
         }
         clearBest();
         int l = line.ordinal();
-        if (lane >= 0 && s != GameKeys.SPACE) consider(laneCandidate(l, lane, t), KIND_OWN, lane, l, 0f, t);
-        consider(universalCandidate(l, t), KIND_UNIVERSAL, -1, l, 0f, t);
+        if (lane >= 0 && s != GameKeys.SPACE) consider(laneCandidate(l, lane, t), KIND_OWN, lane, 0f, t);
+        consider(universalCandidate(l, t), KIND_UNIVERSAL, -1, 0f, t);
         if (bestNote < 0) {
             emitEmpty(x, ly, lane, l, PTR_KEY, t, GameEvent.FLAG_KEYBOARD);
             return INPUT_EMPTY;
@@ -1097,7 +1107,9 @@ public final class GameEngine {
 
     // ------------------------------------------------------------------ candidates
 
-    /** Earliest pending tap/hold head of (line, lane) inside its judge window (TIER2, or TIER1 by mine priority), or −1. */
+    /**
+     * Earliest pending tap/hold head of (line, lane) inside its judge window (TIER2, or TIER1 by mine priority), or −1.
+     */
     private int laneCandidate(int line, int lane, double t) {
         if (lane < 0) return -1;
         int k = line * laneCount + lane;
@@ -1133,11 +1145,10 @@ public final class GameEngine {
         bestAbs = 0;
         bestKind = 0;
         bestLane = -1;
-        bestLine = -1;
         bestLineDist = 0f;
     }
 
-    private void consider(int i, int kind, int lane, int line, float lineDist, double t) {
+    private void consider(int i, int kind, int lane, float lineDist, double t) {
         if (i < 0) return;
         double T = notes[i].judgementMs();
         double abs = Math.abs(t - T);
@@ -1159,7 +1170,6 @@ public final class GameEngine {
         bestAbs = abs;
         bestKind = kind;
         bestLane = lane;
-        bestLine = line;
         bestLineDist = lineDist;
     }
 
@@ -1448,7 +1458,7 @@ public final class GameEngine {
     // ------------------------------------------------------------------ mine priority
 
     /**
-     * Mine priority (owner 2026-10-14, see the class doc): finds every tap / STREAM head whose
+     * Mine priority (Kelvin 2026-10-14, see the class doc): finds every tap / STREAM head whose
      * RESONANCE window meets the danger span of a MINE or LANE MINE in its lane and line, gives it
      * the RESONANCE window only, and lists it under that mine. Called by {@link #load}; allocates
      * only for a chart with more such pairs than any before.
@@ -1927,17 +1937,6 @@ public final class GameEngine {
     /** @return y of {@code line} at the last frame's visual time. */
     public float lineY(Line line) {
         return line == Line.UPPER ? frameUpperY : frameLowerY;
-    }
-
-    /** @return the lane index under world x at the last frame (−1 outside the field). */
-    public int laneAtX(float x) {
-        return frameLayout.indexAtX(x);
-    }
-
-    /** @return the line whose zone contains world y at the last frame (closer one if both), or null. */
-    public Line zoneAt(float y) {
-        int l = zoneLine(y, frameLowerY, frameUpperY);
-        return l >= 0 ? Line.of(l) : null;
     }
 
     /** @return the state of note i ({@code STATE_*}). */

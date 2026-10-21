@@ -55,8 +55,6 @@ final class MapNode {
     final int[] best = new int[4];
     /** True when any difficulty was played. */
     boolean anyPlayed;
-    /** Unused since the depth map (kept for the card's tint). */
-    boolean beyondDepth;
 
     // ------------------------------------------------------------------ cave state
     /** Locked: a required song is not cleared yet (gold padlock, no card). */
@@ -106,12 +104,6 @@ final class MapNode {
     final float[] sweep = {1f, 1f, 1f, 1f};
     /** Delay before the arc sweep starts (s). */
     float sweepDelay;
-    /** Filter: true when the node matches (or no filter is active). */
-    boolean filterMatch = true;
-    /** True while a filter is active (matches pulse their halo). */
-    boolean filterOn;
-    /** Animated filter visibility: 1 shown, 0 filtered out (α .25, scale .85, no label). */
-    float filterK = 1f;
 
     MapNode(CaveData.Spot spot, int kind, SongMeta song, int order, float x, float y, float r) {
         this.spot = spot;
@@ -203,8 +195,6 @@ final class MapNode {
         press.update(dt);
         pop.update(dt);
         selected = Math.min(1f, Math.max(0f, selected + (sel ? dt / 0.2f : -dt / 0.2f)));
-        float ft = filterMatch || sel ? 1f : 0f;
-        if (filterK != ft) filterK = ft > filterK ? Math.min(ft, filterK + dt / 0.22f) : Math.max(ft, filterK - dt / 0.22f);
         if (sweepDelay > 0f) {
             sweepDelay -= dt;
         } else {
@@ -214,7 +204,7 @@ final class MapNode {
         else if (wake < 1f) wake = Math.min(1f, wake + dt / 0.45f);
         if (shake > 0f) shake = Math.max(0f, shake - dt);
         if (unlockFx > 0f) unlockFx = Math.max(0f, unlockFx - dt / 1.2f);
-        if (wave > 0.5f && filterK > 0.5f) flash = 1f;
+        if (wave > 0.5f) flash = 1f;
         else flash = Math.max(0f, flash - dt / 0.3f);
         float speed = (sel ? 24f : 6f) * (pressed ? 4f : 1f);
         dashAngle = (dashAngle - speed * dt) % 360f;
@@ -247,13 +237,13 @@ final class MapNode {
         return y + bob + lagY.value();
     }
 
-    /** Combined scale of press, pop, selection and the filtered-out state. */
+    /** Combined scale of press and pop. */
     float scale() {
-        return press.value() * pop.value() * (0.85f + 0.15f * filterK);
+        return press.value() * pop.value();
     }
 
-    /** Alpha factor of the filtered-out state (1 shown, .25 filtered out) and the arrival wake. */
+    /** Alpha factor of the arrival wake. */
     float vis() {
-        return (0.25f + 0.75f * filterK) * (0.35f + 0.65f * wake);
+        return 0.35f + 0.65f * wake;
     }
 }

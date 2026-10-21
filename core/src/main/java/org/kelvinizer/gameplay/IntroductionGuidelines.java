@@ -11,8 +11,9 @@ import java.util.List;
 
 /**
  * 教学关卡的全部定时字幕，英文和中文各一套，按语言设置选用；拍点和位置按 Kelvin 手写的谱面（2026-10-17）手工排好。
+ * 最后一潜之后的四句对白暂时是空的占位（2026-10-21），以后补新文案；结尾的标题和游戏名一样是 K &amp; K。
  * The tutorial's timed captions (DESIGN §10.2, §17.3) for {@code Introduction/Surface.json}: 120 BPM,
- * {@code offsetMs} 27. The chart is hand-charted by the owner (2026-10-17, 102 notes); the old v3 generator
+ * {@code offsetMs} 27. The chart is hand-charted by Kelvin (2026-10-17, 102 notes); the old v3 generator
  * no longer owns it or this class. The captions are timed and placed by hand to the chart: a
  * centred caption is gone before notes appear, and a side or half-screen plate sits over lanes that stay free while it
  * shows. After changing the chart or a caption, check that no caption plate covers an unjudged
@@ -21,10 +22,16 @@ import java.util.List;
  * <p>Verse 1 has no notes: the HUD tour (corner HUD; the pause label follows PAUSE INPUT), the judgements
  * with EARLY / LATE, and the two lines. Then one lesson per mechanic: ground DROPs and TIDEs centred before their
  * notes; sky DROPs, STREAMs, TIDE STREAMs, MINEs and LANE MINEs on plates beside them; and a TIDE held in mid-air as
- * a judgement line (DROPs land on it and jump to the line as they are judged, owner 2026-10-16). The gold sync
+ * a judgement line (DROPs land on it and jump to the line as they are judged, Kelvin 2026-10-16). The gold sync
  * pearls, the chorus TIDEs with their TIDE + DROP joints and the STREAMs under DROPs play without a caption.
- * Afterimages and moving notes are only mentioned (one side plate in the outro; owner 2026-10-12: basics only). The
- * requiem plays over the held TIDE STREAM pair of the break; story, requiem and dialogue keep the owner's copy.
+ * Afterimages and moving notes are not mentioned any more (their outro plate MORE TO DISCOVER went on Kelvin
+ * 2026-10-20, gallery p.26: 「删了」; Kelvin 2026-10-12: basics only). The requiem plays over the held TIDE STREAM pair
+ * of the break; story and requiem keep Kelvin's copy. The four dialogue lines after the final dive (224–247) are
+ * {@link #PLACEHOLDER}s for now (Kelvin 2026-10-21 04:39: 「现在把introduction后半截的文案都去掉先，留着占位。我们后续会补更好的
+ * 文案。」, 04:40: 「就是final dive 之后的文案吧，应该是。」): they keep their beats, places and styles for the new copy and
+ * draw nothing. The closing title stays and reads {@code K & K} like the game's name (Kelvin 2026-10-21 04:57:
+ * 「可以，但是中间的＆不见了。」; it was {@code K  and  K}, and the LOGO glyph set never had the lowercase letters); the
+ * HUD combo under it gives way while it shows ({@link IntroductionScreen}).
  *
  * <p>{@code zh} picks the Chinese text of every caption (Language = 中文); positions and beats are the
  * same. Judgement words and the EARLY / LATE tags stay English, as in the HUD. Beat windows used by
@@ -65,10 +72,6 @@ public final class IntroductionGuidelines {
     public static final float ZONES_START = 58.5f;
     /** ... through the DROP, TIDE and STREAM lessons (the last sky STREAM ends at 123). */
     public static final float ZONES_END = 123f;
-    /** Two demo DROP heads beside a GOLD PEARLS heading: none (−1), the sync pearls play without a caption ... */
-    public static final float SYNC_DEMO_START = -1f;
-    /** ... (−1). */
-    public static final float SYNC_DEMO_END = -1f;
     /** The zone hint pulses on for the TIDE STREAM lesson (from its caption) ... */
     public static final float TIDE_ZONE_START = 120f;
     /** ... until the break (the requiem plays over the held TIDE STREAM pair). */
@@ -77,12 +80,6 @@ public final class IntroductionGuidelines {
     public static final float TIDE_ZONE2_START = 150f;
     /** ... until the last of them. */
     public static final float TIDE_ZONE2_END = 164f;
-    /** Beat of two stacked ground TIDEs for the stack badge: none (−1), the chart has no stacked TIDEs. */
-    public static final float STACK_BEAT = -1f;
-    /** The stack badge's window: none (−1) ... */
-    public static final float STACK_BADGE_START = -1f;
-    /** ... (−1). */
-    public static final float STACK_BADGE_END = -1f;
     /** Demo mine beside the MINES heading, touched by a ghost finger every 1.6 s ... */
     public static final float MINE_DEMO_START = 176.5f;
     /** ... until the first real mine appears (183; the heading stays until 189.5). */
@@ -104,6 +101,8 @@ public final class IntroductionGuidelines {
     private static final String[] PAUSE_LABEL_EN = {
         "HOLD HERE TO PAUSE", "DOUBLE-TAP HERE TO PAUSE", "TAP HERE TO PAUSE"};
     private static final String[] PAUSE_LABEL_ZH = {"按住这里暂停", "双击这里暂停", "点击这里暂停"};
+    /** An empty caption: it keeps its beats and place until new copy is written, and {@link GuidingText} skips it. */
+    private static final String PLACEHOLDER = "";
 
     private final List<GuidingText> guidelines = new ArrayList<>();
     private final List<GuidingText> view = Collections.unmodifiableList(guidelines);
@@ -128,7 +127,7 @@ public final class IntroductionGuidelines {
     public IntroductionGuidelines(boolean zh, int pauseMode) {
         this.zh = zh;
         this.pauseMode = pauseMode >= 0 && pauseMode < PAUSE_LABEL_EN.length ? pauseMode : Settings.PAUSE_DOUBLE_TAP;
-        // 0-32: title and story (owner copy)
+        // 0-32: title and story (Kelvin's copy)
         add("WELCOME TO", "欢迎来到", 0f, 31f, 1f, 1f, 960f, 889f, 40f, Style.HEADING, Anchor.WORLD);
         add("Kelvinizer and Kathlina",
             "Kelvinizer and Kathlina", 0f, 31f, 1f, 1f, 960f, 787f, 72f, Style.STORY, Anchor.WORLD);
@@ -229,38 +228,25 @@ public final class IntroductionGuidelines {
 
         // L12 TIDE line: caption 200.5-214 (left plate over lanes -4..-2, above the sky TIDEs), notes 202-214: ground
         // TIDEs hover 300 above the line and DROPs in lane +1 land on them, then sky TIDEs 300 under the sky line with
-        // DROPs in lane -1 (owner 2026-10-16)
+        // DROPs in lane -1 (Kelvin 2026-10-16)
         add("A TIDE CAN BE THE LINE",
             "潮汐也能当判定线", 200.5f, 213.5f, 0.5f, 0.5f, 376f, 996f, 40f, Style.HEADING, Anchor.SAFE_LEFT);
         add("TAP AS NOTES LAND ON IT:\nTHEY JUMP TO THE LINE",
             "音符碰到潮汐时就点，\n它会瞬移到判定线上", 200.5f, 213.5f, 0.5f, 0.5f, 376f, 867f, 30f, Style.BODY,
             Anchor.SAFE_LEFT);
 
-        // L10 Other notes, only mentioned: caption 216.5-222 (left plate; lanes -4..-2 are free until the lane -2
-        // STREAM appears at 222)
-        add("MORE TO DISCOVER", "更多变化", 216.5f, 221.5f, 0.5f, 0.5f, 376f, 767f, 40f, Style.HEADING, Anchor.SAFE_LEFT);
-        add("AFTERIMAGES,\nMOVING NOTES —\nYOU'LL MEET THEM IN SONGS",
-            "残影、移动的音符……\n以后在曲目里慢慢认识", 216.5f, 221.5f, 0.5f, 0.5f, 376f, 600f, 30f, Style.BODY,
-            Anchor.SAFE_LEFT);
+        // 224-237: dialogue plates, placeholders for new copy (2026-10-21): his over lanes -3..-1 (only the held
+        // lane -2 STREAM passes under it), hers over lanes +2 / +3 (free 230-238)
+        add(PLACEHOLDER, PLACEHOLDER, 224f, 235f, 1f, 1f, 615f, 600f, 30f, Style.QUOTE, Anchor.WORLD);
+        add(PLACEHOLDER, PLACEHOLDER, 230f, 236f, 1f, 1f, 1440f, 600f, 30f, Style.QUOTE, Anchor.WORLD);
 
-        // 224-237: dialogue plates (owner copy): his over lanes -3..-1 (only the held lane -2 STREAM passes under it),
-        // hers over lanes +2 / +3 (free 230-238)
-        add("\"Is our story over?\nPlease don't leave me, Kathlina\nHow can I make you happy\nand stay with me\nforever......\"",
-            "\"我们的故事结束了吗？\n请不要离开我，Kathlina\n我要怎样才能让你快乐\n永远留在我身边……\"", 224f, 235f, 1f,
-            1f, 615f, 600f, 30f, Style.QUOTE, Anchor.WORLD);
-        add("\"No, not yet.\nWe're searching for a\ndegenerate soul\ndown here.\"",
-            "\"不，还没有。\n我们在这深处\n寻找一个\n堕落的灵魂。\"", 230f, 236f, 1f, 1f, 1440f, 600f, 30f,
-            Style.QUOTE, Anchor.WORLD);
+        // 238-248: two lines over the closing chords, after the mines, placeholders for new copy (2026-10-21; the
+        // chords pass behind them)
+        add(PLACEHOLDER, PLACEHOLDER, 238f, 247f, 1f, 1f, 960f, 733f, 64f, Style.STORY, Anchor.WORLD);
+        add(PLACEHOLDER, PLACEHOLDER, 240.5f, 247f, 1f, 1f, 960f, 618f, 32f, Style.NARRATIVE, Anchor.WORLD);
 
-        // 238-248: dialogue over the closing chords, after the mines (owner copy; the chords pass behind it)
-        add("\"YOUR degenerate soul, Kelvinizer\"",
-            "\"是你的堕落灵魂，Kelvinizer\"", 238f, 247f, 1f, 1f, 960f, 733f, 64f, Style.STORY, Anchor.WORLD);
-        add("\"Because YOU have to save yourself in order to free both of us\"",
-            "\"因为你必须先拯救自己，才能让我们两个都得到自由\"", 240.5f, 247f, 1f, 1f, 960f, 618f, 32f,
-            Style.NARRATIVE, Anchor.WORLD);
-
-        // 248-251: finale
-        add("K  and  K", "K  and  K", 248f, 251f, 0.25f, 1f, 960f, 667f, 140f, Style.FINALE, Anchor.WORLD);
+        // 248-251: finale, the game's name
+        add("K & K", "K & K", 248f, 251f, 0.25f, 1f, 960f, 667f, 140f, Style.FINALE, Anchor.WORLD);
     }
 
     private void add(String en, String zhText, float start, float end, float fadeIn, float fadeOut, float x,

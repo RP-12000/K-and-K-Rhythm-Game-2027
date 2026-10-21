@@ -7,12 +7,14 @@ import org.kelvinizer.ui.Fonts;
 import org.kelvinizer.ui.Theme;
 
 /**
- * 设置列表里的一大段纯文字（许可证全文）：按原文换行逐行显示，只画滚动到视野里的行，不接收输入。
+ * 设置列表里的一大段纯文字（许可证全文）：按原文换行从列表左边逐行显示（10-21 曾整段居中，Kelvin 02:47 改回左对齐），
+ * 只画滚动到视野里的行，不接收输入。
  *
  * <p>A block of plain text in the Settings list (a licence text, Kelvin 2026-10-18 00:24): one line
  * per source line (the licence files are already wrapped near 80 columns; a longer line is fitted
- * to the width), UI_REGULAR 18 {@code ink2} on a 28-unit pitch, × uiScale. Only the lines inside
- * the list's visible rect are drawn. Never takes input; nothing is allocated per frame.
+ * to the width), UI_REGULAR 18 {@code ink2} on a 28-unit pitch, × uiScale, from the list's left edge
+ * (centred as one block on 2026-10-21 until Kelvin's 02:47: 「lisence那部分还是左对齐吧」). Only the lines
+ * inside the list's visible rect are drawn. Never takes input; nothing is allocated per frame.
  */
 public final class TextRow extends SettingRow {
     private static final float LINE_H = 28f, PAD = 16f;

@@ -89,6 +89,5 @@ public class Toggle extends Pressable {
         float kx = x0 + (x1 - x0) * knob.value();
         draw.disc(kx, cy - 2f, kr + 1f, Theme.SHADOW, 0.5f * a);
         draw.disc(kx, cy, kr, Theme.INK1, a);
-        drawFocus(tx, ty, tw, th, th * 0.5f, a);
     }
 }

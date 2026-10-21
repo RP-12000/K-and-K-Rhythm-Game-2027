@@ -32,17 +32,19 @@ import java.util.Arrays;
  * difficulties' best scores as a histogram drawn like the result screen's {@code EchoTrace}: 41
  * mirrored bins of 1,000,000 from 60,000,000 (lower scores in the first, R in the last),
  * {@code RESONANCE} cyan from {@link Depth#BONUS_FROM} (where a chart counts exactly 40 × c²: lower
- * scores take from the constant, higher ones add; marked by a 2 px line) and {@code ECHO} purple below, ticks 60M … 100M and the mean caret {@code μ 94.27M}.
- * The bins rise as a sonar sweep crosses after a show or a toggle; an idle sweep repeats every 4 s.
- * PLAYS and PLAY TIME are in {@link ProfileHeader}, the dive profile in {@link TopTab}. Values follow
- * the live (counting) {@link DiverStats}.
+ * scores take from the constant, higher ones add; marked by a 2 px line) and {@code ECHO} purple below, ticks
+ * 60M … 100M and the mean caret {@code μ 94.27M}. The bins rise as a sonar sweep crosses after a show or a toggle; an
+ * idle sweep repeats every 4 s. PLAYS and PLAY TIME are in {@link ProfileHeader}, the dive profile in {@link TopTab}.
+ * Values follow the live (counting) {@link DiverStats}.
  */
 public final class StatsTab extends ProfileTab {
     private static final float TOGGLE_H = 112f, TILE_H = 140f, GAP = 24f, SECTION = 64f, MIN_TRACE_H = 300f;
     /** Tile labels, English in both languages since Kelvin 2026-10-18 14:29 (ALL RESONANCE reads RESONATED). */
     private static final CharSequence[] TILE_LABELS = {"CHARTS CLEARED", "FULL COMBOS", "RESONATED"};
     private static final CharSequence BEST = Lang.of("BEST SCORES", "最高分");
-    /** Score trace sweep: starts this long after a show or a toggle, crosses in {@code SWEEP_D}; idle sweeps every 4 s. */
+    /**
+     * Score trace sweep: starts this long after a show or a toggle, crosses in {@code SWEEP_D}; idle sweeps every 4 s.
+     */
     private static final float SWEEP_T = 0.3f, SWEEP_D = 0.8f, IDLE_PERIOD = 4f;
     /** Tallest bin counts at least this many charts, so a few charts do not fill the trace. */
     private static final int MIN_PEAK = 3;
@@ -196,7 +198,10 @@ public final class StatsTab extends ProfileTab {
         drawTrace(b, cy - 12f, traceH(), ba);
     }
 
-    /** One difficulty toggle, the name only: lit = tinted card with a border, name in its colour and a lamp; dark = plain. */
+    /**
+     * One difficulty toggle, the name only: lit = tinted card with a border, name in its colour and a lamp;
+     * dark = plain.
+     */
     private void drawToggle(Batch b, int pass, int d, float tx, float ty, float tw, float a) {
         Tappable t = diffTaps[d];
         boolean on = lit[d];

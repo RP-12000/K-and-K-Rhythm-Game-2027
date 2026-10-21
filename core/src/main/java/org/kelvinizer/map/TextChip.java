@@ -74,13 +74,14 @@ final class TextChip extends Pressable {
             draw.roundRect(bx, by, bw, bh, rad, Theme.GROUND_SIG, selK * a);
         }
         draw.roundRectStroke(bx, by, bw, bh, rad, 2f, selK > 0.5f ? Theme.GROUND_SIG : Theme.STROKE, a);
-        if (press > 0f || hover > 0f) draw.roundRect(bx, by, bw, bh, rad, Theme.INK1, (0.10f * press + 0.05f * hover) * a);
+        if (press > 0f || hover > 0f) {
+            draw.roundRect(bx, by, bw, bh, rad, Theme.INK1, (0.10f * press + 0.05f * hover) * a);
+        }
         ripple.color(selK > 0.5f ? Theme.BTN_LABEL : Theme.INK1);
         drawRipple(a);
         if (icon != null) {
             Icons.draw(draw.shapes(), icon, bx + 40f * k * s, cy, 40f * k * s, Theme.INK1, 0.9f * a);
         }
-        drawFocus(bx, by, bw, bh, MapStyle.CHIP_RADIUS * k, a);
     }
 
     /** UI_BOLD phase: the label (one line, or two when it does not fit). */

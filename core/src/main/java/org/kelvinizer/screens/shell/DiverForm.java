@@ -18,13 +18,14 @@ import org.kelvinizer.ui.Theme;
 import java.util.Random;
 
 /**
- * 「WHO'S DIVING?」卡片的内容，首次设置和新建潜水员共用：头像预览（点头像或骰子随机重抽）、十种配色和名字输入框。
- * 后三种配色 10 级解锁；名字留空就用输入框下方显示的默认名 {@code DIVER-XXXX}。
+ * 新建玩家卡片的内容：头像预览（点头像或骰子随机重抽）、十种配色和名字输入框。后三种配色 10 级解锁；名字留空就用
+ * 输入框下方显示的默认名 {@code DIVER-XXXX}。首次设置以前的第 1 步也用它，2026-10-21 起首次设置没有这一步了。
  *
- * <p>The "who's diving?" card content (DESIGN §10.1 step 1, reused by §8.3 create): an avatar
- * preview with a REROLL dice (the avatar itself also rerolls on tap), ten palette swatches (the
- * last three lock below Lv 10, §8.6) and the name field {@code TAP TO NAME YOUR DIVER}. An empty
- * name keeps the default {@code DIVER-XXXX} shown under the field.
+ * <p>The create-player card content (DESIGN §8.3; also the first run's step 1 until Kelvin 2026-10-21 dropped it):
+ * an avatar preview with a REROLL dice (the avatar itself also rerolls on tap), ten palette swatches (the
+ * last three lock below Lv 10, §8.6) and the name field {@code TAP TO NAME YOUR PLAYER}, labelled {@code PLAYER NAME}
+ * (Kelvin 2026-10-20 22:30). An empty name keeps the default {@code DIVER-XXXX} shown under the field; the hint
+ * hides while the field holds exactly that default.
  *
  * <p>The owner passes its {@link WidgetSet}; the form adds its widgets there once, lays them out
  * in {@link #layout(float, float, float)} and draws the rest in {@link #draw(Batch, float)}.
@@ -83,8 +84,8 @@ public final class DiverForm {
                 }
             });
         }
-        field = widgets.add(new TextField(draw, fonts, Lang.of("TAP TO NAME YOUR DIVER", "点这里给玩家起名")));
-        field.setLabel(Lang.of("DIVER NAME", "玩家名字")).setMaxLength(ProfileStore.MAX_NAME_CODEPOINTS)
+        field = widgets.add(new TextField(draw, fonts, Lang.of("TAP TO NAME YOUR PLAYER", "点这里给玩家起名")));
+        field.setLabel(Lang.of("PLAYER NAME", "玩家名字")).setMaxLength(ProfileStore.MAX_NAME_CODEPOINTS)
             .setAllowEmpty(true);
         field.setListener(new TextField.Listener() {
             @Override
@@ -244,7 +245,10 @@ public final class DiverForm {
         view.draw(b, ax + avatarTap.shakeX(), ay, avatarSize * s, alpha);
         fonts.draw(b, Fonts.Role.UI_LABEL, 16f, REROLL, dice.centerX(), dice.y() - 22f, Align.center, Theme.INK2,
             alpha);
-        fonts.draw(b, Fonts.Role.UI_REGULAR, 18f, hint, rightX + 4f, field.y() - 30f, Align.left, Theme.INK2, alpha);
+        if (!defaultName.equals(field.text())) {
+            fonts.draw(b, Fonts.Role.UI_REGULAR, 18f, hint, rightX + 4f, field.y() - 30f, Align.left, Theme.INK2,
+                alpha);
+        }
         fonts.draw(b, Fonts.Role.UI_LABEL, 18f, COLOURS, rightX + 4f, swatchTop + 6f, Align.left, Theme.INK2,
             alpha);
         for (int i = 0; i < swatches.length; i++) drawSwatch(swatches[i], i, alpha);

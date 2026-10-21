@@ -147,7 +147,7 @@ public final class Fonts implements Disposable {
         WORDS(false),
         /** {@code PURESABCD+}. */
         GRADE(true),
-        /** {@code K& } (+ {@code AND} for the "K and K" finale). */
+        /** {@code K& }: the {@code K & K} title (Welcome, the OTHER brand row, the tutorial's finale). */
         LOGO(true);
 
         final boolean small;
@@ -163,7 +163,7 @@ public final class Fonts implements Disposable {
     private static final String DIGIT_CHARS = "0123456789,.:%+-/ ";
     private static final String WORD_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ·-+%!";
     private static final String GRADE_CHARS = "RSABCDF+";
-    private static final String LOGO_CHARS = "K& AND";
+    private static final String LOGO_CHARS = "K& ";
     private static final float MAX_PX = 160f;
     private static final float MAX_PX_SMALL = 256f;
     /** Side of the shared small-raster page (capped by {@code GL_MAX_TEXTURE_SIZE}). */
@@ -301,11 +301,6 @@ public final class Fonts implements Disposable {
         return cjkPacker == null ? 0 : cjkPacker.getPages().size;
     }
 
-    /** Number of pages in the shared small-raster packer (0 or 1); for diagnostics and tests. */
-    public int sharedPageCount() {
-        return sharedPacker == null ? 0 : sharedPacker.getPages().size;
-    }
-
     /** Side of the shared small-raster page in pixels (0 before the first shared raster). */
     public int sharedPageSize() {
         return sharedPacker == null ? 0 : sharedPageSize;
@@ -336,27 +331,6 @@ public final class Fonts implements Disposable {
             units += (t.getWidth() / 1024f) * (t.getHeight() / 1024f);
         }
         return units;
-    }
-
-    /**
-     * One line per cached raster ({@code ROLE/SET/bucket shared|own WxH est=area}), for tests and
-     * tools (allocates).
-     */
-    public String describeCache() {
-        StringBuilder sb = new StringBuilder();
-        for (IntMap.Entry<Entry> e : cache.entries()) {
-            Entry en = e.value;
-            Texture t = en.font.getRegion().getTexture();
-            sb.append(en.role).append('/').append(en.set).append('/').append(en.bucket)
-                .append(en.shared ? " shared " : (en.role == Role.CJK ? " cjk " : " own "))
-                .append(t.getWidth()).append('x').append(t.getHeight())
-                .append(" pages=").append(en.font.getRegions().size)
-                .append(" est=").append(en.estimatedArea).append('\n');
-        }
-        sb.append("shared pages=").append(sharedPageCount()).append(" size=").append(sharedPageSize)
-            .append(" est=").append(sharedArea).append(" cjk pages=").append(cjkPageCount())
-            .append(" budget=").append(pageBudgetUsed()).append('\n');
-        return sb.toString();
     }
 
     /**
@@ -547,13 +521,6 @@ public final class Fonts implements Disposable {
             }
         }
         return drawEntry(b, e, refPx, refPx * k, text, x, y, align, color, alpha, truncate);
-    }
-
-    /** The cap height {@link #drawFit} would use for {@code text} (no drawing). */
-    public float fitCap(Role role, float refPx, CharSequence text, float maxWidth, float minScale) {
-        float w = width(role, refPx, text);
-        if (w <= maxWidth || w <= 0f) return refPx;
-        return refPx * Math.max(minScale, maxWidth / w);
     }
 
     // ------------------------------------------------------------------ fixed-cell numbers
@@ -763,21 +730,14 @@ public final class Fonts implements Disposable {
         Entry e = route(role, rasterPx, set, text);
         apply(e, drawPx);
         lastTop = e.top0 * drawPx / e.cap0;
-        lastEntry = e;
         return e.font;
     }
 
     private float lastTop;
-    private Entry lastEntry;
 
     /** Baseline → BitmapFont draw-y distance of the last {@link #prepare} call (world units). */
     float lastTop() {
         return lastTop;
-    }
-
-    /** Role actually used by the last {@link #prepare} call (CJK when routed). */
-    Role lastRole() {
-        return lastEntry == null ? null : lastEntry.role;
     }
 
     /** Horizontal start x for a run of width {@code w} anchored at {@code x}. */
@@ -1102,7 +1062,6 @@ public final class Fonts implements Disposable {
 
     // digit building -------------------------------------------------------------------------
     private final boolean[] digitLead = new boolean[DIGIT_CELLS];
-    private int digitSig;
 
     /**
      * Fills digitBuf/digitLead left to right; returns the cell count. Handles the whole long range
@@ -1134,7 +1093,6 @@ public final class Fonts implements Disposable {
                 digitLead[n++] = lead && i >= sig;
             }
         }
-        digitSig = sig;
         return n;
     }
 

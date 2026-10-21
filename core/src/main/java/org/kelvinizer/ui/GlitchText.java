@@ -89,7 +89,6 @@ public final class GlitchText {
     private final float[] bandHi = new float[3];
     private final float[] bandDx = new float[3];
     private int bands;
-    private final Color tmp = new Color();
     /** Rotation of the draw in progress (degrees, CCW) and its pivot; 0 outside a rotated draw. */
     private float rotation, rotCos = 1f, rotSin, pivotX, pivotY;
     /** One rotated glyph quad (SpriteBatch layout: x, y, colour, u, v × 4). */
@@ -122,7 +121,10 @@ public final class GlitchText {
         return draw(b, restRole, cap, Fonts.GlyphSet.FULL, text, x, y, align, color, alpha, state, time);
     }
 
-    /** As {@link #draw(Batch, Role, float, CharSequence, float, float, int, Color, float, GlitchState, float)} with a glyph set. */
+    /**
+     * As {@link #draw(Batch, Role, float, CharSequence, float, float, int, Color, float, GlitchState, float)} with a
+     * glyph set.
+     */
     public float draw(Batch b, Role restRole, float cap, Fonts.GlyphSet set, CharSequence text, float x, float y,
                       int align, Color color, float alpha, GlitchState state, float time) {
         return draw(b, restRole, cap, set, text, x, y, align, color, alpha, state, time, 1f, 0f);

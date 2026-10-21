@@ -86,7 +86,8 @@ public final class NoteTrail {
     private final int copies;
     private final float spacing;
 
-    private NoteTrail(float length, float density, float alpha, float fade, Mode mode, float from, float to, int copies) {
+    private NoteTrail(float length, float density, float alpha, float fade, Mode mode, float from,
+                      float to, int copies) {
         this.length = length;
         this.density = density;
         this.alpha = alpha;

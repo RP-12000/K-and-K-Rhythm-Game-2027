@@ -92,16 +92,6 @@ public class AvatarSpec {
         return 0;
     }
 
-    /** @return primary palette colour (RGBA8888). */
-    public int primaryRgba() {
-        return PALETTES[Settings.clamp(palette, 0, PALETTES.length - 1)][0];
-    }
-
-    /** @return secondary palette colour (RGBA8888). */
-    public int secondaryRgba() {
-        return PALETTES[Settings.clamp(palette, 0, PALETTES.length - 1)][1];
-    }
-
     /** Clamps every index into range. */
     public void sanitize() {
         shape = Settings.clamp(shape, 0, SHAPES.length - 1);

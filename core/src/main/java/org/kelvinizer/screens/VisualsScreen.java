@@ -62,7 +62,9 @@ public class VisualsScreen extends ShellScreen {
         FOOTNOTE = Lang.of("CHANGES APPLY AT ONCE", "改动马上生效"),
         AUTO_LOWERED = Lang.of("LOWERED AUTOMATICALLY FOR SPEED", "为了流畅已自动调低"),
         PARTICLE_DESC = Lang.of("HIT EFFECTS DURING A GAME", "下潜时的打击特效");
-    /** {@link Settings#syncHint} of each MULTI-PRESS ASSIST option in display order: OFF, ON, ENHANCED (Kelvin 04:34). */
+    /**
+     * {@link Settings#syncHint} of each MULTI-PRESS ASSIST option in display order: OFF, ON, ENHANCED (Kelvin 04:34).
+     */
     private static final int[] SYNC_ORDER = {
         Settings.SYNC_HINT_OFF, Settings.SYNC_HINT_HIGHLIGHT, Settings.SYNC_HINT_PEARLS};
     /** The strip's words, RESONANCE in the middle (Kelvin 2026-10-18 16:17). */
@@ -207,8 +209,8 @@ public class VisualsScreen extends ShellScreen {
                     if (finished) diverChanged();
                 }
             }));
-        // from GAMEPLAY (Kelvin 2026-10-18 19:52), so the preview's doubles show it; OFF / ON (the glow) / ENHANCED (glow
-        // and pearls) since 04:34, mapped onto Settings.syncHint so saved values keep their meaning
+        // from GAMEPLAY (Kelvin 2026-10-18 19:52), so the preview's doubles show it; OFF / ON (the glow) / ENHANCED
+        // (glow and pearls) since 04:34, mapped onto Settings.syncHint so saved values keep their meaning
         p.add(new ChoiceRow(game, Lang.of("MULTI-PRESS ASSIST", "多押辅助"), Lang.of("NOTES THAT SHARE A BEAT", "同一拍上的音符"),
             false, Lang.list("OFF", "关", "ON", "开", "ENHANCED", "增强"), new ChoiceRow.Value() {
                 @Override

@@ -23,7 +23,7 @@ import org.kelvinizer.ui.Ui;
  * 与别的音符同一拍的音符带同步珍珠（DROP、STREAM 头上三颗金色并排，水雷三颗红色，TIDE 金色珍珠）；轨道水雷的柱子画在条带层，不会盖住另一条判定线。
  *
  * <p>Note renderer (DESIGN §5.8 notes, §5.15 mines and TIDE notes, §19.1 TIDE STREAM, §20.2
- * LANE MINE, §21.6–21.7, and the owner decisions of 2026-10-12).
+ * LANE MINE, §21.6–21.7, and Kelvin's decisions of 2026-10-12).
  *
  * <p>Every note lives in a local frame whose origin is the centre of its leading edge (the edge
  * facing its line) and whose +y points away from the line: rotation is the note's
@@ -42,7 +42,7 @@ import org.kelvinizer.ui.Ui;
  * Its glows (sync frame, glow) tear along the same strips in the additive pass, without the colour
  * split. A TIDE group shows the glitch of the note that draws its head.
  *
- * <p><b>Sync pearls</b> (owner 2026-10-12 12:33, 12:39 「同一时刻都带」, 12:42 gold; they replace the gold
+ * <p><b>Sync pearls</b> (Kelvin 2026-10-12 12:33, 12:39 「同一时刻都带」, 12:42 gold; they replace the gold
  * square): a note that shares its beat with any other note ({@link Note#sharesBeat()})
  * carries pearls while it is pending or held ({@link NoteShapes#showsPearl}): three gold pearls
  * {@link NoteShapes#PEARL_D} × noteSize across side by side across the middle of a DROP or STREAM
@@ -56,16 +56,16 @@ import org.kelvinizer.ui.Ui;
  * the TIDE wave and bar glows beneath a note drawn over them (a DROP, STREAM or MINE on a TIDE's beat),
  * so the pearls stay true gold and red.
  *
- * <p>Mines turn with {@code angleAt} like lane notes (owner 2026-10-12 03:03). A LANE MINE (DESIGN §20.2) is
+ * <p>Mines turn with {@code angleAt} like lane notes (Kelvin 2026-10-12 03:03). A LANE MINE (DESIGN §20.2) is
  * drawn in two layers: its body in {@link #drawBands} (beneath trails, lane notes and mines): an
  * inset column of {@code mineCore}, hazard stripes drifting toward the line, rims with studs and
  * a tail cap. The column leaves a gap around the <em>other</em> judgement line, so that line, its
- * ripples and ticks stay as bright as elsewhere (owner 2026-10-12 02:58). While it blocks, a {@code mine}
+ * ripples and ticks stay as bright as elsewhere (Kelvin 2026-10-12 02:58). While it blocks, a {@code mine}
  * veil covers its lane's part of its own zone (band layer) and its line segment glows (additive).
  * Its head cap is the MINE body, drawn with the notes with the MINE pulse; it jitters on every
  * contact and fades over 120 ms after its end.
  *
- * <p>TIDE drops use the T4 look (owner 2026-10-12 04:36): a string of pearls on the sky line, a rolling wave on
+ * <p>TIDE drops use the T4 look (Kelvin 2026-10-12 04:36): a string of pearls on the sky line, a rolling wave on
  * the ground line whose crest moves with song time (frozen on pause). TIDE heads draw first in the
  * note pass, so lane notes and mines read on top of them (a joint DROP stays visible on its TIDE's
  * wave or pearls). A TIDE STREAM keeps the TIDE bar of §5.15 as its head (sky heads in the
@@ -214,7 +214,7 @@ final class NoteRenderer {
     private int start;
     private int end;
     private float noteSize = 1f;
-    /** {@link Settings#hitPointPx} of this frame (20 = a key's edge on its line at the judgement time). */
+    /** {@link Settings#hitPointPx} of this frame (0 = its line through a key's middle at the judgement time). */
     private float hitPoint = Settings.HIT_POINT_DEFAULT;
     private boolean high;
     /** How notes that share their beat are marked ({@link Settings#syncHint}). */
@@ -244,7 +244,7 @@ final class NoteRenderer {
     private final float[] cpx = new float[CREST_PTS];
     private final float[] cpy = new float[CREST_PTS];
 
-    // a TIDE drawn turned about its pivot, between tideTurn and tideTurnEnd (owner 2026-10-16)
+    // a TIDE drawn turned about its pivot, between tideTurn and tideTurnEnd (Kelvin 2026-10-16)
     private boolean tideTurned;
     private float ttDeg;
     private float ttCos;
@@ -287,7 +287,6 @@ final class NoteRenderer {
     private float sw;
     private float sh;
     private float srot;
-    private float spos;
     // the local frame of the last painted note (see frame())
     private float fcos = 1f;
     private float fsin;
@@ -396,15 +395,17 @@ final class NoteRenderer {
         high = highQuality;
     }
 
-    /** Sets the VISUAL HIT POINT for this frame ({@link Settings#hitPointPx}; not set: the default, 20). */
+    /** Sets the VISUAL HIT POINT for this frame ({@link Settings#hitPointPx}; not set: the default, 0). */
     void setHitPoint(float px) {
         hitPoint = MathUtils.clamp(px, Settings.HIT_POINT_MIN, Settings.HIT_POINT_MAX);
     }
 
     /**
      * @return how far every note is drawn along its path toward its line (negative: back from it) for the VISUAL HIT
-     *         POINT: half a size-1.0 key less the setting, scaled with the key, so a TAP or HOLD key's midline is
-     *         {@code hitPointPx × size} from its line at the judgement time; 0 at the default (the edge on the line)
+     *         POINT: positions are measured to a key's edge, so half a size-1.0 key less the setting, scaled with the
+     *         key, puts a TAP or HOLD key's midline {@code hitPointPx × size} from its line at the judgement time (the
+     *         midline travels the distance itself, 1080 to 0 at the default 0); 0 at a setting of 20 (the edge on
+     *         the line)
      */
     float hitShift() {
         return (NOTE_H * 0.5f - hitPoint) * noteSize;
@@ -837,7 +838,7 @@ final class NoteRenderer {
 
     /**
      * Computes the geometry of lane note i into the scratch fields: {@code sx, sy} leading-edge
-     * centre, {@code sw × sh} body, {@code srot} rotation, {@code spos} position.
+     * centre, {@code sw × sh} body, {@code srot} rotation.
      *
      * @return false when it is not drawable (hidden, inactive lane)
      */
@@ -851,7 +852,6 @@ final class NoteRenderer {
         if (Float.isNaN(pos)) return false;
         boolean up = n.isUpper();
         float lineY = e.lineY(n.line());
-        spos = pos;
         sx = lay.centre(lane);
         sy = up ? lineY - pos : lineY + pos;
         sw = lw * 5f / 6f * Math.min(noteSize, 1.15f);
@@ -885,7 +885,8 @@ final class NoteRenderer {
             if (Math.abs(MathUtils.sinDeg(rot)) > NoteShapes.UPRIGHT_SIN) continue;
             float lineY = e.lineY(n.line());
             if (n.shownOpacityAt(lb) * fadeIn(i, lineY, true) <= MIN_ALPHA) continue;
-            float y = lineY - pos + NoteShapes.pivotShiftY(pos, NOTE_H, noteHeight(), rot, true, n.pivotX(), n.pivotY());
+            float y = lineY - pos
+                + NoteShapes.pivotShiftY(pos, NOTE_H, noteHeight(), rot, true, n.pivotX(), n.pivotY());
             float y2 = y + MathUtils.cosDeg(rot) * tail;
             int k = skyRibs++;
             skyRibLane[k] = lane;
@@ -1125,12 +1126,12 @@ final class NoteRenderer {
     }
 
     /**
-     * The sync pearls of a DROP or STREAM head (owner 2026-10-12 12:33, 「把中间的"黄色方块"换成黄色圆形，像珍珠一样」;
+     * The sync pearls of a DROP or STREAM head (Kelvin 2026-10-12 12:33, 「把中间的"黄色方块"换成黄色圆形，像珍珠一样」;
      * gold, 12:42; three side by side, 16:07): {@link NoteShapes#HEAD_PEARLS} gold pearls
      * {@link NoteShapes#PEARL_D} × noteSize across in a row across the middle of the head, centred,
      * {@link NoteShapes#PEARL_STEP} diameters apart (smaller on a head too narrow for them,
      * {@link NoteShapes#headPearlRadius}), turning with it at the head's alpha; call right after
-     * {@link #paintLaneNote} (its local frame). The tutorial's sync demo calls it too.
+     * {@link #paintLaneNote} (its local frame).
      *
      * @param w head width
      * @param h head height
@@ -1242,7 +1243,8 @@ final class NoteRenderer {
         float mw = lw * GameEngine.MINE_BOX;
         float mh = mineHeight();
         float rot = n.angleAt(lb) + (up ? 180f : 0f);
-        float y = (up ? lineY - pos : lineY + pos) + NoteShapes.pivotShiftY(pos, MINE_H, mh, rot, up, n.pivotX(), n.pivotY());
+        float y = (up ? lineY - pos : lineY + pos)
+            + NoteShapes.pivotShiftY(pos, MINE_H, mh, rot, up, n.pivotX(), n.pivotY());
         float pad = rotPad(rot, mw);
         // toward the line it reaches its turned corners, and its height when turned toward the line
         if (offScreen(up, y, mh + pad, FLAT_CULL + turnReach(up, rot, mw, mh))) return;
@@ -1290,7 +1292,7 @@ final class NoteRenderer {
     /**
      * Paints a MINE body (DESIGN §5.15) in its local frame: rounded {@code mine} rim,
      * {@code mineCore} fill and three studs on each long edge, turned by {@code rot} about the
-     * leading-edge centre {@code (x, y)} (owner 2026-10-12 03:03: mines turn like DROP and STREAM). Also the
+     * leading-edge centre {@code (x, y)} (Kelvin 2026-10-12 03:03: mines turn like DROP and STREAM). Also the
      * head cap of a LANE MINE. Leaves the local frame set to {@code rot}.
      *
      * @return quads submitted (at most {@link #MINE_QUADS})
@@ -1405,7 +1407,8 @@ final class NoteRenderer {
         if (alpha <= MIN_ALPHA) return q;
         float rot = n.angleAt(lb) + (up ? 180f : 0f);
         float mh = mineHeight();
-        float y = (up ? lineY - pos : lineY + pos) + NoteShapes.pivotShiftY(pos, MINE_H, mh, rot, up, n.pivotX(), n.pivotY());
+        float y = (up ? lineY - pos : lineY + pos)
+            + NoteShapes.pivotShiftY(pos, MINE_H, mh, rot, up, n.pivotX(), n.pivotY());
         float x = lay.centre(lane) + NoteShapes.pivotShiftX(pos, MINE_H, mh, rot, up, n.pivotX(), n.pivotY())
             + (dry ? 0f : contactJitter(e, i, frame));
         return q + paintLaneMineColumn(x, y, rot, lw, tail, alpha, NoteShapes.songSeconds(e),
@@ -1419,7 +1422,7 @@ final class NoteRenderer {
      * 24) drifting toward the line at 40 /s of song time, 3 px {@code mine} rims with 6×6 studs
      * every 64, and a 3 px tail cap. Only the rows on screen are drawn, and nothing within
      * {@link NoteShapes#OTHER_LINE_GAP} of {@code otherY}, the other judgement line, which stays as
-     * bright across the column as elsewhere (owner 2026-10-12 02:58). Afterimage copies pass
+     * bright across the column as elsewhere (Kelvin 2026-10-12 02:58). Afterimage copies pass
      * {@code detail = false} (no stripes, no studs). Leaves the local frame set to {@code rot}.
      *
      * @param seconds song seconds of the stripe phase
@@ -1640,7 +1643,8 @@ final class NoteRenderer {
      * @param jx horizontal jitter of the missed look (0 for none)
      * @return quads submitted
      */
-    int paintTide(float x0, float x1, float y, float th, boolean up, boolean lost, float jx, float alpha, LaneLayout lay) {
+    int paintTide(float x0, float x1, float y, float th, boolean up, boolean lost, float jx,
+                  float alpha, LaneLayout lay) {
         float y0 = up ? y - th : y;
         if (lost) {
             rect(x0 + jx, y0, x1 - x0, th, Theme.MISSED, 0.5f * alpha);
@@ -1656,15 +1660,18 @@ final class NoteRenderer {
             Color tc = Theme.TIDE;
             for (int k = 0; k < lay.count(); k++) {
                 if (!lay.active(k)) continue;
-                quads += diamond(tideX(lay.left(k)), cy, x0, x1, tc, 0.9f * alpha * Math.max(lay.opacity(k), k > 0 ? lay.opacity(k - 1) : 0f));
-                if (k == lay.count() - 1 || !lay.active(k + 1)) quads += diamond(tideX(lay.right(k)), cy, x0, x1, tc, 0.9f * alpha * lay.opacity(k));
+                quads += diamond(tideX(lay.left(k)), cy, x0, x1, tc,
+                    0.9f * alpha * Math.max(lay.opacity(k), k > 0 ? lay.opacity(k - 1) : 0f));
+                if (k == lay.count() - 1 || !lay.active(k + 1)) {
+                    quads += diamond(tideX(lay.right(k)), cy, x0, x1, tc, 0.9f * alpha * lay.opacity(k));
+                }
             }
         }
         return quads;
     }
 
     /**
-     * Paints a TIDE drop in the T4 look (owner 2026-10-12 04:36; {@link NoteShapes}) across {@code [x0, x1]}
+     * Paints a TIDE drop in the T4 look (Kelvin 2026-10-12 04:36; {@link NoteShapes}) across {@code [x0, x1]}
      * with its leading edge at {@code y}. Sky: a 2u {@code skySig} thread at α .45 7u behind the
      * leading edge and {@code 3 × lanes} pearls on it, radius 11u / 7u alternating. Ground: a
      * {@code TIDE_WAVE} band (α .85) from the leading edge back to a crest at
@@ -1904,7 +1911,7 @@ final class NoteRenderer {
     }
 
     /**
-     * Turns the atlas batch {@code deg} degrees about a TIDE's pivot (owner 2026-10-16: a TIDE or TIDE STREAM turns
+     * Turns the atlas batch {@code deg} degrees about a TIDE's pivot (Kelvin 2026-10-16: a TIDE or TIDE STREAM turns
      * like the other notes; 「对于无限长的东西（tide），默认原点就是屏幕内的按键的中点」): the origin is the middle of the
      * on-screen part of its bar {@code [x0, x1]} (world), half the bar ({@link #tideHeight}) behind its leading
      * edge {@code y}; the pivot lies {@code (px, py)} reference units from it in the note's frame (stretched by
@@ -2034,7 +2041,7 @@ final class NoteRenderer {
     }
 
     /**
-     * PROPOSAL (the owner's words do not cover the TIDE STREAM head): a pending TIDE STREAM that
+     * PROPOSAL (Kelvin's words do not cover the TIDE STREAM head): a pending TIDE STREAM that
      * shares its beat carries the ground wave's row of gold pearls, large and small in turn, along
      * the middle ({@code cy}) of its head bar, {@link NoteShapes#beadCount} of them over the lane
      * window, so the lane-boundary diamonds fall halfway between two pearls. With a glow centred at
@@ -2064,7 +2071,7 @@ final class NoteRenderer {
     /**
      * @return spacing of a pearl row over {@code [a, b]}: {@code (b − a) / (beadCount)} at
      *         {@link LaneLayout#patternWidth} lanes' worth across the window, so on tiled lanes it
-     *         follows the global lane scale (owner 2026-10-13) and equals the shared-window spacing
+     *         follows the global lane scale (Kelvin 2026-10-13) and equals the shared-window spacing
      *         at the default layout
      */
     private static float beadStep(LaneLayout lay, float a, float b) {

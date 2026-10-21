@@ -12,7 +12,7 @@ import org.kelvinizer.ui.Ui;
  * 右上角暂停键的位置与输入规则：靠右，上下居中在屏幕顶边和天线之间；300 ms 内在触摸区双击即暂停，判定了音符的触摸既不计数也不取消。
  * 纯 Java，不依赖 GL，测试可以直接用真实引擎和事件时间戳驱动它。
  *
- * <p>The top-right pause control (owner decisions 2026-10-12, DESIGN §21.5): where it sits and how
+ * <p>The top-right pause control (Kelvin's decisions 2026-10-12, DESIGN §21.5): where it sits and how
  * a touch operates it. Pure Java (no GL), so tests drive it with a real {@link GameEngine} and event
  * timestamps. {@link GameplayScreen} hands it every touch after the engine has seen that touch, and
  * {@link GameplayHud} draws the icon from its geometry.
@@ -26,7 +26,7 @@ import org.kelvinizer.ui.Ui;
  * screen edge less the cutout inset and the Settings edge padding ({@code Ui.safeRight() +
  * Ui.MIN_MARGIN}, {@code Ui.safeTop() + Ui.MIN_MARGIN}); the ring never comes closer than
  * {@link #TOP_CLEAR} to the top edge, which only a large edge padding reaches. At 1920×1080 and k 1
- * the centre is (W − 58, 1026) and the ring's right edge is W − 26 (design thread 04:33, P14).
+ * the centre is (W − 58, 1026) and the ring's right edge is W − 26 (mock-up P14, 04:33).
  * The hit box is anchored to that top-right corner and reaches the screen edges; it is
  * {@code max(P, P·k)} on each side ({@code P = Ui.touchTarget()}, the §0 minimum), never smaller
  * than the minimum target and always around the whole ring.

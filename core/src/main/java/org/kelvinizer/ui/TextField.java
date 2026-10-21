@@ -17,7 +17,7 @@ import com.badlogic.gdx.utils.Align;
  * <p>Text entry (DESIGN §1.6, used by §8.3 create / rename, §10.1 "name your diver" and the §3.10
  * search field): a styled field that edits through the platform text dialog on mobile
  * ({@code Gdx.input.getTextInput}) and inline on desktop (the LWJGL3 backend has no text
- * dialog). Built on {@link Pressable}, so it has the §1.5 press, hover, focus and "no" shake.
+ * dialog). Built on {@link Pressable}, so it has the §1.5 press, hover and "no" shake.
  *
  * <p><b>Look.</b> {@code panel} fill, radius 18, 2-unit {@code ink1 @ .35} outline (2.5-unit
  * {@code groundSig} while editing, {@code #FF5C7A} flash on reject), optional caps label above
@@ -28,7 +28,7 @@ import com.badlogic.gdx.utils.Align;
  * <p><b>Validation.</b> Every submitted string goes through {@link #sanitize(CharSequence, int)}
  * (control characters removed, line breaks and tabs become spaces, trimmed, at most
  * {@link #setMaxLength(int)} code points; default 16 as for diver names). An empty result (unless
- * {@link #setAllowEmpty(boolean)}) or one refused by the {@link Validator} is rejected with the
+ * {@link #setAllowEmpty(boolean)}) is rejected with the
  * shake, a red outline flash and a medium haptic; inline editing then stays open.
  *
  * <p><b>Inline editing (desktop).</b> The owning screen must route keyboard input while
@@ -67,12 +67,6 @@ public class TextField extends Pressable {
         void committed(TextField field, String text);
     }
 
-    /** Extra acceptance rule applied to sanitised text (after the empty check). */
-    public interface Validator {
-        /** True when {@code sanitized} may be committed. */
-        boolean isValid(String sanitized);
-    }
-
     /** Corner radius. */
     public static final float RADIUS = 18f;
     /** Value / placeholder cap height. */
@@ -98,9 +92,7 @@ public class TextField extends Pressable {
     private Mode mode = Mode.AUTO;
     private int maxLength = DEFAULT_MAX_LENGTH;
     private boolean allowEmpty;
-    private Validator validator;
     private Listener listener;
-    private Runnable onRejected;
     private Fonts.Role role = Fonts.Role.UI;
     private float textCap = TEXT_CAP;
 
@@ -176,21 +168,9 @@ public class TextField extends Pressable {
         return this;
     }
 
-    /** Extra validation rule (null = none). */
-    public TextField setValidator(Validator v) {
-        validator = v;
-        return this;
-    }
-
     /** Commit listener (created once; never per frame). */
     public TextField setListener(Listener l) {
         listener = l;
-        return this;
-    }
-
-    /** Runs after a rejected submit (the shake and flash play regardless). */
-    public TextField setOnRejected(Runnable r) {
-        onRejected = r;
         return this;
     }
 
@@ -291,11 +271,11 @@ public class TextField extends Pressable {
 
     /**
      * Sanitises and validates {@code raw}; on success stores and reports it. Returns false (with
-     * the reject feedback) when it is empty or refused.
+     * the reject feedback) when it is empty.
      */
     public boolean submit(CharSequence raw) {
         String s = sanitize(raw, maxLength);
-        boolean ok = (allowEmpty || !s.isEmpty()) && (validator == null || validator.isValid(s));
+        boolean ok = allowEmpty || !s.isEmpty();
         if (!ok) {
             reject();
             return false;
@@ -313,7 +293,6 @@ public class TextField extends Pressable {
         shake();
         rejectT = 0f;
         Haptics.medium();
-        if (onRejected != null) onRejected.run();
     }
 
     private boolean useDialog() {
@@ -605,7 +584,6 @@ public class TextField extends Pressable {
             float ix = bx + bw - (PAD_R + ICON * 0.5f) * s;
             Icons.draw(draw.shapes(), Icons.Icon.PENCIL, ix, cy, ICON * s, Theme.INK2, 0.8f * a);
         }
-        drawFocus(bx, by, bw, bh, RADIUS, a);
     }
 
     private void drawEditing(Batch b, float a, float left, float cy) {
@@ -624,7 +602,8 @@ public class TextField extends Pressable {
         boolean on = caretT < 0.5f || ((int) ((caretT - 0.5f) / BLINK) & 1) == 0;
         if (on) {
             float ch = drawCap * 1.5f;
-            draw.rect(left + caretOffset + (caret > viewStart ? 1f : -1.5f), cy - ch * 0.5f, 3f, ch, Theme.GROUND_SIG, a);
+            draw.rect(left + caretOffset + (caret > viewStart ? 1f : -1.5f), cy - ch * 0.5f, 3f, ch,
+                Theme.GROUND_SIG, a);
         }
     }
 

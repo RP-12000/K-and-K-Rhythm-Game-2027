@@ -17,30 +17,10 @@ final class MapStyle {
     // ------------------------------------------------------------------ world (§3.2)
     /** Centre column of the world. */
     static final float CENTRE_X = 1400f;
-    /** World width (x runs 0..2800). */
-    static final float WORLD_W = 2800f;
-    /** Height of the surface band above y = 0. */
-    static final float SURFACE_H = 600f;
-    /** The LAUNCH POINT buoy (tutorial). */
-    static final float LAUNCH_X = 1400f, LAUNCH_Y = 140f;
     /** Charted band: header height, node pitch, base height ({@code H = 600 + 460·n}). */
     static final float HEADER_H = 340f, NODE_PITCH = 460f, BAND_BASE_H = 600f;
-    /** First node below the band top. */
-    static final float FIRST_NODE_DY = 420f;
-    /** Vertical jitter of a node (±). */
-    static final float NODE_JITTER_Y = 60f;
-    /** Node side offset {@code 520·(0.8 + 0.4·hash)}. */
-    static final float NODE_SIDE = 520f;
-    /** Uncharted band height and its contacts. */
-    static final float UNCHARTED_H = 1400f, CONTACT_FIRST_DY = 400f, CONTACT_PITCH = 400f, CONTACT_SIDE = 480f;
-    /** Contacts per uncharted band. */
-    static final int CONTACTS_PER_BAND = 3;
     /** Camera bounds (§3.6): view kept inside x ∈ [−200, 3000], top ≤ +600, bottom ≥ last band − 200. */
     static final float BOUND_LEFT = -200f, BOUND_RIGHT = 3000f, BOUND_TOP = 600f, BOUND_BELOW = 200f;
-    /** Header numeral x. */
-    static final float HEADER_X = 240f;
-    /** Corridor width per depth layer (§3.5 terrain), L1..L6. */
-    static final float[] CORRIDOR = {2800f, 2500f, 2200f, 1900f, 1700f, 1700f};
 
     // ------------------------------------------------------------------ nodes (§3.3)
     /** Thumb diameter. */
@@ -57,32 +37,16 @@ final class MapStyle {
     static final float DASH_R = 125f;
     /** NEW dot radius position and size. */
     static final float NEW_R = 92f, NEW_D = 14f;
-    /** Label top below the node centre (world units). */
-    static final float LABEL_DY = 132f;
     /** Max label width (screen units). */
     static final float LABEL_MAX_W = 360f;
-    /** Label raster cap (drawn scaled to {@code clamp(21/zoom, 18, 26)}). */
-    static final float LABEL_RASTER = 22f;
     /** Lens chip under the label. */
     static final float CHIP_W = 72f, CHIP_H = 36f, CHIP_CAP = 18f;
     /** Zoom LOD thresholds (§3.3). */
     static final float LOD_DETAIL = 0.85f, LOD_OVERVIEW = 1.8f;
-    /** Gate ring diameter (§3.5). */
-    static final float GATE_D = 48f;
-    /** Contact ring diameter (§3.3). */
-    static final float CONTACT_D = 72f;
 
     // ------------------------------------------------------------------ camera (§3.6)
     /** Zoom range and its soft limits. */
     static final float ZOOM_MIN = 0.7f, ZOOM_MAX = 2.4f, ZOOM_SOFT_MIN = 0.6f, ZOOM_SOFT_MAX = 2.6f;
-    /** Double-tap zoom levels. */
-    static final float ZOOM_NEAR = 1.0f, ZOOM_FAR = 1.9f;
-    /**
-     * ALL SONGS opens at this zoom (more of the grid in view), and at {@link #GRID_ZOOM_PHONE} on a
-     * phone-sized screen, where the song holes would otherwise be small (Kelvin 2026-10-13 22:59:
-     * 「进去以后的歌曲图标小了点」).
-     */
-    static final float GRID_ZOOM = 1.25f, GRID_ZOOM_PHONE = 1.0f;
     /** Fling: velocity cap, decay rate, stop speed, catch speed, sample window. */
     static final float FLING_MAX = 8000f, FLING_DECAY = 4f, FLING_STOP = 20f, CATCH_SPEED = 300f,
         FLING_WINDOW = 0.08f;
@@ -106,7 +70,7 @@ final class MapStyle {
      * 2026-10-19 06:28), and the band under the safe top kept for that row (the ALL SONGS grid starts under the
      * block). Since Kelvin 2026-10-20 03:26 the capsule is drawn at the size of the box marked on the 16:10 map, with a
      * minimum width so a small shell count no longer shrinks it into the corner. The block has no frame since
-     * 2026-10-20 14:10 (the design thread's plan 5): an avatar disc, the name and a depth tag, 100 high from the
+     * 2026-10-20 14:10 (mock-up plan 5): an avatar disc, the name and a depth tag, 100 high from the
      * top of Settings. Since Kelvin 2026-10-20 15:10 the capsule is smaller (「我感觉贝壳有点太大了，喧宾夺主了」), and
      * since 15:36 it sits beside the block's depth tag, 46 high. The block is 150 high since 16:05, as tall as its
      * avatar circle (「把头像圈直径扩大1.5倍我看看」). Since 17:34 the block and the capsule are drawn at 0.75 of these
@@ -117,10 +81,6 @@ final class MapStyle {
     static final float CAPSULE_MIN_W = 110f;
     /** Lens segments. */
     static final float LENS_SEG_W = 168f, LENS_H = 96f;
-    /** Depth gauge column (from mapRight): x offsets and vertical insets. */
-    static final float GAUGE_R_OUT = 80f, GAUGE_R_IN = 24f, GAUGE_TOP_INSET = 160f, GAUGE_BOTTOM_INSET = 160f;
-    /** Gauge readout pill. */
-    static final float READOUT_W = 140f, READOUT_H = 52f;
 
     // ------------------------------------------------------------------ song card (§4)
     /** Side card widths (aspect ≥ 2 / otherwise) and its padding. */
@@ -133,8 +93,8 @@ final class MapStyle {
     static final float HANDLE_W = 80f, HANDLE_H = 8f, HANDLE_DY = 16f;
     /** Card header arrows ‹ › (76 visuals, 64 until Kelvin 2026-10-19 13:37 「稍微大一点」; {@code P} hits). */
     static final float HEADER_ICON = 76f;
-    /** Jacket side (20:9 / 16:9 card, sheet) and its corner radius. */
-    static final float JACKET_WIDE = 320f, JACKET = 300f, JACKET_RADIUS = 16f;
+    /** Jacket side on the side card and its corner radius on the bottom sheet. */
+    static final float JACKET = 300f, JACKET_RADIUS = 16f;
     /** Difficulty chip height, gap and corner radius. */
     static final float CHIP_ROW_H = 104f, CHIP_GAP = 16f, CHIP_RADIUS = 14f;
     /** Action row height, AUTO widths (20:9 / 16:9 and sheet). */
@@ -164,27 +124,19 @@ final class MapStyle {
     /** Return (IRIS): camera start zoom and glide time; arc sweep and floater timings. */
     static final float RETURN_ZOOM = 0.4f, RETURN_GLIDE = 0.6f, ARC_SWEEP = 0.4f, FLOATER_T = 1.2f;
 
-    // ------------------------------------------------------------------ filter and list (§3.10)
-    /** Filter panel width and its drop animation (s). */
-    static final float FILTER_W = 600f, FILTER_IN = 0.28f;
-    /** List overlay width, row height, thumb size, chapter header height. */
-    static final float LIST_W = 720f, LIST_ROW = 112f, LIST_THUMB = 88f, LIST_HEADER = 72f;
+    // ------------------------------------------------------------------ sort panel and peek (§3.10)
+    /** Sort panel rise animation (s). */
+    static final float FILTER_IN = 0.28f;
     /** Peek (long-press) ring time (s). */
     static final float PEEK_T = 0.45f;
     /** Opaque underlay under the translucent {@code panel} fill of the card and the overlays. */
     static final float UNDERLAY = 0.75f;
 
     // ------------------------------------------------------------------ colours (never mutate)
-    /** Beyond-your-depth rim tint target (§3.3). */
-    static final Color BEYOND = Theme.rgb(0xFF5CA8, 1f);
     /** Unplayed arc colour ({@code #FFFFFF @ .20}). */
     static final Color ARC_UNPLAYED = Theme.rgb(0xFFFFFF, 0.20f);
-    /** Desaturation veil for nodes missing the lens chart. */
-    static final Color VEIL = Theme.rgb(0x5A6278, 1f);
     /** Placeholder thumb disc. */
     static final Color THUMB_PLACEHOLDER = Theme.rgb(0x16205A, 1f);
-    /** Waterline highlight. */
-    static final Color WATERLINE = Theme.rgb(0xE8FBFF, 1f);
 
     /**
      * The design's deterministic string hash: {@code ((s.hashCode() * 0x9E3779B1) >>> 8) / 2^24}

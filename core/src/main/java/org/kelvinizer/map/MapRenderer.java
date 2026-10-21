@@ -60,8 +60,8 @@ final class MapRenderer {
     /** Grade superscript "+" as the result stamp draws it: size and gap after the letters, fractions of their cap. */
     private static final float PLUS_SCALE = 0.55f, PLUS_GAP = 0.04f;
     /**
-     * A scrolling map title's {@link Marquee} speed and gap (50 / s, 100) and edge fade (16) for the 25 px name, whose cap
-     * is the last; other names scale them by their cap.
+     * A scrolling map title's {@link Marquee} speed and gap (50 / s, 100) and edge fade (16) for the 25 px name, whose
+     * cap is the last; other names scale them by their cap.
      */
     private static final float TITLE_SPEED = 0.625f, TITLE_FADE = 16f / Marquee.FADE, TITLE_CAP = 17.5f;
     /** White band through R and R+ as on the result stamp: slope (x per y), half width (× cap) and peak alpha. */
@@ -96,7 +96,8 @@ final class MapRenderer {
     /** Glyph quads of the band sweeping through R and R+ ({@link #grade}). */
     private final GlyphQuads quads = new GlyphQuads();
     /** Noise colours of a garbled secret song's disc. */
-    private static final Color NOISE_DARK = new Color(0.08f, 0.12f, 0.27f, 1f), NOISE_MID = new Color(0.14f, 0.2f, 0.37f, 1f);
+    private static final Color NOISE_DARK = new Color(0.08f, 0.12f, 0.27f, 1f);
+    private static final Color NOISE_MID = new Color(0.14f, 0.2f, 0.37f, 1f);
     private static final Color SHELL_RIB = Theme.mix(Theme.GOLD, Theme.ABYSS_BLACK, 0.55f, new Color());
 
     // per-frame inputs (set by the screen before drawing) ---------------------------------
@@ -137,7 +138,10 @@ final class MapRenderer {
 
     // derived per frame -------------------------------------------------------------------
     private float zoom, vl, vr, vb, vt, ov, labelCap, labelA;
-    /** On ALL SONGS this frame; its label size (1 on a phone, {@link GridPage#TABLET} on a tablet, 1 elsewhere), a score's width. */
+    /**
+     * On ALL SONGS this frame; its label size (1 on a phone, {@link GridPage#TABLET} on a tablet, 1 elsewhere), a
+     * score's width.
+     */
     private boolean gridOn;
     private float lk = 1f, gridScoreW;
     /** Per node: label block visibility after HUD occlusion, 0..1. */
@@ -237,8 +241,11 @@ final class MapRenderer {
             switch (n.kind) {
                 case MapNode.SONG:
                     a = n.song != null ? n.glitch ? MapWorld.garble(n.song.title()) : n.song.title() : "";
-                    if (n.locked && !world.isGrid()) c = zh ? "通关 " + n.needsText + " 后解锁" : "CLEAR " + n.needsText + " TO UNLOCK";
-                    else if (n.forSale) c = Integer.toString(n.price);
+                    if (n.locked && !world.isGrid()) {
+                        c = zh ? "通关 " + n.needsText + " 后解锁" : "CLEAR " + n.needsText + " TO UNLOCK";
+                    } else if (n.forSale) {
+                        c = Integer.toString(n.price);
+                    }
                     break;
                 case MapNode.STORY: {
                     CaveData.Story st = s != null && s.story != null ? data.stories.get(s.story) : null;
@@ -321,26 +328,6 @@ final class MapRenderer {
     }
 
     /**
-     * Coverage visibility 0..1 of a screen rect for the world-pass text (layer headers): the
-     * HUD and the card draw over the world pass anyway, so only a mostly covered header fades
-     * (fully hidden at 60 % of its area under one occluder) instead of vanishing when a corner of
-     * it touches a HUD rect.
-     */
-    float coverVisibility(float x0, float y0, float x1, float y1) {
-        float area = Math.max(1f, (x1 - x0) * (y1 - y0));
-        float k = 1f;
-        for (int i = 0; i < occN; i += 4) {
-            float dx = Math.min(x1, occ[i + 2]) - Math.max(x0, occ[i]);
-            if (dx <= 0f) continue;
-            float dy = Math.min(y1, occ[i + 3]) - Math.max(y0, occ[i + 1]);
-            if (dy <= 0f) continue;
-            k = Math.min(k, 1f - MathUtils.clamp(dx * dy / area / 0.6f, 0f, 1f));
-            if (k <= 0f) return 0f;
-        }
-        return k;
-    }
-
-    /**
      * Visibility 0..1 of a screen rect against the HUD occluders: fades out over the first
      * 28 units of penetration so labels slide under the HUD instead of popping.
      */
@@ -408,12 +395,14 @@ final class MapRenderer {
         for (MapNode n : world.all) {
             int i = n.idx;
             float base = small(n) ? 1f - ov : 1f;
-            float fk = MathUtils.clamp(n.filterK * 2f - 1f, 0f, 1f) * base * Math.min(1f, n.wake * 1.5f);
+            float fk = base * Math.min(1f, n.wake * 1.5f);
             if (labelA * fk <= 0.01f || !visible(n) || (l1[i].isEmpty() && l2[i].isEmpty())) {
                 labelK[i] = 0f;
                 continue;
             }
-            if (titleW[i] < 0f) titleW[i] = Math.max(fonts.width(Fonts.Role.UI, R_UI, l1[i]), fonts.width(Fonts.Role.UI, R_UI, l2[i]));
+            if (titleW[i] < 0f) {
+                titleW[i] = Math.max(fonts.width(Fonts.Role.UI, R_UI, l1[i]), fonts.width(Fonts.Role.UI, R_UI, l2[i]));
+            }
             if (gridOn) { // the grid's mask does the clipping; no HUD lies over it
                 labelK[i] = fk;
                 continue;
@@ -479,8 +468,10 @@ final class MapRenderer {
         if (n == null || tipT < 0f) return;
         tipA = Math.min(1f, tipT / 0.12f) * (1f - MathUtils.clamp((tipT - 2.4f) / 0.4f, 0f, 1f)) * alpha;
         tipW = uiWidth(tipText, 20f) + 48f;
-        tipX = MathUtils.clamp(cam.hudX(n.drawX()), Ui.safeLeft() + tipW * 0.5f + 8f, Ui.safeRight() - tipW * 0.5f - 8f);
-        tipY = MathUtils.clamp(cam.hudY(n.drawY(time, reduceMotion) + n.r * sc(n)) + 18f, Ui.safeBottom() + 150f, Ui.safeTop() - 220f);
+        tipX = MathUtils.clamp(cam.hudX(n.drawX()), Ui.safeLeft() + tipW * 0.5f + 8f,
+            Ui.safeRight() - tipW * 0.5f - 8f);
+        tipY = MathUtils.clamp(cam.hudY(n.drawY(time, reduceMotion) + n.r * sc(n)) + 18f, Ui.safeBottom() + 150f,
+            Ui.safeTop() - 220f);
     }
 
     private boolean visible(MapNode n) {
@@ -606,10 +597,10 @@ final class MapRenderer {
                     tx /= tl;
                     ty /= tl;
                     float s = 18f * wk;
-                    draw.line(cx - tx * s - ty * s * 0.8f, cy - ty * s + tx * s * 0.8f, cx + tx * s * 0.3f, cy + ty * s * 0.3f,
-                        w, col, Math.min(1f, al * 1.3f));
-                    draw.line(cx - tx * s + ty * s * 0.8f, cy - ty * s - tx * s * 0.8f, cx + tx * s * 0.3f, cy + ty * s * 0.3f,
-                        w, col, Math.min(1f, al * 1.3f));
+                    draw.line(cx - tx * s - ty * s * 0.8f, cy - ty * s + tx * s * 0.8f, cx + tx * s * 0.3f,
+                        cy + ty * s * 0.3f, w, col, Math.min(1f, al * 1.3f));
+                    draw.line(cx - tx * s + ty * s * 0.8f, cy - ty * s - tx * s * 0.8f, cx + tx * s * 0.3f,
+                        cy + ty * s * 0.3f, w, col, Math.min(1f, al * 1.3f));
                 }
             }
         }
@@ -622,14 +613,17 @@ final class MapRenderer {
             float tip = n == tipNode && tipT >= 0f ? 1f - MathUtils.clamp((tipT - 2.2f) / 0.5f, 0f, 1f) : 0f;
             float a = alpha * Math.max(0.2f + 0.45f * ov, 0.95f * tip) * Math.min(1f, n.wake * 1.5f);
             if (a <= 0.01f) continue;
-            for (MapNode m : n.needs) dotted(m.drawX(), m.drawY(time, reduceMotion), n.drawX(), n.drawY(time, reduceMotion),
-                m.r * sc(m), n.r * sc(n), a, tip > 0f && !reduceMotion ? time : 0f);
+            for (MapNode m : n.needs) {
+                dotted(m.drawX(), m.drawY(time, reduceMotion), n.drawX(), n.drawY(time, reduceMotion),
+                    m.r * sc(m), n.r * sc(n), a, tip > 0f && !reduceMotion ? time : 0f);
+            }
         }
         if (flowT < 0f) return;
         float k = Anim.POW2_OUT.apply(Math.min(1f, flowT));
         for (MapNode n : flowNodes) {
             for (MapNode m : n.needs) {
-                float ax = m.drawX(), ay = m.drawY(time, reduceMotion), bx = n.drawX(), by = n.drawY(time, reduceMotion);
+                float ax = m.drawX(), ay = m.drawY(time, reduceMotion);
+                float bx = n.drawX(), by = n.drawY(time, reduceMotion);
                 dotted(ax, ay, bx, by, m.r * sc(m), n.r * sc(n), alpha * 0.6f, time);
                 float x = ax + (bx - ax) * k, y = ay + (by - ay) * k;
                 draw.glowDot(x, y, 120f, Theme.GOLD, 0.8f * alpha);
@@ -698,9 +692,7 @@ final class MapRenderer {
         if (locked) c1.set(Theme.GOLD);
         else lensColor(n, c1);
         float breathe = reduceMotion ? 0f : 0.04f * MathUtils.sin(time * MathUtils.PI2 / 3f + n.bobPhase);
-        float halo = n.filterOn && n.filterMatch && !reduceMotion
-            ? 0.10f * (0.5f + 0.5f * MathUtils.sin(time * MathUtils.PI2 / 1.4f + n.bobPhase)) : 0f;
-        float glowA = ((locked ? 0.06f : 0.12f) + breathe + 0.10f * n.selected + 0.08f * n.flash + halo) * a;
+        float glowA = ((locked ? 0.06f : 0.12f) + breathe + 0.10f * n.selected + 0.08f * n.flash) * a;
         draw.glowDot(cx, cy, MapStyle.GLOW_D * s, c1, glowA);
         draw.glowDot(cx, cy - 10f * s, MapStyle.THUMB_D * 1.25f * s, Theme.SHADOW, 0.5f * a);
         draw.disc(cx, cy, (RIM_R + 8f) * s, Theme.ABYSS_BLACK, 0.85f * a);
@@ -715,7 +707,9 @@ final class MapRenderer {
             int dashes = 20;
             float step = MathUtils.PI2 / dashes;
             float rot = reduceMotion ? 0f : time * 0.15f;
-            for (int i = 0; i < dashes; i++) draw.arc(cx, cy, r, rot + i * step, step * 0.55f, MapStyle.RIM_W * s, c1, rimA);
+            for (int i = 0; i < dashes; i++) {
+                draw.arc(cx, cy, r, rot + i * step, step * 0.55f, MapStyle.RIM_W * s, c1, rimA);
+            }
         } else {
             draw.ringArc(cx, cy, r, 0f, MathUtils.PI2, MapStyle.RIM_W * s, zoom * Ui.worldPerPx(), c1, rimA);
         }
@@ -773,12 +767,15 @@ final class MapRenderer {
                 if (dx * dx + dy * dy > R * R) continue;
                 float v = Anim.hash01(seed + (i + tear) * 131 + j * 977, frame);
                 Color c = v < 0.55f ? NOISE_DARK : v < 0.62f ? Theme.GLITCH_C : v < 0.66f ? Theme.GLITCH_M : NOISE_MID;
-                draw.rect(x - cell * 0.5f, y - cell * 0.5f, cell * 0.8f, cell * 0.8f, c, a * (v < 0.66f && v >= 0.55f ? 0.8f : 1f));
+                draw.rect(x - cell * 0.5f, y - cell * 0.5f, cell * 0.8f, cell * 0.8f, c,
+                    a * (v < 0.66f && v >= 0.55f ? 0.8f : 1f));
             }
         }
         int dashes = 20;
         float step = MathUtils.PI2 / dashes, r = RIM_R * s;
-        for (int i = 0; i < dashes; i++) draw.arc(cx, cy, r, i * step, step * 0.55f, MapStyle.RIM_W * s, Theme.INK3, 0.9f * a);
+        for (int i = 0; i < dashes; i++) {
+            draw.arc(cx, cy, r, i * step, step * 0.55f, MapStyle.RIM_W * s, Theme.INK3, 0.9f * a);
+        }
     }
 
     /**
@@ -796,7 +793,9 @@ final class MapRenderer {
             float rr = (MapStyle.ARC_R0 + (d + 0.5f) * pitch + lift) * s;
             float sw = !n.played[d] ? 0f : n.sweep[d] >= 1f ? 1f : Anim.POW2_OUT.apply(n.sweep[d]);
             float fill = MathUtils.PI2 * (n.played[d] ? ringFill(n.best[d]) * sw : 0f);
-            if (fill < MathUtils.PI2) draw.ringArc(cx, cy, rr, RING_TOP - fill, -(MathUtils.PI2 - fill), w, px, MapStyle.ARC_UNPLAYED, alpha);
+            if (fill < MathUtils.PI2) {
+                draw.ringArc(cx, cy, rr, RING_TOP - fill, -(MathUtils.PI2 - fill), w, px, MapStyle.ARC_UNPLAYED, alpha);
+            }
             if (fill <= 0.01f) continue;
             c2.set(d == 3 ? Theme.difficultyFill(d) : Theme.difficultyAccent(d));
             c2.r = Math.min(1f, c2.r * bright);
@@ -849,7 +848,8 @@ final class MapRenderer {
         boolean sealed = n.sealed();
         Color acc = accent(n, Theme.GROUND_SIG);
         float slow = reduceMotion ? 0.5f : 0.5f + 0.5f * MathUtils.sin(time * MathUtils.PI2 / 3.2f);
-        draw.glowDot(cx, cy, R * 2.9f, sealed ? Theme.MINE : acc, (sealed ? 0.06f + 0.08f * slow : 0.16f + 0.1f * n.selected) * a);
+        draw.glowDot(cx, cy, R * 2.9f, sealed ? Theme.MINE : acc,
+            (sealed ? 0.06f + 0.08f * slow : 0.16f + 0.1f * n.selected) * a);
         draw.disc(cx, cy, R * 0.95f, Theme.SEAM, a);
         draw.disc(cx, cy, R * 0.82f, Theme.ABYSS_BLACK, a);
         draw.glowDot(cx, cy, R * 1.1f, Theme.ABYSS_BLACK, a);
@@ -861,7 +861,8 @@ final class MapRenderer {
             float bx = cx + R * 0.885f * MathUtils.cos(ang), by = cy + R * 0.885f * MathUtils.sin(ang);
             float ph = reduceMotion ? 0.5f : ((time * 0.8f * beaconBoost - (float) i / beacons) % 1f + 1f) % 1f;
             float on = sealed ? 0f : Math.max(0f, 1f - ph * 3f);
-            draw.disc(bx, by, 5f * Math.max(1f, zoom * 0.7f), sealed ? Theme.INK3 : acc, (sealed ? 0.35f : 0.45f + 0.55f * on) * a);
+            draw.disc(bx, by, 5f * Math.max(1f, zoom * 0.7f), sealed ? Theme.INK3 : acc,
+                (sealed ? 0.35f : 0.45f + 0.55f * on) * a);
             if (on > 0.01f) draw.glowDot(bx, by, 60f, acc, 0.6f * on * a);
         }
         if (sealed) {
@@ -886,7 +887,8 @@ final class MapRenderer {
         Color acc = accent(n, Theme.GROUND_SIG);
         boolean sealed = n.sealed();
         float slow = reduceMotion ? 0.5f : 0.5f + 0.5f * MathUtils.sin(time * MathUtils.PI2 / 3.2f);
-        draw.glowDot(cx, cy, R * 2.9f, sealed ? Theme.MINE : acc, (sealed ? 0.06f + 0.08f * slow : 0.16f + 0.1f * n.selected) * a);
+        draw.glowDot(cx, cy, R * 2.9f, sealed ? Theme.MINE : acc,
+            (sealed ? 0.06f + 0.08f * slow : 0.16f + 0.1f * n.selected) * a);
         draw.disc(cx, cy, R * 0.98f, Theme.ABYSS_BLACK, 0.95f * a);
         draw.disc(cx, cy, R * 0.86f, Theme.SEAM, a);
         draw.circle(cx, cy, R * 0.98f, 3f * Math.max(1f, zoom * 0.7f), sealed ? Theme.INK3 : acc, 0.7f * a);
@@ -963,11 +965,13 @@ final class MapRenderer {
         float dim = n.sealed() ? 0.4f : 1f;
         boolean songs = "songs".equals(n.spot.art);
         int base = n.sealed() ? 3 : 0;
-        float cd = songs ? R * 0.74f : R * 0.54f, rd = songs ? R * 0.42f : R * 0.54f, ring = songs ? R * 0.6f : R * 0.56f;
+        float cd = songs ? R * 0.74f : R * 0.54f, rd = songs ? R * 0.42f : R * 0.54f;
+        float ring = songs ? R * 0.6f : R * 0.56f;
         thumb(b, base % slotCount, cx, cy, cd, dim, a);
         for (int i = 0; i < 6; i++) {
             float ang = MathUtils.HALF_PI + i * MathUtils.PI2 / 6f;
-            thumb(b, (base + 1 + i) % slotCount, cx + ring * MathUtils.cos(ang), cy + ring * MathUtils.sin(ang), rd, dim, a);
+            thumb(b, (base + 1 + i) % slotCount, cx + ring * MathUtils.cos(ang),
+                cy + ring * MathUtils.sin(ang), rd, dim, a);
         }
     }
 
@@ -1007,8 +1011,9 @@ final class MapRenderer {
             for (int i = 0; i < 8; i++) {
                 float ang = i * MathUtils.PI2 / 8f + 0.3f;
                 float d0 = R * (0.2f + 1.1f * k), d1 = d0 + R * 0.18f;
-                draw.line(cx + d0 * MathUtils.cos(ang), cy + d0 * MathUtils.sin(ang), cx + d1 * MathUtils.cos(ang + 0.2f),
-                    cy + d1 * MathUtils.sin(ang + 0.2f), 5f, Theme.GOLD, n.unlockFx * alpha);
+                draw.line(cx + d0 * MathUtils.cos(ang), cy + d0 * MathUtils.sin(ang),
+                    cx + d1 * MathUtils.cos(ang + 0.2f), cy + d1 * MathUtils.sin(ang + 0.2f),
+                    5f, Theme.GOLD, n.unlockFx * alpha);
             }
         }
     }
@@ -1021,8 +1026,8 @@ final class MapRenderer {
             CaveData.Area ar = world.areas.get(i);
             if (ar.x + 900f < vl || ar.x - 900f > vr || ar.y + 200f < vb || ar.y - 200f > vt) continue;
             float k = (0.2f + 0.25f * ov) * a; // half see-through even on the overview (Kelvin 2026-10-19 19:59)
-            fonts.drawScaled(b, Fonts.Role.UI_BOLD, R_BOLD, 44f / R_BOLD, ar.name, ar.x, ar.y + 28f, Align.center, 0f, 1f,
-                ar.color, k);
+            fonts.drawScaled(b, Fonts.Role.UI_BOLD, R_BOLD, 44f / R_BOLD, ar.name, ar.x, ar.y + 28f, Align.center,
+                0f, 1f, ar.color, k);
             // in English the sub takes the Chinese name's line
             if (zh) {
                 fonts.drawScaled(b, Fonts.Role.UI, R_UI, 26f / R_UI, ar.nameZh, ar.x, ar.y - 22f, Align.center, 0f, 1f,
@@ -1038,8 +1043,8 @@ final class MapRenderer {
             sb.setLength(0);
             if (!l.numeral.isEmpty()) sb.append(l.numeral).append("  ");
             sb.append(l.title);
-            fonts.drawScaled(b, Fonts.Role.UI_BOLD, R_BOLD, 34f / R_BOLD, sb, l.titleX, l.titleY + 10f, Align.center, 0f, 1f,
-                Theme.INK1, TITLE_ALPHA * a);
+            fonts.drawScaled(b, Fonts.Role.UI_BOLD, R_BOLD, 34f / R_BOLD, sb, l.titleX, l.titleY + 10f, Align.center,
+                0f, 1f, Theme.INK1, TITLE_ALPHA * a);
             if (zh) {
                 fonts.drawScaled(b, Fonts.Role.UI, R_UI, 20f / R_UI, l.titleZh, l.titleX, l.titleY - 24f, Align.center,
                     0f, 1f, Theme.INK1, TITLE_ALPHA * a);
@@ -1110,8 +1115,8 @@ final class MapRenderer {
     }
 
     /** Chakra Bold text from the UI_BOLD raster, shrunk to {@code minScale}, then ellipsised to {@code maxW}. */
-    float boldFit(Batch b, CharSequence text, float cap, float x, float y, int align, float maxW, float minScale, Color c,
-                  float a) {
+    float boldFit(Batch b, CharSequence text, float cap, float x, float y, int align, float maxW, float minScale,
+                  Color c, float a) {
         return fonts.drawScaled(b, Fonts.Role.UI_BOLD, R_BOLD, cap / R_BOLD, text, x, y, align, maxW, minScale, c, a);
     }
 
@@ -1389,7 +1394,8 @@ final class MapRenderer {
                 float py = y - h - 10f;
                 draw.pill(x + 70f, py - 34f, 64f, 34f, c3, 0.22f * la);
                 draw.roundRectStroke(x + 70f, py - 34f, 64f, 34f, 14f, 2f, c3, 0.8f * la);
-            } else if (zoom <= MapStyle.LOD_DETAIL && !n.missing(lens)) { // NEW pill on the score row (Kelvin 2026-10-17 16:40)
+            } else if (zoom <= MapStyle.LOD_DETAIL && !n.missing(lens)) {
+                // NEW pill on the score row (Kelvin 2026-10-17 16:40)
                 float py = y - h - 10f;
                 draw.pill(x - 38f, py - 34f, 76f, 34f, Theme.GROUND_SIG, 0.22f * la);
                 draw.roundRectStroke(x - 38f, py - 34f, 76f, 34f, 14f, 2f, Theme.GROUND_SIG, 0.8f * la);
@@ -1521,18 +1527,21 @@ final class MapRenderer {
             if (n.kind == MapNode.SONG) {
                 GlitchState gs = n.labelGlitch;
                 if (n.glitch) {
-                    glitch.draw(b, Fonts.Role.UI, R_UI, l1[i], x, y, Align.center | Align.top, Theme.INK2, la, gs, time);
+                    glitch.draw(b, Fonts.Role.UI, R_UI, l1[i], x, y, Align.center | Align.top,
+                        Theme.INK2, la, gs, time);
                     ui(b, "??", 18f * lk, x, chipTop(n) - MapStyle.CHIP_H * lk * 0.5f, Align.center | Fonts.VCENTER,
                         Theme.ABYSS_BLACK, la);
                     continue;
                 }
                 if (gs.isBursting(time)) {
-                    glitch.draw(b, Fonts.Role.UI, R_UI, l1[i], x, y, Align.center | Align.top, Theme.INK1, la, gs, time);
+                    glitch.draw(b, Fonts.Role.UI, R_UI, l1[i], x, y, Align.center | Align.top,
+                        Theme.INK1, la, gs, time);
                 } else {
                     drawTitle(b, i, x, y, la);
                 }
                 if (lockShown(n)) {
-                    uiFit(b, l3[i], 18f, x, y - labelCap - 12f, Align.center | Align.top, MapStyle.LABEL_MAX_W, Theme.GOLD, la);
+                    uiFit(b, l3[i], 18f, x, y - labelCap - 12f, Align.center | Align.top,
+                        MapStyle.LABEL_MAX_W, Theme.GOLD, la);
                 } else if (saleShown(n)) {
                     // the price after a small shell (drawn in the atlas pass)
                     ui(b, l3[i], 18f * lk, x + 15f * lk, y - labelCap - 12f * lk, Align.center | Align.top, Theme.GOLD,
@@ -1554,8 +1563,8 @@ final class MapRenderer {
             uiFit(b, l1[i], cap, x, y, Align.center | Align.top, 420f, main, la);
             float yy = y - cap - 10f;
             if (!l2[i].isEmpty()) {
-                uiFit(b, l2[i], cap * 0.8f, x, yy, Align.center | Align.top, 420f, n.kind == MapNode.STORY ? Theme.INK1 : Theme.INK2,
-                    la);
+                uiFit(b, l2[i], cap * 0.8f, x, yy, Align.center | Align.top, 420f,
+                    n.kind == MapNode.STORY ? Theme.INK1 : Theme.INK2, la);
                 yy -= cap * 0.8f + 10f;
             }
             if (!l3[i].isEmpty()) {
@@ -1567,7 +1576,9 @@ final class MapRenderer {
         for (int i = 0; i < signN; i++) {
             float w = signW[i], x = signX[i] - w * 0.5f, y = signY[i] - 26f;
             float k = visibility(x, y, x + w, y + 52f) * signK[i] * labelA;
-            if (k > 0.01f) ui(b, signText[signIdx[i]], 18f, x + 52f, signY[i], Align.left | Fonts.VCENTER, Theme.INK1, k);
+            if (k > 0.01f) {
+                ui(b, signText[signIdx[i]], 18f, x + 52f, signY[i], Align.left | Fonts.VCENTER, Theme.INK1, k);
+            }
         }
         if (tipA > 0.01f) ui(b, tipText, 20f, tipX, tipY + 26f, Align.center | Fonts.VCENTER, Theme.GOLD, tipA);
     }

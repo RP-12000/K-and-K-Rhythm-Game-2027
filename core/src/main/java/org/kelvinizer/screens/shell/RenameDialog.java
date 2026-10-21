@@ -29,8 +29,8 @@ public final class RenameDialog extends Modal {
     public RenameDialog(Main game, ShellScreen host) {
         super(game, host);
         avatar = new AvatarView(game);
-        field = widgets.add(new TextField(draw, fonts, "TAP TO NAME YOUR DIVER"));
-        field.setLabel("DIVER NAME").setMaxLength(ProfileStore.MAX_NAME_CODEPOINTS);
+        field = widgets.add(new TextField(draw, fonts, "TAP TO NAME YOUR PLAYER"));
+        field.setLabel("PLAYER NAME").setMaxLength(ProfileStore.MAX_NAME_CODEPOINTS);
         field.setListener(new TextField.Listener() {
             @Override
             public void committed(TextField f, String text) {
@@ -95,7 +95,7 @@ public final class RenameDialog extends Modal {
 
     @Override
     protected void drawContent(Batch b, float alpha) {
-        drawTitle(b, "RENAME DIVER", alpha);
+        drawTitle(b, "RENAME PLAYER", alpha);
         avatar.draw(b, x + 96f, field.centerY(), 104f, alpha);
         fonts.draw(b, Fonts.Role.UI_REGULAR, 18f, "1–16 CHARACTERS · DUPLICATES ARE FINE", field.x() + 4f,
             field.y() - 28f, Align.left, Theme.INK3, alpha);

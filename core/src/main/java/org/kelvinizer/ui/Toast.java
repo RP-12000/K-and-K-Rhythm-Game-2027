@@ -31,7 +31,6 @@ public final class Toast {
     private final boolean[] hasAccent = new boolean[CAPACITY];
     private int head, count;
     private float t;
-    private float holdScale = 1f;
     /** Top edge of the pill in world units; NaN = the default {@code Ui.safeTop() − 140}. */
     private float anchorTop = Float.NaN;
 
@@ -94,11 +93,6 @@ public final class Toast {
         return count > 0;
     }
 
-    /** Hold multiplier (e.g. 1.5 for longer reading time with large UI scale). */
-    public void setHoldScale(float k) {
-        holdScale = Math.max(0.5f, k);
-    }
-
     /**
      * Moves the pill's top edge to world y {@code topY} until {@link #resetAnchor()} (e.g. the
      * result screen keeps toasts clear of its score).
@@ -116,7 +110,7 @@ public final class Toast {
     public void update(float dt) {
         if (count == 0) return;
         t += dt;
-        if (t >= IN + HOLD * holdScale + OUT) {
+        if (t >= IN + HOLD + OUT) {
             head = (head + 1) % CAPACITY;
             count--;
             t = 0f;
@@ -126,17 +120,16 @@ public final class Toast {
     /** Draws the current toast in world units; the batch must be drawing. */
     public void draw(Batch b) {
         if (count == 0) return;
-        float hold = HOLD * holdScale;
         float a, dy;
         if (t < IN) {
             float e = Anim.POW3_OUT.apply(t / IN);
             a = e;
             dy = 24f * (1f - e);
-        } else if (t < IN + hold) {
+        } else if (t < IN + HOLD) {
             a = 1f;
             dy = 0f;
         } else {
-            float e = Anim.POW2_IN.apply(Math.min(1f, (t - IN - hold) / OUT));
+            float e = Anim.POW2_IN.apply(Math.min(1f, (t - IN - HOLD) / OUT));
             a = 1f - e;
             dy = 12f * e;
         }

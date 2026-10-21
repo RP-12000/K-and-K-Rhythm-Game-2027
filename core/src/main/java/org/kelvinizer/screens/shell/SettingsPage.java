@@ -9,7 +9,7 @@ import org.kelvinizer.ui.Draw;
  * 设置的一个分页（如 AUDIO、VISUAL）：一列带裁剪、可滚动的设置行，滚动手感与地图相同。
  * 每次打开时各行依次滑入；控件每帧按滚动位置重新摆放，点击区域始终与画面一致。
  * 各行放得下时这一页不会滚动；OTHER 最后的 K &amp; K 那一行占满其他行剩下的高度；
- * 游玩界面视觉参数画面的两列把剩下的高度平分给各行，两列都排到底。
+ * 游玩界面视觉参数画面的两列把剩下的高度平分给各行，两列都排到底；AUDIO 也这样平分，每行的内容放在加高后的中间。
  *
  * <p>One Settings tab (DESIGN §9.1): a vertical list of {@link SettingRow}s in a clipped
  * {@link ScrollArea} with map-style scroll physics. Rows enter with a 320 ms {@code pow3Out}
@@ -21,7 +21,8 @@ import org.kelvinizer.ui.Draw;
  * {@link SettingRow#fills() fills} takes the height the others leave, and the 40-unit bottom pad
  * only counts when the rows alone are taller than the list, so a page whose rows fit never scrolls. A
  * {@link #setSpread spread} page (the GAMEPLAY VISUALS columns, Kelvin 2026-10-18 15:53) shares the spare height
- * among its rows instead, so the list reaches its bottom.
+ * among its rows instead, so the list reaches its bottom; a {@link #setSpreadCentred centred} one (AUDIO, Kelvin
+ * 2026-10-21) also puts each row's content in the middle of its taller row.
  */
 public final class SettingsPage {
     private static final float SLIDE = 56f;
@@ -33,7 +34,7 @@ public final class SettingsPage {
     private final ScrollArea scroll = new ScrollArea();
     private float x, y, w, h, k = 1f, controlW = 480f;
     private float shown;
-    private boolean spread;
+    private boolean spread, centred;
 
     /** Creates an empty page. */
     public SettingsPage(Draw draw) {
@@ -60,6 +61,16 @@ public final class SettingsPage {
     /** Shares the height the rows leave among them, so the list reaches its bottom; returns this page. */
     public SettingsPage setSpread(boolean on) {
         spread = on;
+        return this;
+    }
+
+    /**
+     * Like {@link #setSpread}, but half of each row's share goes above its content, so the content sits in the
+     * middle of its taller row (AUDIO, Kelvin 2026-10-21: 「把每一列的高度扩大，间隔开一点」); returns this page.
+     */
+    public SettingsPage setSpreadCentred(boolean on) {
+        spread = on;
+        centred = on;
         return this;
     }
 
@@ -139,7 +150,8 @@ public final class SettingsPage {
             float rh = (r.fills() ? fill : r.height(k)) + extra;
             float slide = SLIDE * (1f - rowIn(i));
             boolean visible = scroll.isVisible(top - rh, top);
-            r.place(x + slide, top - rh, w, rh, controlW, k, visible);
+            // a centred spread starts the row's rect half its share lower (its hairline stays at the bottom)
+            r.place(x + slide, top - rh, w, centred ? rh - extra * 0.5f : rh, controlW, k, visible);
             r.update(dt);
             top -= rh;
         }

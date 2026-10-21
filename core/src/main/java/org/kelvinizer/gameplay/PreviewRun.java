@@ -25,20 +25,20 @@ import java.util.Random;
  * 每局 12 组按键（单、单、双，循环四次），每组随机落在上下两条线的随机轨道上；第 5 组打成回响、第 9 组整组迷失、其余都是共鸣，
  * 所以 FC/AR 指示每局都按 淡蓝 → 紫 → 白 换一遍；打完马上换一张新谱。
  *
- * <p>The run behind the live preview of GAMEPLAY VISUALS (Kelvin 2026-10-18 19:52: the preview plays itself and takes no
- * taps; the zone hint of the real ±0.4 zone; COMBO as in a game; 2026-10-20 03:20: 「每12组键一个循环，每三组单单双循环，
+ * <p>The run behind the live preview of GAMEPLAY VISUALS (Kelvin 2026-10-18 19:52: the preview plays itself and takes
+ * no taps; the zone hint of the real ±0.4 zone; COMBO as in a game; 2026-10-20 03:20: 「每12组键一个循环，每三组单单双循环，
  * 每次都是第5组爆echo，第9组爆miss」, so the FC / AR INDICATOR changes every four groups instead of once a 40-drop round).
- * It owns a {@link GameEngine} whose clock runs on a simulated time source (frame steps, at most 0.1 s each) and plays a
- * chart of {@link #GROUPS} groups, one a beat at 120 BPM: single, single, double, four times; each group on a random
+ * It owns a {@link GameEngine} whose clock runs on a simulated time source (frame steps, at most 0.1 s each) and plays
+ * a chart of {@link #GROUPS} groups, one a beat at 120 BPM: single, single, double, four times; each group on a random
  * line, a single in a random lane, a double's lanes at least two apart. Each round plans its own input: a press per
  * note at its judgement ± up to 50 ms (a RESONANCE), released 70 ms later; group {@link #ECHO_GROUP} is pressed 85–120
- * ms early or late (an ECHO) and group {@link #LOST_GROUP}, a double, is left alone (two LOSTs). The score is light blue
- * through group 4, purple from the ECHO and white from the LOSTs, and the next round starts light blue again. The
+ * ms early or late (an ECHO) and group {@link #LOST_GROUP}, a double, is left alone (two LOSTs). The score is light
+ * blue through group 4, purple from the ECHO and white from the LOSTs, and the next round starts light blue again. The
  * presses go to the engine as touches at the lane centre on the line, before each update, so the engine judges them as
  * a player's. The screen's renderers draw the run with the active diver's settings, read every frame:
  * {@link FieldRenderer} (lines, the zone hint over {@link Field#zoneHalf}), {@link NoteRenderer} (note size,
- * MULTI-PRESS ASSIST, approach glow), {@link FeedbackLayer}, the shared {@link HitFx} and a {@link GameplayHud} that keeps
- * only the score of its corners ({@link GameplayHud#setScoreOnly}). {@link #draw} works in world units
+ * MULTI-PRESS ASSIST, approach glow), {@link FeedbackLayer}, the shared {@link HitFx} and a {@link GameplayHud} that
+ * keeps only the score of its corners ({@link GameplayHud#setScoreOnly}). {@link #draw} works in world units
  * of a full game screen; the caller maps it into the panel with the batch transform and clips it. When a round ends a
  * new chart is generated (allocation per round, none per frame).
  */

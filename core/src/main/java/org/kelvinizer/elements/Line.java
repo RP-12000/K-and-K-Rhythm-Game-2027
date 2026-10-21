@@ -1,14 +1,14 @@
 package org.kelvinizer.elements;
 
 /**
- * 音符所属的判定线：{@link #LOWER} 是地面线（默认 y 120），{@link #UPPER} 是天空线（默认 y 960）。
+ * 音符所属的判定线：{@link #LOWER} 是地面线（默认 y 120），{@link #UPPER} 是天空线（默认 y 1080，1920 × 1200 的谱面画面）。
  * 地面线的音符向下落到线上，天空线的音符向上升到线上；两条线共用同一组轨道。
  *
  * <p>The judgement line a note belongs to (ARCHITECTURE §13.2). Both lines share one lane set.
  *
  * <ul>
  *   <li>{@link #LOWER}: the ground line (default y 120); its notes travel down onto it.</li>
- *   <li>{@link #UPPER}: the sky line (default y 960); its notes travel up onto it.</li>
+ *   <li>{@link #UPPER}: the sky line (default y 1080 of the 1920 × 1200 chart frame); its notes travel up onto it.</li>
  * </ul>
  * Arrays indexed by line use {@link #ordinal()}.
  */

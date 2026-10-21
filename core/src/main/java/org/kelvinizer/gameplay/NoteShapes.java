@@ -9,9 +9,9 @@ import org.kelvinizer.elements.Note;
  * 渲染器按这里的数字画，测试直接检查这些数字。
  *
  * <p>Pure note-shape geometry: no GL and no allocation (every output array belongs to the
- * caller). {@link NoteRenderer} draws with these numbers and the harness checks them directly.
+ * caller). {@link NoteRenderer} draws with these numbers and the tests check them directly.
  * <ul>
- *   <li><b>Sky and ground bodies at the same time</b> (DESIGN §21.7; the owner kept the redraw on
+ *   <li><b>Sky and ground bodies at the same time</b> (DESIGN §21.7; Kelvin kept the redraw on
  *       2026-10-12 04:44, 「长条改的也很自然，先保留吧我再看看」). Lane STREAM ribbons: sky 56 % of
  *       the lane, ground 82 %, sky edges 6 px, fill fading head → tail, a 3 px tail cap in the
  *       ribbon's own colour. Where a ground ribbon overlaps a sky ribbon of the same lane, the
@@ -21,19 +21,19 @@ import org.kelvinizer.elements.Note;
  *       overlaps a sky band the ground band draws nothing under it (with an inset, only its side
  *       strips and, when they hold them, its rails). Tail caps always draw. The two constants
  *       switch between the redraw (0 / 0) and the first proposal (3 / 56); every function takes
- *       them as parameters, so the harness tests both.</li>
- *   <li><b>T4 TIDE drop</b> (owner 2026-10-12 04:36, 「天键地键tide的改为T4」; numbers from the design
- *       thread's {@code kk_mock_renderer.py}, {@code Frame.tide(style="T4")}): the sky TIDE is a
+ *       them as parameters, so the tests cover both.</li>
+ *   <li><b>T4 TIDE drop</b> (Kelvin 2026-10-12 04:36, 「天键地键tide的改为T4」; numbers from the T4 style
+ *       of the mock-ups): the sky TIDE is a
  *       string of pearls, the ground TIDE a rolling wave whose crest moves with song time.
  *       "Behind" is the side the note comes from; {@code u} is the note size setting.</li>
- *   <li><b>Sync pearls</b> (owner 2026-10-12 12:33, 12:39 「同一时刻都带」, 12:42 gold): every pending note
+ *   <li><b>Sync pearls</b> (Kelvin 2026-10-12 12:33, 12:39 「同一时刻都带」, 12:42 gold): every pending note
  *       that shares its beat with another note ({@link Note#sharesBeat()}) carries pearls: three gold
  *       ones side by side across the middle of a DROP or STREAM head, three smaller red ones across a
- *       MINE or LANE MINE head (16:07, 「不是1个珍珠而是3个珍珠并排」); a sky TIDE's pearls turn gold; a ground TIDE wave carries a row of gold
- *       pearls, large and small in turn like the sky thread's, halfway up the wave, and (a proposal)
+ *       MINE or LANE MINE head (16:07, 「不是1个珍珠而是3个珍珠并排」); a sky TIDE's pearls turn gold; a ground TIDE wave carries a
+ *       row of gold pearls, large and small in turn like the sky thread's, halfway up the wave, and (a proposal)
  *       a TIDE STREAM head the same row along the middle of its bar.</li>
  *   <li><b>LANE MINE column</b> (DESIGN §20.2): inset, hazard stripes drifting toward the line,
- *       studs, and the gap it leaves around the other judgement line (owner 2026-10-12 02:58).</li>
+ *       studs, and the gap it leaves around the other judgement line (Kelvin 2026-10-12 02:58).</li>
  * </ul>
  */
 public final class NoteShapes {
@@ -85,7 +85,7 @@ public final class NoteShapes {
         return t * t * (3f - 2f * t);
     }
 
-    // ================================================================== rotation pivot (owner 2026-10-16)
+    // ================================================================== rotation pivot (Kelvin 2026-10-16)
     /**
      * x part of {@link #pivotShiftY}.
      *
@@ -128,11 +128,12 @@ public final class NoteShapes {
 
     /**
      * @return how far a TIDE turned {@code deg} degrees reaches up or down from where its bar crosses the
-     *         middle of its window: drawn infinitely long (owner 2026-10-16: 「无限长的东西（tide）」), it crosses
+     *         middle of its window: drawn infinitely long (Kelvin 2026-10-16: 「无限长的东西（tide）」), it crosses
      *         the window ({@code halfSpan} either side) as a slanted bar, up to {@link #TIDE_TURN_MIN_COS}
      */
     public static float tideTurnReach(float halfSpan, float deg) {
-        return halfSpan * Math.abs(MathUtils.sinDeg(deg)) / Math.max(Math.abs(MathUtils.cosDeg(deg)), TIDE_TURN_MIN_COS);
+        return halfSpan * Math.abs(MathUtils.sinDeg(deg))
+            / Math.max(Math.abs(MathUtils.cosDeg(deg)), TIDE_TURN_MIN_COS);
     }
 
     /** @return true when a note turned {@code deg} degrees is drawn turned (not within about 0.6° of upright). */
@@ -166,7 +167,7 @@ public final class NoteShapes {
     /** Ribbon tail cap opacity. */
     public static final float RIBBON_CAP_A = 0.8f;
     /**
-     * Extra knock-out beside an overlapping sky ribbon, on each side of it. 0 = the redraw the owner
+     * Extra knock-out beside an overlapping sky ribbon, on each side of it. 0 = the redraw Kelvin
      * kept on 2026-10-12 04:44 (the hole is exactly the sky ribbon); the first proposal had
      * {@link #SKY_HOLE_PAD_FIRST}.
      */
@@ -241,7 +242,7 @@ public final class NoteShapes {
     public static final float PEARL_D = 20f;
     /**
      * Pearls side by side across the middle of a DROP, STREAM, MINE or LANE MINE head that shares its
-     * beat (owner 2026-10-12 16:07: three, not one, so the mark reads more clearly).
+     * beat (Kelvin 2026-10-12 16:07: three, not one, so the mark reads more clearly).
      */
     public static final int HEAD_PEARLS = 3;
     /** Centre-to-centre step of a head's pearls, in pearl diameters (a gap of half a pearl between them). */
@@ -316,7 +317,7 @@ public final class NoteShapes {
     public static final float LANE_MINE_LINE_GLOW_H = 40f;
     /**
      * Half height of the gap a column leaves around the OTHER judgement line, so that line, its
-     * ripples and ticks stay as bright as elsewhere (owner 2026-10-12 02:58; the design thread's N8 fix).
+     * ripples and ticks stay as bright as elsewhere (Kelvin 2026-10-12 02:58; mock-up fix N8).
      */
     public static final float OTHER_LINE_GAP = 10f;
     /** √2: a 45° stripe is √2 times longer along the column than across it. */
@@ -561,7 +562,7 @@ public final class NoteShapes {
      * @return true when note n in engine state {@code state} carries its sync pearl: it shares its
      *         beat with another note ({@link Note#sharesBeat()}: any type, either line) and is
      *         still pending or being held, so live and in its normal look: a DROP head before it
-     *         is hit, a STREAM or TIDE STREAM head before and while it is held (owner 2026-10-13:
+     *         is hit, a STREAM or TIDE STREAM head before and while it is held (Kelvin 2026-10-13:
      *         a held sync hold keeps its pearls), a MINE or LANE MINE before it is touched or
      *         passed, a TIDE before it is taken. Never on a LOST, missed, greyed or broken note,
      *         and never on afterimage copies (copies never ask).

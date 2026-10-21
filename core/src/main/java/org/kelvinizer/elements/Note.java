@@ -20,17 +20,17 @@ import java.util.List;
  *       notes sit at {@code lineY + pos}, upper-line notes at {@code lineY − pos}). Outside its
  *       movement events a note is parked at {@link #HIDDEN_POSITION}, except a hold (or a TIDE
  *       STREAM) after its judgement time, whose head sticks to the line (0). A LANE MINE is
- *       <b>pinned</b> from its judgement beat on (owner 2026-10-12 03:03: 「轨道水雷没法上下移动。碰到判定线就不能再动了」):
+ *       <b>pinned</b> from its judgement beat on (Kelvin 2026-10-12 03:03: 「轨道水雷没法上下移动。碰到判定线就不能再动了」):
  *       distance exactly 0 and angle frozen at {@code angleAt(judgement)}, whatever movement or
  *       rotation events follow.</li>
- *   <li><b>Authored motion is used as written</b> (owner 2026-10-13): beats no movement event
+ *   <li><b>Authored motion is used as written</b> (Kelvin 2026-10-13): beats no movement event
  *       covers are off screen, also just before the judgement, so a note can show its motion
  *       early and be judged later unseen. A missed tap slides on past the line only when a
  *       movement event reaches the judgement (within {@link #APPROACH_PROBE_BEATS}).</li>
  *   <li><b>Default approach</b>: only a note with <b>no</b> movement events moves
  *       {@link #DEFAULT_SPAWN_DISTANCE} → 0 linearly over the {@link #DEFAULT_APPROACH_BEATS}
  *       beats before its judgement (the speed of the shipped charts) and
- *       {@link #usesDefaultApproach()} is true. Exception (owner 2026-10-12 21:09, as in the
+ *       {@link #usesDefaultApproach()} is true. Exception (Kelvin 2026-10-12 21:09, as in the
  *       original game): when its authored {@code appearance} is at or after its judgement it has no
  *       approach. A tap, TIDE drop or mine stays hidden (a judgement point cued by another note,
  *       e.g. a bouncing one), and a hold, TIDE STREAM or LANE MINE appears on its line at its
@@ -38,7 +38,7 @@ import java.util.List;
  *       gives every v1 note whose motion misses its judgement the default approach as its
  *       movement ({@link #v1NeedsApproach}).</li>
  *   <li>{@link #angleAt} (degrees, base 0) and {@link #opacityAt} (base 1, from
- *       {@code DisappearEvents}). The note turns about its <b>pivot</b> (owner 2026-10-16:
+ *       {@code DisappearEvents}). The note turns about its <b>pivot</b> (Kelvin 2026-10-16:
  *       「旋转一个note可以选择旋转中心的坐标，以这个note的几何中心为原点」): {@link #pivotX()},
  *       {@link #pivotY()} in reference units in the note's own frame (a sky note's frame is turned
  *       180° with it), origin (0, 0) = the centre of its head (a hold, TIDE STREAM or LANE MINE:
@@ -191,7 +191,7 @@ public final class Note {
 
     /**
      * Same as the constructor with trail segments and glitches, plus the rotation pivot (CHART_FORMAT
-     * §6.1.1, owner 2026-10-16).
+     * §6.1.1, Kelvin 2026-10-16).
      *
      * @param pivotX pivot x in reference units in the note's own frame, from the origin ({@link #pivotX()};
      *               NaN or infinite → 0)
@@ -437,7 +437,7 @@ public final class Note {
      * @return true when any other note of the chart has exactly the same judgement beat: any type
      *         on either line (DROPs, STREAMs, MINEs, LANE MINEs, TIDEs and TIDE STREAMs alike), so
      *         a DROP with a same-line TIDE, stacked TIDEs and a row of mines all share their beat.
-     *         Such a note carries the sync pearl while it is live (owner 2026-10-12 12:39
+     *         Such a note carries the sync pearl while it is live (Kelvin 2026-10-12 12:39
      *         「同一时刻都带」). Drawing only: joint judging reads the sync and universal groups.
      */
     public boolean sharesBeat() { return sharesBeat; }

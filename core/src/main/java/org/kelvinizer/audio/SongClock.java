@@ -41,12 +41,23 @@ import com.badlogic.gdx.utils.Disposable;
  *       audio-anchored timeline.</li>
  *   <li>Paused: time is frozen and the music paused. Seeking is only done on explicit state
  *       changes ({@link #prepare}, {@link #seek}, a resume on Android).</li>
- *   <li>Resumed: the clock stays at the frozen time until the reported position moves (at most
- *       {@link #MAX_START_LEAD_MS}), so the chart does not run ahead while the player starts
- *       sounding again. On Android the song is first seeked to the frozen time: MediaPlayer's own
- *       clock runs on from a plain resume while the sound takes a while to come back, and some
- *       devices never win that time back, so every pause left the music later than the chart
- *       (owner 2026-10-15). After a seek its position holds until the sound really starts.</li>
+ *   <li>Resumed: on Android the song is first seeked to the frozen time: MediaPlayer's own clock
+ *       runs on from a plain resume while the sound takes a while to come back, and some devices
+ *       never win that time back, so every pause left the music later than the chart (Kelvin
+ *       2026-10-15). After a seek its position holds until the sound really starts. An MP3 with a
+ *       table of contents plays from {@link Mp3Info#seekableCopy a copy without it}: Android seeks
+ *       by that coarse table and landed up to a second away from the frozen time (2026-10-21).
+ *       The gameplay countdown {@link #primeResume primes} the resume: the music starts
+ *       {@link #resumeLeadMs its resume latency} before the count ends and the clock runs on at once
+ *       when it does, not following the positions of the first second. A resume that was not primed
+ *       holds the clock at the frozen time until the reported position moves (at most
+ *       {@link #MAX_START_LEAD_MS}), so the chart does not run ahead while the player starts sounding
+ *       again. After any resume the clock catches up with the music by running at most
+ *       {@link #RESUME_SLEW} faster or slower, never by a jump (only an error beyond
+ *       {@link #SETTLE_GROSS_MS} re-anchors): a phone can sound again sooner or later after a resume
+ *       than at a song start, and the chart jumped about a second after the count (Kelvin
+ *       2026-10-21 13:13). Each re-seeked resume measures that latency ({@link #resumeLatencyMs()},
+ *       kept per device), and the next one is primed by it.</li>
  *   <li>The audio position is only trusted while {@code music.isPlaying()}: without an audio
  *       device, or after the stream ended, time keeps running on nanoTime.</li>
  * </ul>
@@ -67,6 +78,10 @@ public final class SongClock implements Disposable {
     public static final double SETTLE_MS = 1000.0;
     /** In the settle window of a start with a known lead, only an error beyond this re-anchors (ms). */
     public static final double SETTLE_GROSS_MS = 250.0;
+    /** After a resume, the clock runs at most this fraction faster or slower than real time to catch up the music. */
+    public static final double RESUME_SLEW = 0.1;
+    /** A resume's catching up ends once the clock is this close to the music (ms). */
+    private static final double RESUME_SETTLED_MS = 15.0;
     /** A muted pre-roll needs this much lead-in left before the song starts (ms). */
     public static final double PREROLL_NEED_MS = 1800.0;
 
@@ -87,7 +102,10 @@ public final class SongClock implements Disposable {
     private Music music;
     private boolean ownsMusic;
     private float durationMs;
-    /** The decoded stream starts this much later than the song (MP3 on desktop, see {@link Mp3Info}): audio ms = song ms + this. */
+    /**
+     * The decoded stream starts this much later than the song (MP3 on desktop, see {@link Mp3Info}): audio ms =
+     * song ms + this.
+     */
     private float audioDelayMs;
 
     private boolean running;
@@ -121,6 +139,18 @@ public final class SongClock implements Disposable {
     private boolean resumeHold;
     private long resumeNanos;
     private double resumeAudioMs;
+    /** {@link #primeResume()} started the music while time is still frozen; nanoTime of its play(), its lead. */
+    private boolean primed;
+    private long primedNanos;
+    private float primedLeadMs;
+    /** How long a re-seeked song takes to sound again (ms, 0 = not known yet); learned from every such resume. */
+    private float resumeLatencyMs;
+    /** After a resume: corrections run the clock a little faster or slower ({@link #RESUME_SLEW}), never jump. */
+    private boolean resumeSlew;
+    /** The resume being measured: the music restarted at this nanoTime from this song time. */
+    private boolean measuringResume;
+    private long resumePlayNanos;
+    private double resumeFromMs;
 
     private float volume = 1f;
     private float fadeFrom;
@@ -163,17 +193,25 @@ public final class SongClock implements Disposable {
         disposeMusic();
         Music m = null;
         if (file != null) {
-            try {
-                m = Gdx.audio.newMusic(file);
-            } catch (RuntimeException e) {
-                if (Gdx.app != null) Gdx.app.error("SongClock", "Cannot load music " + file.path(), e);
-            }
+            // Android seeks an MP3 by its table of contents, far off the place it reports (Mp3Info#seekableCopy)
+            FileHandle play = android() ? Mp3Info.seekableCopy(file) : file;
+            m = newMusic(play);
+            if (m == null && play != file) m = newMusic(file);
         }
         attach(m, knownDurationMs, true);
         // MP3 on desktop starts late (Info frame, encoder and decoder delay): play it that much earlier
         if (m != null) audioDelayMs = Mp3Info.startDelayMs(file);
         if (m != null && audioDelayMs > 0f) primeStream();
         return m != null;
+    }
+
+    private static Music newMusic(FileHandle f) {
+        try {
+            return Gdx.audio.newMusic(f);
+        } catch (RuntimeException e) {
+            if (Gdx.app != null) Gdx.app.error("SongClock", "Cannot load music " + f.path(), e);
+            return null;
+        }
     }
 
     /**
@@ -239,7 +277,48 @@ public final class SongClock implements Disposable {
 
     private boolean reseekOnResume() {
         if (reseekMode >= 0) return reseekMode == 1;
+        return android();
+    }
+
+    private static boolean android() {
         return Gdx.app != null && Gdx.app.getType() == Application.ApplicationType.Android;
+    }
+
+    /**
+     * How long before a scheduled {@link #resume()} to call {@link #primeResume()} (ms) where a resume re-seeks the
+     * song (Android): the {@link #resumeLatencyMs() resume latency} once known, else the start latency in use; else 0
+     * (nothing to prime).
+     */
+    public float resumeLeadMs() {
+        if (!musicStarted || music == null || music.isLooping() || !reseekOnResume()) return 0f;
+        return resumeLatencyMs > 0f ? resumeLatencyMs : lead();
+    }
+
+    /**
+     * Sets how long a re-seeked song takes to sound again (ms; the device's stored measurement, 0 = not known):
+     * the countdown {@link #primeResume() primes} a resume this early. Every primed resume refines it.
+     */
+    public void setResumeLatencyMs(float ms) {
+        resumeLatencyMs = Float.isNaN(ms) ? 0f : Math.max(0f, Math.min(MAX_START_LEAD_MS, ms));
+    }
+
+    /** @return the resume latency in use (ms; 0 = not known): the stored one, refined by the resumes measured since */
+    public float resumeLatencyMs() {
+        return resumeLatencyMs;
+    }
+
+    /**
+     * Restarts the music of a paused song {@link #resumeLeadMs()} before a {@link #resume()} that is due then, while
+     * time stays frozen: the sound comes back as the clock runs on instead of the chart waiting for it. A
+     * {@link #pause()} before that resume stops the music again. No-op unless paused mid-song with a lead.
+     */
+    public void primeResume() {
+        if (running || primed) return;
+        primedLeadMs = resumeLeadMs();
+        if (primedLeadMs <= 0f) return;
+        restartMusic();
+        primed = music.isPlaying(); // no audio device: the resume takes the plain path
+        primedNanos = time.nanoTime();
     }
 
     /** @return the attached music, or null. */
@@ -252,8 +331,11 @@ public final class SongClock implements Disposable {
      * {@link #start()} to run.
      */
     public void prepare(float startMs) {
+        unprime();
         endPreroll(false);
         measuringStart = false;
+        measuringResume = false;
+        resumeSlew = false;
         running = false;
         musicStarted = false;
         fading = false;
@@ -270,7 +352,8 @@ public final class SongClock implements Disposable {
             }
             if (startMs > 0f) {
                 pendingSeekMs = startMs;
-                music.setPosition((startMs + audioDelayMs) / 1000f); // honoured on Android; desktop re-applies after play()
+                // honoured on Android; desktop re-applies after play()
+                music.setPosition((startMs + audioDelayMs) / 1000f);
             }
         }
     }
@@ -289,23 +372,58 @@ public final class SongClock implements Disposable {
             // frozen value until real time passes it, so time never goes back).
             if (music != null) anchorSongMs = (pendingSeekMs > 0f ? pendingSeekMs : -audioDelayMs) - lead;
             startMusic();
+        } else if (primed) {
+            // the music was started its lead ago (primeResume): time runs on from the moment its sound is due, within a
+            // frame of now (or now, so the chart never stands still a frame); the positions it reports while settling
+            // are not followed (update())
+            primed = false;
+            anchorNanos = Math.min(anchorNanos, primedNanos + (long) (primedLeadMs * 1e6));
+            settleEndNanos = primedNanos + (long) (SETTLE_MS * 1e6);
+            lastAudioMs = audioMs();
+            resumed(primedNanos);
         } else if (musicStarted && music != null) {
-            // Android: put the music where the chart froze; the seek also rebuilds MediaPlayer's
-            // timing, which a plain resume leaves running ahead of the sound (class notes)
-            double target = anchorSongMs + audioDelayMs;
-            if (reseekOnResume() && !music.isLooping() && target >= 0.0 && (durationMs <= 0f || target < durationMs)) {
-                music.setPosition((float) (target / 1000.0));
-            }
-            music.play();
+            restartMusic();
             lastAudioMs = audioMs();
             resumeHold = music.isPlaying(); // no audio device: nothing to wait for
             resumeNanos = anchorNanos;
             resumeAudioMs = lastAudioMs;
+            resumed(anchorNanos);
         }
     }
 
-    /** Freezes time and pauses the music. */
+    /**
+     * A paused song plays on (its music restarted at {@code playNanos}): the clock catches up with it gently, and a
+     * re-seeked one has its resume latency measured (the next resume is primed by it).
+     */
+    private void resumed(long playNanos) {
+        resumeSlew = true;
+        measuringResume = reseekOnResume() && !music.isLooping();
+        resumePlayNanos = playNanos;
+        resumeFromMs = anchorSongMs;
+    }
+
+    /**
+     * Plays the paused song on. Android first puts it where the chart froze: the seek also rebuilds MediaPlayer's
+     * timing, which a plain resume leaves running ahead of the sound (class notes).
+     */
+    private void restartMusic() {
+        double target = anchorSongMs + audioDelayMs;
+        if (reseekOnResume() && !music.isLooping() && target >= 0.0 && (durationMs <= 0f || target < durationMs)) {
+            music.setPosition((float) (target / 1000.0));
+        }
+        music.play();
+    }
+
+    /** Stops the music of a {@link #primeResume() primed} resume again (time was frozen all along). */
+    private void unprime() {
+        if (!primed) return;
+        primed = false;
+        if (music != null) music.pause();
+    }
+
+    /** Freezes time and pauses the music; while paused, drops a {@link #primeResume() primed} resume. */
     public void pause() {
+        unprime();
         if (!running) return;
         anchorSongMs = nowMs();
         anchorNanos = time.nanoTime();
@@ -313,6 +431,7 @@ public final class SongClock implements Disposable {
         resumeHold = false;
         endPreroll(false); // measured again if enough lead-in is left after the resume
         measuringStart = false;
+        measuringResume = false;
         if (music != null && musicStarted) music.pause();
     }
 
@@ -353,8 +472,8 @@ public final class SongClock implements Disposable {
         if (fading) updateFade(now);
         if (!running) {
             // Android auto-resumes music on app resume (also a pre-roll it paused); keep it paused
-            // while the clock is.
-            if (music != null && music.isPlaying()) music.pause();
+            // while the clock is, unless a resume is primed.
+            if (!primed && music != null && music.isPlaying()) music.pause();
             return;
         }
         double t = anchorSongMs + (now - anchorNanos) / 1e6;
@@ -406,15 +525,31 @@ public final class SongClock implements Disposable {
             float lat = plausibleLatency((now - playNanos) / 1e6 - (audioMs - playAudioMs));
             if (!Float.isNaN(lat)) measuredStartMs = lat;
         }
+        if (measuringResume && (now - resumePlayNanos) / 1e6 >= SETTLE_MS) {
+            measuringResume = false;
+            float lat = plausibleLatency((now - resumePlayNanos) / 1e6 - (audioMs - resumeFromMs));
+            if (!Float.isNaN(lat)) resumeLatencyMs = resumeLatencyMs > 0f ? 0.5f * (resumeLatencyMs + lat) : lat;
+        }
         double err = audioMs - t;
+        double sinceMs = Math.max(0.0, (now - anchorNanos) / 1e6);
         anchorSongMs = t;
         anchorNanos = now;
         if (now < settleEndNanos) {
             // Android reports a settling position for a while after play(); the lead already lines
-            // the sound up with the clock, so following it would only make the first notes judder
-            if (Math.abs(err) > SETTLE_GROSS_MS) anchorSongMs = audioMs;
+            // the sound up with the clock, so following it would only make the first notes judder.
+            // A resumed song's may still run on from before its seek: only a song start takes a gross error.
+            if (!resumeSlew && Math.abs(err) > SETTLE_GROSS_MS) anchorSongMs = audioMs;
             return;
         }
+        if (resumeSlew && Math.abs(err) <= SETTLE_GROSS_MS) {
+            // a resumed song can sound again sooner or later than its lead said (Kelvin 2026-10-21: the chart
+            // jumped about a second after the count): catch up by running a little faster or slower, never a jump
+            double cap = RESUME_SLEW * sinceMs;
+            anchorSongMs += Math.max(-cap, Math.min(cap, NUDGE_GAIN * err));
+            if (Math.abs(err) < RESUME_SETTLED_MS) resumeSlew = false;
+            return;
+        }
+        resumeSlew = false;
         if (Math.abs(err) > HARD_RESYNC_MS) anchorSongMs = audioMs;
         else anchorSongMs += NUDGE_GAIN * err;
     }
@@ -614,6 +749,7 @@ public final class SongClock implements Disposable {
         music = null;
         ownsMusic = false;
         preroll = 0;
+        primed = false;
     }
 
     /** Stops and releases the music (if owned). The clock can be reused with {@link #load}. */

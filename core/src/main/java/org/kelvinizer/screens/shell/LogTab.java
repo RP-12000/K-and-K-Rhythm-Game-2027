@@ -15,9 +15,9 @@ import org.kelvinizer.ui.Theme;
  * 每行有缩略图、曲名、难度、FC / AR 标记（2026-10-18 14:29 起中英文都这样写）、日期、分数和评级。
  * 只显示，不能点；滚动手感与地图相同。
  *
- * <p>RECENT (named LOG until 2026-10-17; DESIGN §8.2, P1): the last 20 plays, newest first: thumb, title, difficulty chip,
- * FC / AR tag (both languages since 2026-10-18 14:29), date (UI 20), score and grade pill. Display only; scrolls with
- * map physics.
+ * <p>RECENT (named LOG until 2026-10-17; DESIGN §8.2, P1): the last 20 plays, newest first: thumb, title, difficulty
+ * chip, FC / AR tag (both languages since 2026-10-18 14:29), date (UI 20), score and grade pill. Display only; scrolls
+ * with map physics.
  */
 public final class LogTab extends ProfileTab {
     private static final float ROW_H = 96f;
@@ -94,8 +94,8 @@ public final class LogTab extends ProfileTab {
             float cw = ChartRows.diffChip(b, draw, fonts, r.diff, tx, cy - 20f, a);
             float after = tx + cw + 14f;
             if (r.tag != null) {
-                after += 14f + fonts.draw(b, Fonts.Role.UI_LABEL, 14f, r.tag, after, cy - 20f, Align.left | Fonts.VCENTER,
-                    r.allResonance ? Theme.ALL_RESONANCE : Theme.FULL_COMBO, a);
+                after += 14f + fonts.draw(b, Fonts.Role.UI_LABEL, 14f, r.tag, after, cy - 20f,
+                    Align.left | Fonts.VCENTER, r.allResonance ? Theme.ALL_RESONANCE : Theme.FULL_COMBO, a);
             }
             fonts.draw(b, Fonts.Role.UI, 20f, r.date, after, cy - 20f, Align.left | Fonts.VCENTER, Theme.INK3, a);
             fonts.drawDigits(b, Fonts.Role.NUMBER, 24f, r.score, 9, true, scoreR + dx, cy, Align.right | Fonts.VCENTER,

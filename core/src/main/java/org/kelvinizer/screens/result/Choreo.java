@@ -13,8 +13,8 @@ package org.kelvinizer.screens.result;
  * <ul>
  *   <li><b>First skip</b> (a tap after the input guard): the time scale becomes
  *       {@code max(6, remaining / 0.75)}, except inside hold points, which keep real speed for
- *       their minimum length (score-land 100 ms, stamp impact 150 ms, the UNLOCKED alert 450 ms). The scale is computed from the timeline
- *       outside the holds, and when the holds left would take more than 0.9 s they shrink
+ *       their minimum length (score-land 100 ms, stamp impact 150 ms, the UNLOCKED alert 450 ms). The scale is computed
+ *       from the timeline outside the holds, and when the holds left would take more than 0.9 s they shrink
  *       proportionally, so a tap always finishes in about 1.15 s (DESIGN App. D: ≈ 1.2 s).</li>
  *   <li><b>Second skip</b>: jumps to the end; events fire "silently" (state only, no particles,
  *       kicks or haptics).</li>

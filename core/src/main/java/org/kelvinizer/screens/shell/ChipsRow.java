@@ -154,9 +154,4 @@ public class ChipsRow extends SettingRow {
     public void mouseMoved(float px, float py) {
         for (Tappable c : chips) c.mouseMoved(px, py);
     }
-
-    /** Whether chip {@code i} is lit. */
-    public boolean isLit(int i) {
-        return lit[i];
-    }
 }

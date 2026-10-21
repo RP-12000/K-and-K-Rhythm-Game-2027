@@ -55,20 +55,20 @@ import java.util.regex.Pattern;
  * (case-insensitive), {@code line} lower (default) / upper, {@code lane} for lane notes, and
  * {@code LineEvents} (absent lines → 1080 / 120 in v4, 1066.67 / 133.33 in v3, 960 / 120 in v2). A note on an
  * undeclared lane adds that lane with defaults; lane 0 is rejected unless the chart inserts it. A
- * lane's optional {@code insert} object (owner 2026-10-15, CHART_FORMAT §3.6) inserts it during the
- * song ({@link Lane#inserted()}), its optional {@code delete} object (owner 2026-10-17, §3.7) deletes
+ * lane's optional {@code insert} object (Kelvin 2026-10-15, CHART_FORMAT §3.6) inserts it during the
+ * song ({@link Lane#inserted()}), its optional {@code delete} object (Kelvin 2026-10-17, §3.7) deletes
  * it ({@link Lane#deleted()}). Optional {@code offsetMs}:
  * song time in ms of beat 0 (absent → 0; non-finite → 0 with a report message), so the beat grid
  * can start where the music's first beat is; v1 charts ignore it. Optional {@code laneCount}
- * (owner 2026-10-13, {@link Chart#laneLimit()}): N ≥ 1 makes the lanes finite (the lanes as
+ * (Kelvin 2026-10-13, {@link Chart#laneLimit()}): N ≥ 1 makes the lanes finite (the lanes as
  * declared share a 1920 × lane scale wide frame about the axis; the editor declares
  * −⌊N/2⌋..−1, 1..⌈N/2⌉); without it the lanes are unlimited (each keeps its width from the
  * axis) and the loader adds the gap lanes and the lanes the screen can reach
  * ({@link Lane#implicit()}, not written back). Optional {@code LineEvents.laneScale} /
- * {@code laneScaleEvents} (owner 2026-10-13): global lane scaling, a factor on every lane width
+ * {@code laneScaleEvents} (Kelvin 2026-10-13): global lane scaling, a factor on every lane width
  * ({@link JudgementLine#laneScaleAt}; absent → 1, negative or non-finite base → 1 with a report
  * message); scaling some lanes is their {@code widthEvents}. Optional {@code LineEvents.cameraFrame}
- * / {@code cameraFrameEvents} (owner 2026-10-13 05:29): the lanes' axis offset from x 960
+ * / {@code cameraFrameEvents} (Kelvin 2026-10-13 05:29): the lanes' axis offset from x 960
  * ({@link JudgementLine#cameraFrameAt}; absent or non-finite base → 0). The old window keys
  * ({@code leftBound}, {@code rightBound}, {@code leftEvents}, {@code rightEvents}) are no longer
  * written; read in v2 they become the camera frame and lane scale for finite lanes and are
@@ -79,16 +79,16 @@ import java.util.regex.Pattern;
  *   <li>a lane outside 0..19 becomes {@code lane % 20} (the shipped lane-115 note → 15);</li>
  *   <li>{@code line = lane ≥ 10 ? upper : lower}; with {@code c = lane % 10} the id is
  *       {@code c < 5 ? c − 5 : c − 4} (0 → −5, 4 → −1, 5 → 1, 9 → 5);</li>
- *   <li>unlimited default lanes (owner 2026-10-13): the ten 240-wide lanes filled the window
+ *   <li>unlimited default lanes (Kelvin 2026-10-13): the ten 240-wide lanes filled the window
  *       (absent bounds → −240 / 2160), so its width over 2400 becomes the global lane scale and
- *       its centre's offset from x 960 the camera frame (owner 2026-10-13 05:29), events
+ *       its centre's offset from x 960 the camera frame (Kelvin 2026-10-13 05:29), events
  *       included, so the look is unchanged (the shipped songs: scale 1, 0.8 for beats 526–562,
  *       camera frame 0). A left and right event pair with the same times and exponent converts
  *       exactly; unpaired window events are dropped (a report message);</li>
  *   <li>line y values and events are copied unchanged;</li>
  *   <li>a note whose motion misses its judgement ({@link Note#v1NeedsApproach}) gets the
  *       default approach as its movement event ({@link Note#defaultApproachEvent}), the look it
- *       had before format v2 used motion as written (owner 2026-10-13).</li>
+ *       had before format v2 used motion as written (Kelvin 2026-10-13).</li>
  * </ol>
  * In both formats tap / hold / mine notes with the same (line, lane, judgement beat) are
  * de-duplicated (a hold beats a tap beats a mine; the longer hold, or the longer mine, wins;
@@ -130,7 +130,7 @@ import java.util.regex.Pattern;
  * {@link Chart.LoadReport#glitchesFixed()}); v1 charts get none
  * ({@link Chart.LoadReport#glitchesIgnored()}).
  *
- * <p><b>Pivot</b> (CHART_FORMAT §6.1.1, owner 2026-10-16): a note may carry {@code "pivot": [x, y]}
+ * <p><b>Pivot</b> (CHART_FORMAT §6.1.1, Kelvin 2026-10-16): a note may carry {@code "pivot": [x, y]}
  * (or an object with {@code x} and {@code y}; the key read case-insensitively): the point it turns
  * about, in reference units in its own frame from its origin ({@link Note#pivotX()}). Missing = the
  * origin. A value that is not two finite numbers is read as far as it goes (a missing or bad
@@ -258,9 +258,13 @@ public final class ChartMapper {
         }
         float offsetMs = 0f;
         if (raw.hasOffset) {
-            if (v1) report.messages.add("offsetMs of a v1 chart ignored");
-            else if (Float.isNaN(raw.offsetMs) || Float.isInfinite(raw.offsetMs)) report.messages.add("invalid offsetMs read as 0");
-            else offsetMs = raw.offsetMs;
+            if (v1) {
+                report.messages.add("offsetMs of a v1 chart ignored");
+            } else if (Float.isNaN(raw.offsetMs) || Float.isInfinite(raw.offsetMs)) {
+                report.messages.add("invalid offsetMs read as 0");
+            } else {
+                offsetMs = raw.offsetMs;
+            }
         }
 
         // Lanes, keyed by id (the Chart sorts them).
@@ -278,9 +282,10 @@ public final class ChartMapper {
                     report.rejectedLanes++;
                     continue;
                 }
-                lanes.put(r.id, r.hasInsert ? null : deletedLane(r, new Lane(r.id, r.width, r.opacity, r.widthEvents, r.opacityEvents)));
+                lanes.put(r.id, r.hasInsert ? null
+                    : deletedLane(r, new Lane(r.id, r.width, r.opacity, r.widthEvents, r.opacityEvents)));
             }
-            // Inserted lanes (owner 2026-10-15) last: the final width defaults to their neighbours'.
+            // Inserted lanes (Kelvin 2026-10-15) last: the final width defaults to their neighbours'.
             for (RawLane r : raw.lanes) {
                 if (r != null && r.hasInsert && lanes.containsKey(r.id) && lanes.get(r.id) == null) {
                     lanes.put(r.id, deletedLane(r, insertedLane(r, lanes)));
@@ -366,14 +371,16 @@ public final class ChartMapper {
         RawLine rl = raw.line != null ? raw.line : new RawLine();
         JudgementLine geometry = v1 ? v1Line(rl, report) : v2Line(rl, report, raw.hasLaneCount && raw.laneCount >= 1);
 
-        // Lane mode (owner 2026-10-13): unlimited unless a v2 laneCount says finite.
+        // Lane mode (Kelvin 2026-10-13): unlimited unless a v2 laneCount says finite.
         int laneLimit = 0;
         if (v1) {
             if (raw.hasLaneCount) report.messages.add("laneCount of a v1 chart ignored");
         } else if (raw.hasLaneCount) {
             if (raw.laneCount >= 1) {
                 laneLimit = (int) Math.min(raw.laneCount, 2L * MAX_LANE_ID);
-                if (laneLimit != raw.laneCount) report.messages.add("laneCount " + raw.laneCount + " read as " + laneLimit);
+                if (laneLimit != raw.laneCount) {
+                    report.messages.add("laneCount " + raw.laneCount + " read as " + laneLimit);
+                }
             } else {
                 report.messages.add("invalid laneCount read as unlimited lanes");
             }
@@ -433,14 +440,18 @@ public final class ChartMapper {
     private static JudgementLine v2Line(RawLine rl, Chart.LoadReport report, boolean finite) {
         boolean window = (rl.left == rl.left && rl.left != JudgementLine.DEFAULT_LEFT)
             || (rl.right == rl.right && rl.right != JudgementLine.DEFAULT_RIGHT)
-            || (rl.leftEvents != null && !rl.leftEvents.isEmpty()) || (rl.rightEvents != null && !rl.rightEvents.isEmpty());
+            || (rl.leftEvents != null && !rl.leftEvents.isEmpty())
+            || (rl.rightEvents != null && !rl.rightEvents.isEmpty());
         boolean framed = rl.hasLaneScale || rl.laneScaleEvents != null || rl.hasCamera || rl.cameraEvents != null;
         if (window && finite && !framed) {
             report.messages.add("window (leftBound / rightBound) read as cameraFrame / laneScale");
             return windowLine(rl, JudgementLine.DEFAULT_LEFT, JudgementLine.DEFAULT_RIGHT,
                 JudgementLine.DEFAULT_RIGHT - JudgementLine.DEFAULT_LEFT, report);
         }
-        if (window) report.messages.add("window (leftBound / rightBound) ignored: lanes show across the screen; use cameraFrame / laneScale");
+        if (window) {
+            report.messages.add("window (leftBound / rightBound) ignored: lanes show across the screen; "
+                + "use cameraFrame / laneScale");
+        }
         float laneScale = 1f;
         if (rl.hasLaneScale) {
             if (rl.laneScale >= 0f && rl.laneScale < Float.POSITIVE_INFINITY) laneScale = rl.laneScale;
@@ -451,8 +462,9 @@ public final class ChartMapper {
             if (rl.camera > Float.NEGATIVE_INFINITY && rl.camera < Float.POSITIVE_INFINITY) camera = rl.camera;
             else report.messages.add("invalid cameraFrame read as 0");
         }
-        return new JudgementLine(orDefault(rl.upper, JudgementLine.DEFAULT_UPPER), orDefault(rl.lower, JudgementLine.DEFAULT_LOWER),
-            rl.upperEvents, rl.lowerEvents, laneScale, rl.laneScaleEvents, camera, rl.cameraEvents);
+        return new JudgementLine(orDefault(rl.upper, JudgementLine.DEFAULT_UPPER),
+            orDefault(rl.lower, JudgementLine.DEFAULT_LOWER), rl.upperEvents, rl.lowerEvents, laneScale,
+            rl.laneScaleEvents, camera, rl.cameraEvents);
     }
 
     /** @return the v1 line geometry: its window as the lane scale and camera frame ({@link #windowLine}, 2400 wide). */
@@ -463,14 +475,15 @@ public final class ChartMapper {
     }
 
     /**
-     * An old window as the global lane scale and the camera frame (owner 2026-10-13 05:29): the
+     * An old window as the global lane scale and the camera frame (Kelvin 2026-10-13 05:29): the
      * lanes filled a window {@code span} wide at scale 1 (v1: ten 240-wide lanes, {@link #V1_SPAN}),
      * so its width over {@code span} is the scale and its centre's offset from x 960 the camera
      * frame. Each left / right event pair with the same times and exponent (every shipped song)
      * becomes one event of each, exactly; otherwise the window events are dropped with a report
      * message. A channel that never leaves its default (scale 1, camera frame 0) gets no events.
      */
-    private static JudgementLine windowLine(RawLine rl, float defLeft, float defRight, float span, Chart.LoadReport report) {
+    private static JudgementLine windowLine(RawLine rl, float defLeft, float defRight, float span,
+                                            Chart.LoadReport report) {
         float l0 = orDefault(rl.left, defLeft);
         float r0 = orDefault(rl.right, defRight);
         float scale = (r0 - l0) / span;
@@ -503,12 +516,13 @@ public final class ChartMapper {
             cameras.clear();
             report.messages.add("window events not in left / right pairs: ignored");
         }
-        return new JudgementLine(orDefault(rl.upper, JudgementLine.DEFAULT_UPPER), orDefault(rl.lower, JudgementLine.DEFAULT_LOWER),
-            rl.upperEvents, rl.lowerEvents, scale, scaled ? scales : null, camera, moved ? cameras : null);
+        return new JudgementLine(orDefault(rl.upper, JudgementLine.DEFAULT_UPPER),
+            orDefault(rl.lower, JudgementLine.DEFAULT_LOWER), rl.upperEvents, rl.lowerEvents, scale,
+            scaled ? scales : null, camera, moved ? cameras : null);
     }
 
     /**
-     * An inserted lane (owner 2026-10-15, {@code insert}): the final width is {@code insert.final},
+     * An inserted lane (Kelvin 2026-10-15, {@code insert}): the final width is {@code insert.final},
      * else the lane's {@code width}, else the mean base width of the lanes next to it by id (a
      * missing one counts as a default lane), so it ends as wide as its neighbours. Non-finite or
      * negative values: initial 0, final the default, exponent 1; an end before the start is the start.
@@ -537,7 +551,7 @@ public final class ChartMapper {
     }
 
     /**
-     * A deleted lane (owner 2026-10-17, {@code delete}): {@code lane} with the deletion of {@code r}, or
+     * A deleted lane (Kelvin 2026-10-17, {@code delete}): {@code lane} with the deletion of {@code r}, or
      * {@code lane} itself without one. From {@code delete.startTime} the lane eases from
      * {@code delete.initial} (default: its width at the start without the deletion, so it does not jump)
      * to {@code delete.final} (default 0) by {@code delete.endTime} (default the start) and is 0 wide
@@ -548,7 +562,8 @@ public final class ChartMapper {
         if (!r.hasDelete) return lane;
         float start = r.delStart > Float.NEGATIVE_INFINITY && r.delStart < Float.POSITIVE_INFINITY ? r.delStart : 0f;
         float end = r.delEnd >= start && r.delEnd < Float.POSITIVE_INFINITY ? r.delEnd : start;
-        float initial = r.delInitial >= 0f && r.delInitial < Float.POSITIVE_INFINITY ? r.delInitial : lane.widthAt(start);
+        float initial = r.delInitial >= 0f && r.delInitial < Float.POSITIVE_INFINITY ? r.delInitial
+            : lane.widthAt(start);
         float exponent = r.delExponent > 0f && r.delExponent < Float.POSITIVE_INFINITY ? r.delExponent : 1f;
         return new Lane(lane.id(), lane.baseWidth(), lane.baseOpacity(), lane.widthEvents(), lane.opacityEvents(),
             lane.insert(), new Events(Events.TYPE.Width, start, end, initial, finiteWidth(r.delFinal), exponent));
@@ -739,14 +754,14 @@ public final class ChartMapper {
         float opacity = Lane.DEFAULT_OPACITY;
         List<Events> widthEvents;
         List<Events> opacityEvents;
-        // insert (owner 2026-10-15)
+        // insert (Kelvin 2026-10-15)
         boolean hasInsert;
         float insStart;
         float insEnd;
         float insInitial;
         float insFinal = Float.NaN;
         float insExponent = 1f;
-        // delete (owner 2026-10-17)
+        // delete (Kelvin 2026-10-17)
         boolean hasDelete;
         float delStart;
         float delEnd = Float.NaN;
@@ -864,7 +879,9 @@ public final class ChartMapper {
         if (raw == null || raw.isEmpty()) return null;
         List<float[]> ok = new ArrayList<>();
         for (float[] e : raw) {
-            if (Float.isNaN(e[0]) || Float.isInfinite(e[0]) || !(e[1] > 0f) || e[1] == Float.POSITIVE_INFINITY) continue;
+            if (Float.isNaN(e[0]) || Float.isInfinite(e[0]) || !(e[1] > 0f) || e[1] == Float.POSITIVE_INFINITY) {
+                continue;
+            }
             ok.add(e);
         }
         if (ok.size() < raw.size() && report != null) {
@@ -1062,7 +1079,9 @@ public final class ChartMapper {
         n.trails = out;
     }
 
-    /** Reads one trail object (the parser is on its START_OBJECT); sets {@code n.trailFixed} when a value had to change. */
+    /**
+     * Reads one trail object (the parser is on its START_OBJECT); sets {@code n.trailFixed} when a value had to change.
+     */
     private static NoteTrail parseTrailObject(JsonParser p, RawNote n) throws IOException {
         float length = NoteTrail.SUGGESTED_LENGTH;
         float density = NoteTrail.SUGGESTED_DENSITY;
@@ -1089,8 +1108,14 @@ public final class ChartMapper {
                     }
                     break;
                 }
-                case "from": from = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(from) && fv != JsonToken.VALUE_NULL; break;
-                case "to": to = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(to) && fv != JsonToken.VALUE_NULL; break;
+                case "from":
+                    from = floatValue(p, fv, Float.NaN);
+                    fixed |= Float.isNaN(from) && fv != JsonToken.VALUE_NULL;
+                    break;
+                case "to":
+                    to = floatValue(p, fv, Float.NaN);
+                    fixed |= Float.isNaN(to) && fv != JsonToken.VALUE_NULL;
+                    break;
                 default: p.skipChildren(); break;
             }
         }
@@ -1170,9 +1195,15 @@ public final class ChartMapper {
             switch (name) {
                 case "from": from = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(from) && !isNull; break;
                 case "to": to = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(to) && !isNull; break;
-                case "duration": duration = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(duration) && !isNull; break;
+                case "duration":
+                    duration = floatValue(p, fv, Float.NaN);
+                    fixed |= Float.isNaN(duration) && !isNull;
+                    break;
                 case "intensity": intensity = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(intensity); break;
-                case "intensityend": intensityEnd = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(intensityEnd) && !isNull; break;
+                case "intensityend":
+                    intensityEnd = floatValue(p, fv, Float.NaN);
+                    fixed |= Float.isNaN(intensityEnd) && !isNull;
+                    break;
                 case "exponent": exponent = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(exponent); break;
                 case "rate": rate = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(rate); break;
                 case "split": split = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(split); break;
@@ -1239,7 +1270,7 @@ public final class ChartMapper {
         return l;
     }
 
-    /** A lane's {@code insert} object (owner 2026-10-15): the keys of an event; {@code final} may be absent. */
+    /** A lane's {@code insert} object (Kelvin 2026-10-15): the keys of an event; {@code final} may be absent. */
     private static void parseInsert(JsonParser p, JsonToken v, RawLane l) throws IOException {
         if (v != JsonToken.START_OBJECT) {
             p.skipChildren();
@@ -1262,7 +1293,7 @@ public final class ChartMapper {
         }
     }
 
-    /** A lane's {@code delete} object (owner 2026-10-17): the keys of an event, every one optional. */
+    /** A lane's {@code delete} object (Kelvin 2026-10-17): the keys of an event, every one optional. */
     private static void parseDelete(JsonParser p, JsonToken v, RawLane l) throws IOException {
         if (v != JsonToken.START_OBJECT) {
             p.skipChildren();

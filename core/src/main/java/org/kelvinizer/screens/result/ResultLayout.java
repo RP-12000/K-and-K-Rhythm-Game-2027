@@ -4,7 +4,7 @@ import org.kelvinizer.ui.Ui;
 
 /**
  * 结算画面每个元素在当前视口下的位置（世界坐标），每次窗口大小改变时重新计算，不分配内存。
- * 2026-10-19 起是设计串的排版：16:10 是蓝本（1920 × 1200，第七版 06:28，第八版 15:2x）。左上玩家框、右上贝壳胶囊；
+ * 2026-10-19 起按设计稿排版：16:10 是蓝本（1920 × 1200，第七版 06:28，第八版 15:2x）。左上玩家框、右上贝壳胶囊；
  * 下面一条全宽标题带（曲名和曲师居中）；再下面左边是 16:9 的大曲绘，难度块在它右下角里面，评级章、新纪录和分数压在曲绘左下；
  * 曲绘下面是共鸣连击和最大连击、早晚和调整建议，右边是判定数；右下角重开和继续，右边留给人物立绘。
  * 其他比例：矮的屏幕（16:9）整体按高度缩小，高的屏幕（4:3）多出的高度一半放在曲绘上面、一半放在曲绘下面；
@@ -12,7 +12,7 @@ import org.kelvinizer.ui.Ui;
  * 比 16:8.5 宽的手机分三栏（第八版）：左边完整的曲绘、下面分数，中间统计，右边人物（和 16:10 一样的比例），角落、标题带和按钮照旧。
  *
  * <p>Positions of every result-screen element for the current viewport, in world units. The 16:10 blueprint is
- * 1920 × 1200 with y measured from the top and the safe edges 24 in: the design thread's round 7 (Kelvin 2026-10-19
+ * 1920 × 1200 with y measured from the top and the safe edges 24 in: design round 7 (Kelvin 2026-10-19
  * 06:28, its layout notes 结算和地图排版参数) changed by round 8 (15:2x, 结算第八版排版参数). The player frame (top
  * left) and the shell capsule (top right), a full-width title band (title and artist centred), the 16:9 jacket at
  * the left with the difficulty chip in its bottom-right corner and the grade stamp, the best line and the score at

@@ -13,9 +13,10 @@ import org.kelvinizer.ui.Pressable;
  * is at most 380 wide, two share the column.
  */
 public class ActionRow extends SettingRow {
+    private static final float BUTTON_W = 380f;
+
     private final Pressable[] actions = new Pressable[2];
     private int count;
-    private float buttonW = 380f;
 
     /** Creates a row without buttons; add them with {@link #add}. */
     public ActionRow(Main game, CharSequence label, CharSequence desc, boolean device) {
@@ -27,12 +28,6 @@ public class ActionRow extends SettingRow {
         if (count < actions.length) actions[count++] = action;
         if (action instanceof Button) ((Button) action).setLabelCap(22f);
         return action;
-    }
-
-    /** Maximum width of a single button (default 380 × uiScale). */
-    public ActionRow setButtonWidth(float width) {
-        buttonW = width;
-        return this;
     }
 
     @Override
@@ -48,7 +43,7 @@ public class ActionRow extends SettingRow {
         float bh = 72f * k;
         float cy = lineCy();
         if (count == 1) {
-            float bw = Math.min(controlW, buttonW * k);
+            float bw = Math.min(controlW, BUTTON_W * k);
             actions[0].setBounds(controlX + controlW - bw, cy - bh * 0.5f, bw, bh);
         } else {
             float gap = 16f * k;

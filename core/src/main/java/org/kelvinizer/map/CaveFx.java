@@ -147,8 +147,8 @@ final class CaveFx {
             for (int j = 0; j < 14; j++) {
                 float d = 520f * (1f - j / 14f) * (1f - 0.6f * p);
                 float ang = arm * MathUtils.PI2 / 3f + j * 0.42f + p * 9f;
-                draw.disc(cx + d * MathUtils.cos(ang), cy + d * MathUtils.sin(ang), 5f + 0.4f * (14 - j), Theme.GROUND_SIG,
-                    0.35f * a * (1f - j / 16f));
+                draw.disc(cx + d * MathUtils.cos(ang), cy + d * MathUtils.sin(ang), 5f + 0.4f * (14 - j),
+                    Theme.GROUND_SIG, 0.35f * a * (1f - j / 16f));
             }
         }
         for (int i = 0; i < BUBBLES; i++) {
@@ -156,8 +156,8 @@ final class CaveFx {
             float q = (p * (1.2f + h2) + h1) % 1f;
             float d = 700f * (1f - q) + 10f;
             float ang = h1 * MathUtils.PI2 + q * 6f;
-            draw.circle(cx + d * MathUtils.cos(ang), cy + d * MathUtils.sin(ang), 4f + 8f * h2 * (1f - q), 2f, Theme.SKY_SIG,
-                0.7f * a * q);
+            draw.circle(cx + d * MathUtils.cos(ang), cy + d * MathUtils.sin(ang), 4f + 8f * h2 * (1f - q), 2f,
+                Theme.SKY_SIG, 0.7f * a * q);
         }
         draw.glowDot(cx, cy, 300f + 400f * p, Theme.ABYSS_BLACK, 0.7f * p);
     }
@@ -227,8 +227,8 @@ final class CaveFx {
         for (int i = 0; i < 16; i++) {
             float ang = i * MathUtils.PI2 / 16f;
             float d = 60f + 300f * e;
-            draw.disc(cx + d * MathUtils.cos(ang), cy + d * MathUtils.sin(ang) + 80f * e * (1f - e), 6f * a + 1f, Theme.SKY_SIG,
-                0.8f * a);
+            draw.disc(cx + d * MathUtils.cos(ang), cy + d * MathUtils.sin(ang) + 80f * e * (1f - e), 6f * a + 1f,
+                Theme.SKY_SIG, 0.8f * a);
         }
     }
 }

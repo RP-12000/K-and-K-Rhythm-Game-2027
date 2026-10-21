@@ -125,8 +125,8 @@ public final class GradeStamp implements TextQueue.Deferred {
         for (int i = 0; i < 4; i++) {
             double ang = Math.PI * 0.5 * i + Math.PI * 0.25 + Math.toRadians(rot);
             float cs = (float) Math.cos(ang) * s, sn = (float) Math.sin(ang) * s;
-            k.draw.line(sx0 + cs * (R + 8f), sy0 + sn * (R + 8f), sx0 + cs * (R + 20f), sy0 + sn * (R + 20f), 2f * s, col,
-                0.6f * a);
+            k.draw.line(sx0 + cs * (R + 8f), sy0 + sn * (R + 8f), sx0 + cs * (R + 20f), sy0 + sn * (R + 20f), 2f * s,
+                col, 0.6f * a);
         }
         float sh = shimmerPhase(m, t);
         boolean bursting = state.isBursting(t) && GlitchText.intensity() > 0.001f;

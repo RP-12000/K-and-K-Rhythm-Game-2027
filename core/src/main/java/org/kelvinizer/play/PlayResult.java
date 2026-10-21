@@ -184,13 +184,6 @@ public final class PlayResult {
         return deltaHistogram.clone();
     }
 
-    /** @return largest histogram bin value (for normalising bars). */
-    public int histogramPeak() {
-        int max = 0;
-        for (short v : deltaHistogram) if (v > max) max = v;
-        return max;
-    }
-
     static String formatConstant(float c) {
         int tenths = Math.round(c * 10f);
         return (tenths / 10) + "." + Math.abs(tenths % 10);

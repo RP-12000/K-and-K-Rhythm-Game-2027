@@ -64,7 +64,7 @@ import org.kelvinizer.ui.Theme;
  * α × {@link #ADD_GAIN}, which over {@code FIELD} (the field colour measured in game beneath the
  * gap) adds exactly c × α, and over the field's other dark blues stays within a few percent of α
  * of it. Plain normal blending instead loses α × the background, mostly in blue, so the band would
- * read greener and dimmer than the approved mock-up ({@code preview/reference-look/v4_tide_drop.mp4}).
+ * read greener and dimmer than the approved mock-up clip of the TIDE drop (v4).
  * A band also lies on the lifted water or the level, which the normal blend would partly cover:
  * its α is divided by (1 − the α beneath its centre) ({@link #over}), so the stack adds up there
  * as the additive design does. The veil is a normal-blend darkening by design. Bands use the
@@ -215,7 +215,7 @@ final class TideWash {
 
     /**
      * Creates the effect over the regions {@code white} and {@code glowV} of {@code tex}, drawn
-     * into {@code batch}; {@code field} may be null (no line swell). Harness tests use it with a
+     * into {@code batch}; {@code field} may be null (no line swell). Tests use it with a
      * recording batch, without GL.
      */
     TideWash(Batch batch, Texture tex, TextureRegion white, TextureRegion glowV, FieldRenderer field) {
@@ -729,27 +729,7 @@ final class TideWash {
         batch.draw(tex, v, 0, 20);
     }
 
-    // ------------------------------------------------------------------ diagnostics (harness)
-
-    /** @return the reach of the last effect on {@code line} (fraction of the gap). */
-    float washReach(Line line) {
-        return effReach[line.ordinal()];
-    }
-
-    /** @return run seconds at which the last effect on {@code line} started (−100 when none). */
-    float washStart(Line line) {
-        return effT[line.ordinal()];
-    }
-
-    /** @return true when the last effect on {@code line} is ECHO violet. */
-    boolean washEcho(Line line) {
-        return effEcho[line.ordinal()];
-    }
-
-    /** @return true when the last effect on {@code line} has a veil (a hit, not a completion). */
-    boolean washVeil(Line line) {
-        return effVeil[line.ordinal()];
-    }
+    // ------------------------------------------------------------------ diagnostics (tests)
 
     /** @return hit and completion triggers so far, merged ones included (tests). */
     long triggers() {
@@ -766,63 +746,11 @@ final class TideWash {
         return level[line.ordinal()];
     }
 
-    /** @return true while the level of {@code line} drains after a break. */
-    boolean draining(Line line) {
-        return drainActive(line.ordinal());
-    }
-
     /** @return band emitters (segments) alive, emitting or finishing. */
     int emitters() {
         int n = 0;
         for (int s = 0; s < MAX_EMITTERS; s++) {
             if (emActive[s]) n++;
-        }
-        return n;
-    }
-
-    /** @return bands born so far by the live segments of note {@code note} (tests). */
-    long bandsBorn(int note) {
-        long n = 0;
-        for (int s = 0; s < MAX_EMITTERS; s++) {
-            if (!emActive[s] || emNote[s] != note) continue;
-            long first = emFrom[s] == Double.NEGATIVE_INFINITY ? 0L
-                : (long) Math.floor((emFrom[s] - emOrigin[s]) / emPeriod[s]) + 1;
-            long last = bandLast(s);
-            if (last >= first) n += last - first + 1;
-        }
-        return n;
-    }
-
-    /** @return birth time (judge ms) of the newest band of note {@code note}, or NaN (tests: the fixed clock). */
-    double lastBandMs(int note) {
-        double t = Double.NaN;
-        for (int s = 0; s < MAX_EMITTERS; s++) {
-            if (!emActive[s] || emNote[s] != note) continue;
-            long last = bandLast(s);
-            if (last < 0) continue;
-            double b = emOrigin[s] + last * emPeriod[s];
-            if (b > emFrom[s] && (Double.isNaN(t) || b > t)) t = b;
-        }
-        return t;
-    }
-
-    /** @return head time (judge ms) the bands of note {@code note} count from, or NaN when it has no emitter. */
-    double bandOrigin(int note) {
-        for (int s = 0; s < MAX_EMITTERS; s++) {
-            if (emActive[s] && emNote[s] == note) return emOrigin[s];
-        }
-        return Double.NaN;
-    }
-
-    /** @return bands in flight on {@code line} this frame, i.e. the bands {@link #draw} draws (tests). */
-    int bandsInFlight(Line line) {
-        int n = 0;
-        for (int s = 0; s < MAX_EMITTERS; s++) {
-            if (!emActive[s] || emLine[s] != line.ordinal() || duplicate(s)) continue;
-            for (long k = bandFirst(s); k <= bandLast(s); k++) {
-                double p = (songMs - (emOrigin[s] + k * emPeriod[s])) / STREAM_LIFE_MS;
-                if (p >= 0 && p < 1) n++;
-            }
         }
         return n;
     }

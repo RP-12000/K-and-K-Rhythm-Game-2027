@@ -43,11 +43,6 @@ public final class ShellBreakdown {
         return base + firstPlay + newBest + fullCombo + allResonance + daily + tutorial;
     }
 
-    /** @return the sum of the bonus items (everything except {@link #base}). */
-    public int bonuses() {
-        return total() - base;
-    }
-
     @Override
     public String toString() {
         return "Shells{base=" + base + " first=" + firstPlay + " best=" + newBest + " fc=" + fullCombo

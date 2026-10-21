@@ -144,15 +144,6 @@ public final class ResultKit {
         shapes.setColor(old);
     }
 
-    /** Stroked regular polygon via the shape drawer. */
-    public void polygonStroke(float cx, float cy, int sides, float radius, float rotRad, float width, Color c,
-                              float alpha) {
-        float old = shapes.getPackedColor();
-        shapes.setColor(c.r, c.g, c.b, c.a * alpha);
-        shapes.polygon(cx, cy, sides, radius, rotRad, width);
-        shapes.setColor(old);
-    }
-
     /** Clamps to 0..1. */
     public static float clamp01(float v) {
         return v < 0f ? 0f : (v > 1f ? 1f : v);

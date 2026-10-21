@@ -30,7 +30,7 @@ import org.kelvinizer.ui.Ui;
 
 /**
  * 欢迎画面：开场时两颗光点螺旋下沉、相撞，浮现 {@code K & K} 标志，
- * 然后提示 TAP TO DESCEND；左下角切换潜水员，右下角进设置。
+ * 然后提示「点击任意位置开始」；左下角切换玩家（设置从地图进，这里不再有齿轮）。
  * 点击后，首次启动进入首次设置，否则下潜进入地图。
  *
  * <p>Title screen (DESIGN §7).
@@ -39,7 +39,7 @@ import org.kelvinizer.ui.Ui;
  * motes ({@code groundSig}, {@code skySig}) spiral down a helix from y 1,160 into (960, 640),
  * radius 220 → 0 ({@code exp5Out}); 0.70 they collide: a sonar ping and the logo appears with a
  * G2; 0.75–1.25 {@code K & K} decodes (60 ms stagger, DISPLAY_SOFT 140) and rests at G1 with an
- * idle G2 every 1.8–3.5 s; 1.10 the tagline; 1.20 the breathing {@code TAP TO DESCEND} synced to
+ * idle G2 every 1.8–3.5 s; 1.10 the tagline; 1.20 the breathing {@code TAP ANYWHERE TO START} synced to
  * the logo's 2.4 s heartbeat. Idle: two ring emitters at (760, 640) and (1160, 640) alternate
  * every 1.2 s ({@code groundSig} / {@code skySig} interference). Returning to Welcome under a
  * transition skips the intro.
@@ -51,8 +51,10 @@ import org.kelvinizer.ui.Ui;
  * G2, and hovering a K (desktop) brightens it.
  *
  * <p><b>Corners</b>: bottom-left the profile chip {@code DIVING AS NAME · LV 12 · 2,560 m ▾}
- * opening the {@link SwitcherSheet}; bottom-right the Settings gear; the version at the bottom
- * centre. The corners, the tagline and the prompt are sized × {@code Ui.uiScale()} about their
+ * opening the {@link SwitcherSheet}; the version at the bottom centre. There is no Settings gear (Kelvin
+ * 2026-10-20 21:17: 「开始界面右下角把设置去掉」; Settings opens from the map), the tagline sits 40 lower than it
+ * did and the prompt reads TAP ANYWHERE TO START (same evening: 「two signals one descent往下挪一点。底下点击下潜换成点击
+ * 任意位置开始」). The corners, the tagline and the prompt are sized × {@code Ui.uiScale()} about their
  * anchors (DESIGN §0.3); the logo is display art and keeps its size.
  * <b>Exit</b>: first run → IRIS to FirstRun; otherwise "the descent" (§3.12): the logo
  * flies up 200 and fades, the motes dive out of the bottom, snow streaks upward, the shared
@@ -65,9 +67,9 @@ public class WelcomeScreen extends ShellScreen {
     /** Version line at the bottom centre. */
     private static final CharSequence VERSION_LINE = Lang.of("VERSION " + Params.VERSION, "版本 " + Params.VERSION);
     private static final CharSequence TAGLINE = Lang.of("TWO SIGNALS · ONE DESCENT", "两道信号 · 一同下潜");
-    private static final CharSequence PROMPT = Lang.of("TAP TO DESCEND", "点击下潜");
-    /** Logo centre y, tagline baseline, prompt baseline (DESIGN §7). */
-    public static final float LOGO_Y = 640f, TAGLINE_Y = 520f, PROMPT_Y = 220f;
+    private static final CharSequence PROMPT = Lang.of("TAP ANYWHERE TO START", "点击任意位置开始");
+    /** Logo centre y, tagline baseline (520 until Kelvin 2026-10-20 21:17), prompt baseline (DESIGN §7). */
+    public static final float LOGO_Y = 640f, TAGLINE_Y = 480f, PROMPT_Y = 220f;
     private static final float LOGO_CAP = 140f, LOGO_GAP = 44f;
     /** Profile chip height and text cap at uiScale 1. */
     private static final float CHIP_H = 64f, CHIP_CAP = 20f;
@@ -86,7 +88,6 @@ public class WelcomeScreen extends ShellScreen {
     private final float[] glyphFlash = new float[3];
     private final float[] mote = new float[3];
     private final Tappable chip;
-    private final Button gear;
     private final SwitcherSheet switcher;
     private final CreateDiverSheet createSheet;
     private final StringBuilder chipText = new StringBuilder(64);
@@ -116,7 +117,8 @@ public class WelcomeScreen extends ShellScreen {
 
     /** Creates the screen once (Main caches it). */
     public WelcomeScreen(final Main game) {
-        // No welcome art for now, only the water and its caustic ripples (Kelvin 10-12 22:04: 「欢迎界面背景图先不要了，就只保留水纹那种纹理即可」).
+        // No welcome art for now, only the water and its caustic ripples (Kelvin 10-12 22:04:
+        // 「欢迎界面背景图先不要了，就只保留水纹那种纹理即可」).
         super(game, null, null, 0.35f, 1f, true);
         for (int i = 0; i < 3; i++) {
             glyphGlitch[i] = game.glitch().obtainState();
@@ -131,24 +133,11 @@ public class WelcomeScreen extends ShellScreen {
                 openSwitcher();
             }
         });
-        gear = widgets.add(new Button(game.draw(), game.fonts(), Icons.Icon.GEAR));
-        gear.setOnTap(new Runnable() {
-            @Override
-            public void run() {
-                openScreen(game.settings(), Lang.t("SETTINGS", "设置"));
-            }
-        });
         createSheet = new CreateDiverSheet(game, this);
         switcher = new SwitcherSheet(game, this, new Runnable() {
             @Override
             public void run() {
                 openModal(createSheet);
-            }
-        }, new Runnable() {
-            @Override
-            public void run() {
-                game.profile().selectTab(ProfileScreen.TAB_DIVERS);
-                openScreen(game.profile(), Lang.t("PROFILE", "账号与统计"));
             }
         });
     }
@@ -238,13 +227,10 @@ public class WelcomeScreen extends ShellScreen {
         glyphX[0] = x0 + wk * 0.5f;
         glyphX[1] = x0 + wk + LOGO_GAP + wa * 0.5f;
         glyphX[2] = x0 + wk + wa + 2f * LOGO_GAP + wk * 0.5f;
-        float cy = cornerY();
-        float gd = Button.ICON_DIAMETER * Ui.uiScale();
-        gear.setBounds(Ui.safeRight() - 24f - gd, cy - gd * 0.5f, gd, gd);
         chipRevision = Integer.MIN_VALUE;
     }
 
-    /** Centre y of the bottom corners (chip, version, gear). */
+    /** Centre y of the bottom corners (chip, version). */
     private float cornerY() {
         return Ui.safeBottom() + 24f + Button.ICON_DIAMETER * Ui.uiScale() * 0.5f;
     }
@@ -287,7 +273,6 @@ public class WelcomeScreen extends ShellScreen {
         refreshChip();
         boolean corners = cornerAlpha() > 0.3f && exitT < 0f;
         chip.setVisible(corners && !game.profiles().isFirstRun());
-        gear.setVisible(corners);
         if (ffFrom >= 0f) {
             ffT += delta;
             float p = Anim.POW2_OUT.apply(Anim.clamp01(ffT / FAST_FORWARD));
@@ -483,7 +468,8 @@ public class WelcomeScreen extends ShellScreen {
         Draw d = game.draw();
         Fonts f = game.fonts();
         float u = Ui.uiScale(), cap = CHIP_CAP * u;
-        f.draw(batch, Fonts.Role.UI, 16f * u, VERSION_LINE, Ui.CX, cornerY(), Align.center | Fonts.VCENTER, Theme.INK3, a);
+        f.draw(batch, Fonts.Role.UI, 16f * u, VERSION_LINE, Ui.CX, cornerY(),
+            Align.center | Fonts.VCENTER, Theme.INK3, a);
         if (game.profiles().isFirstRun()) return;
         float s = chip.visualScale();
         float cx = chip.centerX() + chip.shakeX(), cy = chip.centerY();

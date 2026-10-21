@@ -181,6 +181,10 @@ public class Main extends Game implements KkServices {
         if (imported > 0) {
             ui.toasts().show(Lang.zh() ? "导入了 " + imported + " 条以前的成绩"
                 : "IMPORTED " + imported + (imported == 1 ? " EARLIER RECORD" : " EARLIER RECORDS"), Theme.GOLD);
+        } else if (profiles.isFirstRun() && profiles.hasLegacyData()) {
+            // said on the first run's step 1 until that step went (2026-10-21)
+            ui.toasts().show(Lang.t("EARLIER RECORDS WERE FOUND BUT COULD NOT BE READ", "找到了以前的记录，但读不出来"),
+                Theme.LOST);
         }
         switchNow(welcome());
     }
@@ -299,7 +303,10 @@ public class Main extends Game implements KkServices {
     }
 
     // ------------------------------------------------------------------ switching
-    /** CURTAIN transition to {@code next}. See {@link #transitionTo(Screen, TransitionLayer.Style, float, float, CharSequence)}. */
+    /**
+     * CURTAIN transition to {@code next}. See
+     * {@link #transitionTo(Screen, TransitionLayer.Style, float, float, CharSequence)}.
+     */
     public boolean transitionTo(Screen next) {
         return transitionTo(next, TransitionLayer.Style.CURTAIN, Ui.CX, Ui.CY, null);
     }

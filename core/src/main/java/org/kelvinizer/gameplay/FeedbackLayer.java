@@ -26,7 +26,6 @@ import org.kelvinizer.ui.Theme;
 final class FeedbackLayer {
     private static final int N = 24;
     private static final float CONTACT_SEC = 0.16f;
-    private static final float DEMO_DOT_SEC = 0.6f;
     private static final float CHEVRON_SEC = 0.30f;
     private static final float WORD_SEC = 0.30f;
     private static final float SHOCK_SEC = 0.22f;
@@ -50,7 +49,6 @@ final class FeedbackLayer {
     private final float[] dotX = new float[N];
     private final float[] dotY = new float[N];
     private final float[] dotT = new float[N];
-    private final boolean[] dotDemo = new boolean[N];
     private int dotNext;
 
     private final float[] chX = new float[N];
@@ -124,21 +122,11 @@ final class FeedbackLayer {
 
     /** Stray touch dot: 24 px, {@code ink1 @ .15}, 160 ms. */
     void stray(float x, float y, float now) {
-        strayDot(x, y, now, false);
-    }
-
-    /** Tutorial demo of a stray touch (DESIGN §10.2): the same dot, brighter and longer, with a ring. */
-    void strayDemo(float x, float y, float now) {
-        strayDot(x, y, now, true);
-    }
-
-    private void strayDot(float x, float y, float now, boolean demo) {
         int k = dotNext;
         dotNext = (k + 1) % N;
         dotX[k] = x;
         dotY[k] = y;
         dotT[k] = now;
-        dotDemo[k] = demo;
     }
 
     /**
@@ -230,7 +218,8 @@ final class FeedbackLayer {
             if (t >= 0f && t < CONTACT_SEC) {
                 float p = t / CONTACT_SEC;
                 float r = 40f + 50f * Anim.POW2_OUT.apply(p);
-                draw.sprite(draw.ringSoft(), ringX[k], ringY[k], r * 4.76f, r * 4.76f, Theme.WHITE, ringA[k] * (1f - p));
+                draw.sprite(draw.ringSoft(), ringX[k], ringY[k], r * 4.76f, r * 4.76f, Theme.WHITE,
+                    ringA[k] * (1f - p));
             }
             t = now - brT[k];
             if (t >= 0f && t < CONTACT_SEC) {
@@ -239,13 +228,7 @@ final class FeedbackLayer {
                 draw.rect(brR[k] - 1f, brY[k] - 12f, 2f, 24f, Theme.INK1, a);
             }
             t = now - dotT[k];
-            if (dotDemo[k]) {
-                if (t >= 0f && t < DEMO_DOT_SEC) {
-                    float p = t / DEMO_DOT_SEC;
-                    draw.disc(dotX[k], dotY[k], 14f, Theme.INK1, 0.45f * (1f - p));
-                    draw.ringSprite(dotX[k], dotY[k], 14f + 30f * Anim.POW2_OUT.apply(p), Theme.INK1, 0.30f * (1f - p));
-                }
-            } else if (t >= 0f && t < CONTACT_SEC) {
+            if (t >= 0f && t < CONTACT_SEC) {
                 draw.disc(dotX[k], dotY[k], 12f, Theme.INK1, 0.15f * (1f - t / CONTACT_SEC));
             }
             t = now - chT[k];

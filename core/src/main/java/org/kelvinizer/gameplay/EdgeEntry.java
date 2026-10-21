@@ -15,7 +15,7 @@ import java.util.List;
  * 屏幕边缘入场：出生点在参考画面之外、音符本体在出生时却会露进实际可见区域的音符（场地拉伸到屏幕之后，就是任何比例下
  * 转了角度的音符），不再在画面里凭空出现，而是按第一段移动的平均速度从真正的屏幕边缘滑进来，再接上谱面写好的路径。只改绘制，不改判定。
  *
- * <p>Edge entry (DESIGN §5.4; owner 2026-10-12 12:42 「我想要整个谱面出现得更自然」), pure Java: no GL,
+ * <p>Edge entry (DESIGN §5.4; Kelvin 2026-10-12 12:42 「我想要整个谱面出现得更自然」), pure Java: no GL,
  * no allocation after {@link #begin}. A note <em>enters from the edge</em> when
  * <ul>
  *   <li>its first movement (its first {@code MovementEvent}, or the default approach) moves toward
@@ -94,7 +94,10 @@ public final class EdgeEntry {
     private float[] turnSin = new float[0];
     /** The authored angle at the start beat (degrees, without a sky note's 180°). */
     private float[] turnDeg = new float[0];
-    /** {@code max(0, −cos)} of the angle at the start beat: how much the body is turned toward its line (0 when upright). */
+    /**
+     * {@code max(0, −cos)} of the angle at the start beat: how much the body is turned toward its line (0 when
+     * upright).
+     */
     private float[] turnBack = new float[0];
     /** Body kind ({@code K_*}). */
     private byte[] kind = new byte[0];
@@ -104,7 +107,10 @@ public final class EdgeEntry {
     private float[] turnCos = new float[0];
     /** Tail length at the start beat in reference units (≥ 0). */
     private float[] tailAt = new float[0];
-    /** How far the body at the spawn reaches beyond its leading edge toward the line, at the current note size and stretch (world units). */
+    /**
+     * How far the body at the spawn reaches beyond its leading edge toward the line, at the current note size and
+     * stretch (world units).
+     */
     private float[] bodyReach = new float[0];
     /** The lane layout at a start beat (load time). */
     private final LaneLayout layout = new LaneLayout();
@@ -273,7 +279,7 @@ public final class EdgeEntry {
         Note n = notes[i];
         float rot = turnDeg[i] + (up ? 180f : 0f);
         if (kind[i] == K_LANE || kind[i] == K_MINE || kind[i] == K_LANE_MINE) {
-            // the leading edge moves as the body turns about its pivot (owner 2026-10-16)
+            // the leading edge moves as the body turns about its pivot (Kelvin 2026-10-16)
             float refH = kind[i] == K_LANE ? NoteRenderer.NOTE_H : NoteRenderer.MINE_H;
             float y = NoteShapes.pivotShiftY(Float.MAX_VALUE, refH, refH * u, rot, up, n.pivotX(), n.pivotY());
             return r + (up ? y : -y);
@@ -358,7 +364,10 @@ public final class EdgeEntry {
         return s - Math.max(0f, reach(up, y, margin) - sp) / v;
     }
 
-    /** @return the distance (reference units) from a line at {@code y} to {@code margin} beyond the visible edge it faces. */
+    /**
+     * @return the distance (reference units) from a line at {@code y} to {@code margin} beyond the visible edge it
+     * faces.
+     */
     private float reach(boolean up, float y, float margin) {
         return up ? y - refBottom() + margin : refTop() - y + margin;
     }
@@ -414,7 +423,9 @@ public final class EdgeEntry {
         return beat >= f ? spawn[i] + speed[i] * (start[i] - beat) : Note.HIDDEN_POSITION;
     }
 
-    /** {@link #position(int, Note, float)} by the note's chart index (a note of another chart: its authored position). */
+    /**
+     * {@link #position(int, Note, float)} by the note's chart index (a note of another chart: its authored position).
+     */
     public float position(Note n, float beat) {
         int i = n.index();
         if (i < 0 || i >= count || notes[i] != n) return NoteRenderer.position(n, beat);

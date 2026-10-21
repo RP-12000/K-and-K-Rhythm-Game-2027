@@ -17,7 +17,7 @@ import org.kelvinizer.ui.Ui;
  * 平板等比例下部渐暗好让评级、分数和新纪录压在上面，比 16:8.5 宽的手机完整显示），以及角色区里的 AUTO 水印。
  * 曲绘滑入时声呐线沿边框描一圈；曲名先解码再以一次 G2 故障收尾，50 个字符以内缩小到放得下，更长的就在标题带里滚动（和选歌卡片同样的节奏）。
  *
- * <p>The title band and the jacket (Kelvin 2026-10-19 06:28, the design thread's round 7, and round 8 at 15:2x):
+ * <p>The title band and the jacket (Kelvin 2026-10-19 06:28, design round 7, and round 8 at 15:2x):
  * a full-width band with the title and the artist centred; the 16:9 jacket (centre crop) with a soft glow of its
  * own colours behind it (the library's 16 × 16 wash, kept under the band), the difficulty chip in its bottom-right
  * corner over a soft shadow (round 8, 14:59 「把shallow10-这类等级信息移动到曲绘的右下角」), its lower 58 % darkened

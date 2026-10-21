@@ -121,8 +121,11 @@ public final class TransitionLayer implements Disposable {
     private final StringBuilder label = new StringBuilder(48);
     /** {@link #time} when the current transition became fully covered (the DIVE spray and ripples). */
     private float closedAt;
-    /** X2c art disc radius on the covered DIVE (the map's dive zoom stops at this size). */
-    public static final float ART_R = 250f;
+    /**
+     * X2c art disc radius on the covered DIVE (the map's dive zoom stops at this size); 250 until Kelvin
+     * 2026-10-21 asked for it 「再大一点」.
+     */
+    public static final float ART_R = 325f;
     private TextureRegion art;
     private float artCell;
     private final StringBuilder artTitle = new StringBuilder(48), artArtist = new StringBuilder(48),
@@ -165,8 +168,8 @@ public final class TransitionLayer implements Disposable {
      * {@code accent}. On the open the art fades, leaving its rim, which widens. No credit rows; see
      * the overload.
      */
-    public void setCoverArt(TextureRegion region, float cell, CharSequence title, CharSequence artist, CharSequence diff,
-                            Color accent) {
+    public void setCoverArt(TextureRegion region, float cell, CharSequence title, CharSequence artist,
+                            CharSequence diff, Color accent) {
         setCoverArt(region, cell, title, artist, diff, accent, null, null);
     }
 
@@ -175,8 +178,8 @@ public final class TransitionLayer implements Disposable {
      * title, each only when non-empty (Kelvin 2026-10-13 16:18: the credits show on the way into the
      * song, not on the song card; 22:16: the art moves left and the info pops in on its right).
      */
-    public void setCoverArt(TextureRegion region, float cell, CharSequence title, CharSequence artist, CharSequence diff,
-                            Color accent, CharSequence charter, CharSequence illustrator) {
+    public void setCoverArt(TextureRegion region, float cell, CharSequence title, CharSequence artist,
+                            CharSequence diff, Color accent, CharSequence charter, CharSequence illustrator) {
         art = region;
         artCell = cell;
         artTitle.setLength(0);
@@ -232,12 +235,6 @@ public final class TransitionLayer implements Disposable {
             return;
         }
         holds--;
-    }
-
-    /** Number of outstanding holds on the current (or, while idle, the next) transition. */
-    public int pendingHolds() {
-        int target = (phase == Phase.IDLE || phase == Phase.OPENING) ? serial + 1 : serial;
-        return holdSerial == target ? holds : 0;
     }
 
     // ------------------------------------------------------------------ control
@@ -506,7 +503,9 @@ public final class TransitionLayer implements Disposable {
             draw.rect(l, yL - 2f, w, 2f, Theme.GROUND_SIG, 0.6f * edgeA);
         }
         if (seamA > 0.01f) drawCurtainSeam(b, l, w, seamA);
-        if (phase == Phase.COVERED && glitch != null) glitch.drawScreenTears(b, tear, time, l, Ui.bottom(), w, Ui.worldH());
+        if (phase == Phase.COVERED && glitch != null) {
+            glitch.drawScreenTears(b, tear, time, l, Ui.bottom(), w, Ui.worldH());
+        }
     }
 
     private void drawCurtainSeam(SpriteBatch b, float l, float w, float a) {
@@ -668,8 +667,11 @@ public final class TransitionLayer implements Disposable {
         draw.circle(Ui.CX, SEAM_Y, r, 3f, RIPPLE, 0.85f * (1f - k));
     }
 
-    /** Covered DIVE timing (s after the walls meet): the art's glide left, then one info row every {@link #INFO_STEP}. */
-    private static final float GLIDE_AT = 0.05f, GLIDE_DUR = 0.40f, INFO_AT = 0.20f, INFO_STEP = 0.10f, INFO_DUR = 0.25f;
+    /**
+     * Covered DIVE timing (s after the walls meet): the art's glide left, then one info row every {@link #INFO_STEP}.
+     */
+    private static final float GLIDE_AT = 0.05f, GLIDE_DUR = 0.40f, INFO_AT = 0.20f,
+        INFO_STEP = 0.10f, INFO_DUR = 0.25f;
     /** Info column metrics: gap after the disc, row gap, row and title heights, padding, screen margin. */
     private static final float INFO_GAP = 72f, ROW_GAP = 16f, ROW_H = 60f, TITLE_H = 104f, ROW_PAD = 30f, MARGIN = 80f;
     /** Info caps (labels, names, title, difficulty) and the gaps after a label and before the difficulty. */
@@ -698,7 +700,8 @@ public final class TransitionLayer implements Disposable {
     /** Content width of a credit row (label, gap, name); 0 when the name is empty. */
     private float creditW(CharSequence label, CharSequence name) {
         if (name.length() == 0) return 0f;
-        return fonts.width(Fonts.Role.UI_LABEL, CAP_LABEL, label) + LABEL_GAP + fonts.width(Fonts.Role.UI, CAP_NAME, name);
+        return fonts.width(Fonts.Role.UI_LABEL, CAP_LABEL, label) + LABEL_GAP
+            + fonts.width(Fonts.Role.UI, CAP_NAME, name);
     }
 
     /** Content width of the title row (title, gap, difficulty). */
@@ -794,7 +797,8 @@ public final class TransitionLayer implements Disposable {
             float dx = tx + (wt + DIFF_GAP) * s;
             fonts.draw(b, Fonts.Role.UI_BOLD, CAP_DIFF * s, artDiff, dx, cy, Align.left | Fonts.VCENTER, artAccent, a);
             if (artDiffMark.length() > 0) {
-                float mx = dx + (fonts.width(Fonts.Role.UI_BOLD, CAP_DIFF, artDiff) + CAP_DIFF * Theme.CONST_MARK_GAP) * s;
+                float mx = dx + (fonts.width(Fonts.Role.UI_BOLD, CAP_DIFF, artDiff)
+                    + CAP_DIFF * Theme.CONST_MARK_GAP) * s;
                 // scaled from the difficulty's raster: no extra font bucket
                 fonts.drawScaled(b, Fonts.Role.UI_BOLD, CAP_DIFF, Theme.CONST_MARK_SCALE * s, artDiffMark, mx,
                     cy + CAP_DIFF * Theme.CONST_MARK_RISE * s, Align.left | Fonts.VCENTER, 0f, 1f, artAccent, a);

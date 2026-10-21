@@ -214,9 +214,13 @@ public final class StatsBlock {
         for (int i = 0; i < n; i++) {
             char c = text.charAt(i);
             float reveal = Math.abs(i - mid) * stagger;
-            if (c == ' ' || elapsed >= reveal + 2f / 60f) out.append(c);
-            else if (elapsed >= reveal) out.append(pool.charAt((int) (Anim.hash01(i * 13 + 5, tick) * pool.length()) % pool.length()));
-            else out.append(' ');
+            if (c == ' ' || elapsed >= reveal + 2f / 60f) {
+                out.append(c);
+            } else if (elapsed >= reveal) {
+                out.append(pool.charAt((int) (Anim.hash01(i * 13 + 5, tick) * pool.length()) % pool.length()));
+            } else {
+                out.append(' ');
+            }
         }
     }
 }

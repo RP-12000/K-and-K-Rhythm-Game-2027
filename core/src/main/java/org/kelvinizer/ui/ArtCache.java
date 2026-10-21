@@ -66,17 +66,6 @@ public final class ArtCache implements Disposable {
         }
     }
 
-    /** Number of textures currently loaded (diagnostics and tests). */
-    public int loadedCount() {
-        return entries.size;
-    }
-
-    /** References held on {@code path} (0 when not loaded). */
-    public int refCount(String path) {
-        Entry e = path != null ? entries.get(path) : null;
-        return e != null ? e.refs : 0;
-    }
-
     private static Texture load(String path) {
         try {
             FileHandle f = Gdx.files.internal(path);

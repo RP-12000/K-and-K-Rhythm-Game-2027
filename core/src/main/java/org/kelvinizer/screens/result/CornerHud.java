@@ -23,7 +23,7 @@ import space.earlygrey.shapedrawer.ShapeDrawer;
  * (Kelvin 2026-10-19 06:04 「主界面的depth，用户名和贝壳也这样子分开到屏幕左上角和右上角」, 06:28 「把原来的那种贝壳和
  * profile的小的边界加上」; they replace the profile strip along the bottom). Since Kelvin 2026-10-20 19:45
  * (「depth不要出现了，就和之前那样的六边形架构啊，然后出现的下降也是有一个六边形外框。你看arcaea是怎么做的，原来的是菱形，后面
- * 变动的外框也是菱形。我们不要做的像arcaea那么大但是思路是一样的」) the block is the map's (the design thread's plan 5 as
+ * 变动的外框也是菱形。我们不要做的像arcaea那么大但是思路是一样的」) the block is the map's (mock-up plan 5 as
  * {@code MapHud} draws it): no panel; the avatar in a disc with a white ring, the name on its fading band and under it
  * a tag pointed at both ends holding the depth, {@code -2,698 m}, with room for a minus sign and five digits and the
  * number centred; no DEPTH label (a panel with {@code DEPTH -2,698 m} before). The capsule is the gold pill (on a deep
@@ -525,10 +525,5 @@ public final class CornerHud implements TextQueue.Deferred {
     /** Capsule bottom (the shell popover hangs from it). */
     public float capsuleBottom() {
         return capY - capH * 0.5f;
-    }
-
-    /** Vertical offset of the HUD at the last draw. */
-    public float lastOffset() {
-        return lastOy;
     }
 }

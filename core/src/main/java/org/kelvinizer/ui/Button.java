@@ -94,12 +94,6 @@ public class Button extends Pressable {
         return label;
     }
 
-    /** Sets an icon drawn left of the label (text buttons) or centred (icon buttons). */
-    public Button setIcon(Icons.Icon i) {
-        icon = i;
-        return this;
-    }
-
     /** Changes the variant. */
     public Button setVariant(Variant v) {
         variant = v;
@@ -189,7 +183,7 @@ public class Button extends Pressable {
 
     /**
      * Draws everything but the label text: plate, outline, glow, ripple, hold ring, the icon of an
-     * icon or icon + text button, focus ring. The caller then draws {@link #label()} from its own
+     * icon or icon + text button. The caller then draws {@link #label()} from its own
      * raster (see the class comment); {@link #draw} does both.
      */
     public void drawBody(Batch b, float alpha) {
@@ -297,7 +291,6 @@ public class Button extends Pressable {
         ripple.color(Theme.WHITE);
         drawRipple(a);
         drawLabelIcon(a, s, cx, cy);
-        drawFocus(bx, by, bw, bh, RADIUS, a);
     }
 
     private void drawOutlined(float a, float s, float cx, float cy, float bx, float by, float bw, float bh,
@@ -329,7 +322,6 @@ public class Button extends Pressable {
         } else {
             drawLabelIcon(a, s, cx, cy);
         }
-        drawFocus(bx, by, bw, bh, RADIUS, a);
     }
 
     private void drawIcon(float a, float s, float cx, float cy) {
@@ -344,10 +336,6 @@ public class Button extends Pressable {
         if (icon != null) {
             Theme.brighten(stroke, k, c3);
             Icons.draw(draw.shapes(), icon, cx, cy, r * 0.95f, c3, a);
-        }
-        if (focused) {
-            float fa = 0.75f + 0.25f * MathUtils.sin(time * MathUtils.PI2);
-            draw.circle(cx, cy, r + 6f, 2f, Theme.INK1, fa * a);
         }
     }
 

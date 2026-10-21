@@ -19,7 +19,6 @@
     {"id": "sideN", "type": "shaft", "sealed": true, "x": 1620, "y": -760, "r": 140, "area": "north",
      "label": "S1 ECHO VALLEY", "labelZh": "回声谷 · 下层", "sub": "UNCHARTED", "subZh": "未测绘", "color": "#8F7BFF"},
     {"id": "song6", "song": "Song 6", "x": 330, "y": 520, "r": 112, "area": "south"},
-    {"id": "ics4u", "song": "ICS4U", "x": 830, "y": 560, "r": 112, "area": "south"},
     {"id": "stC", "type": "story", "story": "story03", "x": 1330, "y": 520, "area": "south"},
     {"id": "marsh", "song": "marsh mally", "x": 1830, "y": 560, "r": 112, "area": "south", "requires": ["song3"]}
   ],
@@ -27,7 +26,7 @@
     ["rise", "stA", "main"], ["rise", "song1", "main"], ["stA", "song2", "main"], ["song1", "song2", "main"],
     ["song2", "song3", "main"], ["song3", "stB", "main"], ["stB", "c2", "main"],
     ["song2", "song4", "side", "north"], ["song4", "song5", "side", "north"], ["song5", "sideN", "side", "north"],
-    ["song1", "song6", "side", "south"], ["song6", "ics4u", "side", "south"], ["ics4u", "stC", "side", "south"],
+    ["song1", "song6", "side", "south"], ["song6", "stC", "side", "south"],
     ["stC", "marsh", "side", "south"]
   ],
   "areas": [

@@ -11,10 +11,10 @@ import java.util.List;
  * beats, values in ref units). Evaluate with {@link #upperAt}, {@link #lowerAt},
  * {@link #laneScaleAt}, {@link #cameraFrameAt} (O(log events), no allocation, thread-safe).
  *
- * <p>Global lane scaling (owner 2026-10-13): {@link #laneScaleAt} multiplies every lane's width
+ * <p>Global lane scaling (Kelvin 2026-10-13): {@link #laneScaleAt} multiplies every lane's width
  * about the lanes' axis. Scaling some lanes only is their own width events.
  *
- * <p>Camera frame (owner 2026-10-13 05:29): {@link #cameraFrameAt} moves the lanes' axis (the
+ * <p>Camera frame (Kelvin 2026-10-13 05:29): {@link #cameraFrameAt} moves the lanes' axis (the
  * border between lanes −1 and 1) from x {@link LaneLayout#TILE_CENTRE}; positive moves it and
  * every lane right. It replaces the window ({@code leftBound} / {@code rightBound} and their
  * events): the lanes show across the whole screen. Format v1 windows load as a lane scale and a
@@ -90,11 +90,14 @@ public final class JudgementLine {
      *         infinite → 0)
      */
     public float laneScaleAt(float beat) {
-        float k = laneScaleEvents.isEmpty() ? laneScaleBase : Events.calculateValue(laneScaleEvents, beat, laneScaleBase);
+        float k = laneScaleEvents.isEmpty() ? laneScaleBase
+            : Events.calculateValue(laneScaleEvents, beat, laneScaleBase);
         return k > 0f && k < Float.POSITIVE_INFINITY ? k : 0f;
     }
 
-    /** @return the smallest global lane scale: the base or an event's end value, clamped to ≥ 0 as {@link #laneScaleAt}. */
+    /**
+     * @return the smallest global lane scale: the base or an event's end value, clamped to ≥ 0 as {@link #laneScaleAt}.
+     */
     public float laneScaleMin() {
         float k = extreme(laneScaleBase, laneScaleEvents, false);
         return k > 0f && k < Float.POSITIVE_INFINITY ? k : 0f;

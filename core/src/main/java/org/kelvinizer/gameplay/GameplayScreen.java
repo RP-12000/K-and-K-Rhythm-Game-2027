@@ -43,7 +43,7 @@ import org.kelvinizer.ui.Ui;
  * meter frame, glint) → HUD-under text (combo, judgement word) → normal block B (line cores, lane ticks,
  * TIDE STREAM bands, afterimage copies, notes) → one additive block (line glows, approach glows,
  * flashes, note glows, lane columns, touch feedback, hit FX) → HUD-over (tutorial captions,
- * countdowns, end banner) → the top layer: pause scrim, the corner HUD (owner 2026-10-12:
+ * countdowns, end banner) → the top layer: pause scrim, the corner HUD (Kelvin 2026-10-12:
  * drawn last, so lane glows and held bodies never cover it), the pause menu's buttons, and all of
  * their text in one recorded pass. Playfield effects run on "run time", which stops while paused.
  *
@@ -56,23 +56,19 @@ import org.kelvinizer.ui.Ui;
  * the app going to the background pause instantly; BACK / Esc (or RESUME, or Enter) while paused
  * resume with a 3-2-1 countdown during which notes stay frozen and nothing is judged.
  *
- * <p><b>Start</b> (DESIGN §5.11, owner 2026-10-12 16:06): when the DIVE cover opens (run time
+ * <p><b>Start</b> (DESIGN §5.11, Kelvin 2026-10-12 16:06): when the DIVE cover opens (run time
  * t = 0) a 3.3 s pre-roll runs on wall time while the song clock waits: the 3-2-1 countdown at
  * one second per digit, then 0.3 s with nothing but the stage. At t = 3.3 the engine starts its
  * clock at the start time {@link GameEngine#leadInMs()} (0, or just before the first note can be
  * drawn); the music starts when the clock crosses 0. Nothing is judged before that. A pause
  * during the pre-roll restarts it from the 3.
  *
- * <p><b>Stretch</b> (owner 2026-10-12 16:09 / 16:17): the playfield fills the screen at every aspect.
+ * <p><b>Stretch</b> (Kelvin 2026-10-12 16:09 / 16:17): the playfield fills the screen at every aspect.
  * {@link #begin} and every frame fit {@link Field} to the visible world; a change (a desktop resize, also
  * during the pre-roll or a pause) makes the engine re-evaluate its frame geometry, and the edge entries
  * follow on the next frame. The corner HUD stays pinned to the corners, unstretched.
  */
 public class GameplayScreen extends KkScreen<Main> {
-    /** Hold time of the pause control in the "hold" mode (s). */
-    public static final float PAUSE_HOLD_SEC = PauseControl.HOLD_SEC;
-    /** Maximum interval of the "double tap" pause mode, the default (s). */
-    public static final float DOUBLE_TAP_SEC = PauseControl.DOUBLE_TAP_NS / 1e9f;
     /** Length of each resume countdown step (s). */
     public static final float COUNT_STEP_SEC = 0.6f;
     private static final float ABYSS_PULSE_SEC = 0.40f;
@@ -117,7 +113,10 @@ public class GameplayScreen extends KkScreen<Main> {
     private final PauseControl pauseControl;
 
     private boolean started;
-    /** Seconds into the start pre-roll (DESIGN §5.11), or −1 outside it (before the cover opens, and once the clock runs). */
+    /**
+     * Seconds into the start pre-roll (DESIGN §5.11), or −1 outside it (before the cover opens, and once the clock
+     * runs).
+     */
     private float preroll = -1f;
     private boolean resultSent;
     private int[] holdFx = new int[0];
@@ -127,7 +126,7 @@ public class GameplayScreen extends KkScreen<Main> {
     private float lastBeatFloor = Float.NaN;
     private float abyssT = -10f;
 
-    // pause state (field names read by the screen harnesses)
+    // pause state (field names read by the screenshot tests)
     private boolean menuOpen;
     private float countdown = -1f;
     /** How the last pause opened: "tap" (pause control), "key" (BACK / Esc / Pause) or "app". */
@@ -219,7 +218,12 @@ public class GameplayScreen extends KkScreen<Main> {
         // session), so the first judgement never waits for a load
         if (game.audio() != null) game.audio().hitSound();
         applyOffsets();
-        // the playfield fills the screen (owner 16:17): fit the stretch before the engine and the edge entries use it
+        // a resume's music latency is learned in the clock across runs; it starts from the device's stored one
+        DeviceSettings d = game.profiles() != null ? game.profiles().device() : null;
+        if (d != null && engine.clock().resumeLatencyMs() <= 0f) {
+            engine.clock().setResumeLatencyMs(d.musicResumeLatencyMs);
+        }
+        // the playfield fills the screen (Kelvin 16:17): fit the stretch before the engine and the edge entries use it
         Field.fit(Ui.worldW(), Ui.worldH());
         engine.load(chart, autoplay);
         game.hitFx().clear();
@@ -240,7 +244,7 @@ public class GameplayScreen extends KkScreen<Main> {
         hud.begin(title, diff, constText, autoplay, settings);
         menu.prewarm();
         overlay.begin(autoplay, !tutorial());
-        // the end banner waits 1 s after the music and stays 2 s, then the result (owner 2026-10-17)
+        // the end banner waits 1 s after the music and stays 2 s, then the result (Kelvin 2026-10-17)
         engine.setFinishDelayMs(tutorial() ? Params.FINISH_DELAY_MS : Params.BANNER_FINISH_DELAY_MS);
         loadBackdropArt();
     }
@@ -341,12 +345,19 @@ public class GameplayScreen extends KkScreen<Main> {
 
     /**
      * Keeps the music start latency the clock measured (averaged with the stored one), so the next
-     * song starts its music that much early and the first notes do not hitch.
+     * song starts its music that much early and the first notes do not hitch, and the resume latency
+     * it learned, so the next resume's music is primed that much early.
      */
-    private void recordStartLatency() {
-        float m = engine.clock().measuredStartLatencyMs();
+    private void recordLatencies() {
         DeviceSettings d = game.profiles() != null ? game.profiles().device() : null;
-        if (d == null || Float.isNaN(m)) return;
+        if (d == null) return;
+        float r = engine.clock().resumeLatencyMs();
+        if (r > 0f && Math.abs(r - d.musicResumeLatencyMs) >= 0.5f) {
+            d.musicResumeLatencyMs = r;
+            game.profiles().markDirty();
+        }
+        float m = engine.clock().measuredStartLatencyMs();
+        if (Float.isNaN(m)) return;
         float v = d.musicStartLatencyMs > 0f ? 0.5f * (d.musicStartLatencyMs + m) : m;
         if (Math.abs(v - d.musicStartLatencyMs) < 0.5f) return;
         d.musicStartLatencyMs = v;
@@ -369,7 +380,7 @@ public class GameplayScreen extends KkScreen<Main> {
     @Override
     protected void onHide() {
         engine.pause();
-        recordStartLatency();
+        recordLatencies();
         engine.clock().dispose(); // release the music; begin() loads it again
         Backdrop b = game.backdrop();
         b.setMode(Backdrop.Mode.MENU);
@@ -416,6 +427,8 @@ public class GameplayScreen extends KkScreen<Main> {
             if (countdown < 0f) {
                 countdown = -1f;
                 engine.resume();
+            } else if (countdown * 1000f < engine.clock().resumeLeadMs()) {
+                engine.primeResume(); // the sound is back as the count ends (Android start latency)
             }
         }
         if (preroll >= 0f && !menuOpen) {
@@ -467,7 +480,7 @@ public class GameplayScreen extends KkScreen<Main> {
         hud.drawUnder(batch, introT, runTime, !menuOpen);
         // ---- HUD-under text (recorded, then one draw call per font page)
         text.start(batch);
-        hud.setCentreCover(overlay.bannerCover(engine.judgeMs(), engine.endMs()));
+        hud.setCentreCover(centreCover());
         hud.drawUnderText(text, engine, runTime, !menuOpen && countdown < 0f);
         feedback.drawText(text, game.fonts(), runTime);
         text.replay();
@@ -515,22 +528,17 @@ public class GameplayScreen extends KkScreen<Main> {
     protected void drawExtras(float delta) {
     }
 
-    /**
-     * Draws a static afterimage illustration for a caption (DESIGN §17.3): a DROP with the copies
-     * of {@code trail}, copy k offset by {@code (k·dx, k·dy)}, farthest first, live note on top,
-     * with the note sprites and the readability cap. Call from {@link #drawExtras} (normal blend,
-     * atlas batch). See {@code TrailRenderer.drawDemo}.
-     *
-     * @return quads submitted
-     */
-    protected int drawTrailDemo(float x, float y, float laneWidth, boolean upper,
-                                org.kelvinizer.elements.NoteTrail trail, float dx, float dy, float alpha) {
-        return trails.drawDemo(x, y, laneWidth, upper, trail, dx, dy, alpha);
-    }
-
     /** Extra zone-hint pulse 0..1 (the tutorial pulses it to α .25, DESIGN §10.2). */
     protected float zoneHintPulse() {
         return 0f;
+    }
+
+    /**
+     * How much of the centre something else owns, 0..1: the HUD combo there gives way to it. The end banner here;
+     * the tutorial adds its closing title.
+     */
+    protected float centreCover() {
+        return overlay.bannerCover(engine.judgeMs(), engine.endMs());
     }
 
     /** True when stray-touch dots are forced on (tutorial). */
@@ -634,7 +642,9 @@ public class GameplayScreen extends KkScreen<Main> {
                         field.flash(line, ev.lane, false, runTime); // a TIDE STREAM (lane −1) flashes the window
                         hud.judgement(Judgement.LOST, 0f, ev.x, line, ly, runTime);
                         // a broken TIDE STREAM drains the tide level (unless another one keeps it up)
-                        if (ev.has(GameEvent.FLAG_TIDE_STREAM) && !engine.tideRunning(line)) tideWash.drain(line, runTime);
+                        if (ev.has(GameEvent.FLAG_TIDE_STREAM) && !engine.tideRunning(line)) {
+                            tideWash.drain(line, runTime);
+                        }
                     }
                     break;
                 }
@@ -649,7 +659,7 @@ public class GameplayScreen extends KkScreen<Main> {
                     feedback.mineShock(ev.touchX, ly, runTime);
                     field.flash(line, ev.lane, true, runTime);
                     hud.mineBreak();
-                    hud.mineWord(ev.x, line, ly, runTime); // red LOST word (owner 2026-10-12 00:42)
+                    hud.mineWord(ev.x, line, ly, runTime); // red LOST word (Kelvin 2026-10-12 00:42)
                     break;
                 case GameEvent.EMPTY:
                     if (line != null) {
@@ -664,7 +674,9 @@ public class GameplayScreen extends KkScreen<Main> {
         }
     }
 
-    /** Hit ripple (High) or bead and EARLY/LATE chevron for a judged lane hit (TIDE: the tide wash, in consumeEvents). */
+    /**
+     * Hit ripple (High) or bead and EARLY/LATE chevron for a judged lane hit (TIDE: the tide wash, in consumeEvents).
+     */
     private void hitFeedback(Line line, float ly, float x, boolean universal, boolean high) {
         if (line == null || universal) return; // TIDE: the tide wash swells the whole line instead (DESIGN §19.2)
         if (high) field.ripple(line, x, 4f, runTime);
@@ -689,41 +701,20 @@ public class GameplayScreen extends KkScreen<Main> {
         }
     }
 
-    /** Shows a stray-touch dot at (x, y) (tutorial demo). */
-    protected void demoStrayDot(float x, float y) {
-        feedback.strayDemo(x, y, runTime);
-    }
-
     /** Height of the demo mine's red LOST word above the mine centre (judgement display "At lane"). */
     private static final float MINE_WORD_RISE = 56f;
 
     /**
      * Tutorial demo: paints a lane-note head with its leading edge centred on (x, y) (a sky head hangs
-     * below it, a ground head stands on it) at the current note size, with the gold sync pearls when
-     * {@code sync}, using the chart's own painters. Call from {@link #drawExtras} (normal blend, atlas batch).
+     * below it, a ground head stands on it) at the current note size, using the chart's own painters. Call
+     * from {@link #drawExtras} (normal blend, atlas batch).
      */
-    protected void drawNoteDemo(float x, float y, float laneWidth, boolean upper, boolean sync, float alpha) {
+    protected void drawNoteDemo(float x, float y, float laneWidth, boolean upper, float alpha) {
         float w = notes.headWidth(laneWidth);
         float h = notes.noteHeight();
         Color c = upper ? Theme.SKY_SIG : Theme.GROUND_SIG;
         notes.paintLaneNote(x, y, w, h, upper ? 180f : 0f, c, alpha, 1f, 0f, 0f, 0f, 0f, 0f, false);
-        if (sync) notes.syncPearl(x, y, w, h, alpha); // the pearls of a pending sync head, in the head's frame
         notes.batch().setColor(Color.WHITE);
-    }
-
-    /** @return the head height of a lane note at the current note size (tutorial demos). */
-    protected float noteDemoHeight() {
-        return notes.noteHeight();
-    }
-
-    /** @return how far the notes are drawn toward their lines for the VISUAL HIT POINT (tutorial captions follow). */
-    protected float noteHitShift() {
-        return notes.hitShift();
-    }
-
-    /** @return the head width of a lane note in a lane {@code laneWidth} wide (tutorial demos). */
-    protected float noteDemoWidth(float laneWidth) {
-        return notes.headWidth(laneWidth);
     }
 
     /** Tutorial demo: paints an upright mine body centred on (cx, cy), as wide as in a lane {@code laneWidth} wide. */
@@ -735,7 +726,7 @@ public class GameplayScreen extends KkScreen<Main> {
     }
 
     /**
-     * Tutorial demo: what a touched mine at (x, y) shows (DESIGN §5.15 and the owner's red LOST): the
+     * Tutorial demo: what a touched mine at (x, y) shows (DESIGN §5.15 and Kelvin's red LOST): the
      * contact ring, the shock rings and the red LOST word. No sound, and the combo and score never change.
      */
     protected void demoMineTouch(float x, float y) {
@@ -896,7 +887,7 @@ public class GameplayScreen extends KkScreen<Main> {
     }
 
     private void openPause(String by) {
-        // nothing is left to play after the end, and quitting from the pause would lose the record (owner 2026-10-17)
+        // nothing is left to play after the end, and quitting from the pause would lose the record (Kelvin 2026-10-17)
         if (chart == null || resultSent || engine.isFinished() || engine.judgeMs() >= engine.endMs()) return;
         engine.pause();
         menuOpen = true;

@@ -51,7 +51,9 @@ final class ScaledGlitch {
     /** @return the unscaled width {@link #draw} lays {@code text} out at. */
     float width(Fonts.Role role, float cap, CharSequence text) {
         float w = 0f;
-        for (int i = 0, n = Math.min(MAX_CHARS, text.length()); i < n; i++) w += fonts.cellWidth(role, cap, text.charAt(i));
+        for (int i = 0, n = Math.min(MAX_CHARS, text.length()); i < n; i++) {
+            w += fonts.cellWidth(role, cap, text.charAt(i));
+        }
         return w;
     }
 

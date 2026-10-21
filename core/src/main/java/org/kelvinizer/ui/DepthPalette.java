@@ -25,8 +25,6 @@ public final class DepthPalette {
     public static final float[] BAND_BOTTOM = {200f, 1000f, 4000f, 6000f, 10935f, Float.POSITIVE_INFINITY};
     /** English layer names. */
     public static final String[] NAMES = {"SHORELINE", "TWILIGHT", "MIDNIGHT", "BLACKWATER", "TRENCH", "BELOW"};
-    /** Chinese layer names. */
-    public static final String[] NAMES_ZH = {"浅滩", "暮光层", "午夜层", "黑水层", "海沟", "未知"};
 
     /** Channel index: gradient top. */
     public static final int CH_TOP = 0;
@@ -88,11 +86,6 @@ public final class DepthPalette {
             if (meters >= BAND_TOP[i]) return i;
         }
         return 0;
-    }
-
-    /** Static accent colour of a layer (never mutate). */
-    public static Color layerAccent(int layer) {
-        return ACCENTS[MathUtils.clamp(layer, 0, LAYERS - 1)];
     }
 
     /** Fraction 0..1 of {@code meters} inside its band (0 for L6). */

@@ -2,11 +2,10 @@ package org.kelvinizer.ui;
 
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.Batch;
-import com.badlogic.gdx.math.MathUtils;
 
 /**
  * 所有可按控件的基类：按下时缩小、变亮、从触点泛起波纹并轻震，在控件内（含容差）抬起时才生效，拖出范围则取消。
- * 还处理桌面悬停、键盘焦点框和禁用时点击的摇头动画；触摸区域至少有最小触摸目标那么大。
+ * 还处理桌面悬停和禁用时点击的摇头动画；触摸区域至少有最小触摸目标那么大。
  *
  * <p>Base of every pressable control: the interaction primitives of DESIGN §1.5.
  *
@@ -14,11 +13,9 @@ import com.badlogic.gdx.math.MathUtils;
  *   <li><b>Down:</b> scale → 0.94 (snappy spring), brightness +12 %, ripple from the touch point,
  *       light haptic.</li>
  *   <li><b>Release inside</b> (within {@link Ui#slop()} of the hit rect): springs to 1.0 with a
- *       bouncy overshoot (≈ 1.04) and the action fires ({@link #setOnTap} callback and the
- *       {@link #consumeTap()} flag).</li>
+ *       bouncy overshoot (≈ 1.04) and the action fires (the {@link #setOnTap} callback).</li>
  *   <li><b>Drag out beyond slop:</b> the press cancels and springs back with a small wobble.</li>
  *   <li><b>Hover</b> (desktop, {@link #mouseMoved}): lift 2 units, brightness +8 %.</li>
- *   <li><b>Keyboard focus:</b> 2 unit {@code ink1} ring, α .5 ↔ 1 at 1 Hz.</li>
  *   <li><b>Disabled:</b> α .40; a tap plays the "no" shake (±8, 3 cycles, 240 ms).</li>
  * </ul>
  *
@@ -39,7 +36,7 @@ public abstract class Pressable {
     /** Visual rect (world units). */
     protected float x, y, w, h;
     /** State flags. */
-    protected boolean enabled = true, visible = true, focused;
+    protected boolean enabled = true, visible = true;
     /** Pointer currently pressing, or −1. */
     protected int pointer = -1;
     /** Press-scale spring (snappy while pressing, bouncy on release). */
@@ -48,7 +45,7 @@ public abstract class Pressable {
     protected final Ripple ripple = new Ripple();
     /** 0..1 press brightness ramp (micro) and hover ramp. */
     protected float press, hover;
-    /** Seconds since construction (focus pulse, idle effects). */
+    /** Seconds since construction (idle effects). */
     protected float time;
 
     private float minHitW = -1f, minHitH = -1f;
@@ -76,14 +73,6 @@ public abstract class Pressable {
         x = cx - w * 0.5f;
         y = cy - h * 0.5f;
         return this;
-    }
-
-    /** Sets the size, keeping the centre. */
-    public Pressable setSize(float w, float h) {
-        float cx = centerX(), cy = centerY();
-        this.w = w;
-        this.h = h;
-        return setCenter(cx, cy);
     }
 
     /**
@@ -133,13 +122,6 @@ public abstract class Pressable {
         return this;
     }
 
-    /** Returns true once after each fired tap (polling alternative to the callback). */
-    public boolean consumeTap() {
-        boolean t = tapped;
-        tapped = false;
-        return t;
-    }
-
     /** Enables or disables the control (disabled: α .40, taps shake). */
     public Pressable setEnabled(boolean on) {
         enabled = on;
@@ -164,17 +146,6 @@ public abstract class Pressable {
         return visible;
     }
 
-    /** Sets keyboard focus (draws the focus ring). */
-    public Pressable setFocused(boolean on) {
-        focused = on;
-        return this;
-    }
-
-    /** True when keyboard-focused. */
-    public boolean isFocused() {
-        return focused;
-    }
-
     /** Enables the light haptic on press (default on; still gated by {@link Haptics}). */
     public Pressable setHaptic(boolean on) {
         haptic = on;
@@ -186,12 +157,7 @@ public abstract class Pressable {
         return pointer >= 0;
     }
 
-    /** True while the mouse hovers the control. */
-    public boolean isHovered() {
-        return hovered;
-    }
-
-    /** Fires the action programmatically (keyboard ENTER on the focused control). */
+    /** Fires the action programmatically. */
     public void fire() {
         if (!visible) return;
         if (!enabled) {
@@ -353,16 +319,6 @@ public abstract class Pressable {
     /** Draws the ripple; call after the control's background. */
     protected void drawRipple(float alpha) {
         ripple.draw(draw, alpha);
-    }
-
-    /**
-     * Draws the keyboard focus ring (2 units, {@code ink1}, α .5 ↔ 1 at 1 Hz) around the given
-     * rect with corner {@code radius}, when focused.
-     */
-    protected void drawFocus(float rx, float ry, float rw, float rh, float radius, float alpha) {
-        if (!focused) return;
-        float a = 0.75f + 0.25f * MathUtils.sin(time * MathUtils.PI2);
-        draw.roundRectStroke(rx - 6f, ry - 6f, rw + 12f, rh + 12f, radius + 6f, 2f, Theme.INK1, a * alpha);
     }
 
     /** Writes {@code c} brightened by {@link #brightness()} into {@code out}. */

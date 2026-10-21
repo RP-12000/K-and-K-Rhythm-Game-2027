@@ -71,8 +71,7 @@ import org.kelvinizer.ui.Theme;
  * the caller's additive block.
  *
  * <p><b>Allocation.</b> The instances are created and warmed in the constructor; spawning,
- * updating, drawing and clearing allocate nothing while the pre-filled pools suffice (see
- * {@link #instances()}).
+ * updating, drawing and clearing allocate nothing while the pre-filled pools suffice.
  *
  * <p>Coordinates are world units. GL thread only.
  */
@@ -98,8 +97,6 @@ public final class HitFx implements Disposable {
     public static final float HOLD_RATE_HIGH = 22f;
     /** Hold-stream emission at Low quality, particles per second (DESIGN §5.9). */
     public static final float HOLD_RATE_LOW = 12f;
-    /** Period of the small water ring at a held STREAM's hold point (DESIGN §20.5). */
-    public static final float HOLD_RING_PERIOD_SEC = WaterRings.HOLD_PERIOD_SEC;
 
     private static final int FX_RESONANCE = 0, FX_ECHO = 1, FX_HOLD = 2, FX_LOST = 3, FX_COUNT = 4;
     private static final String[] FILES = {"resonance.p", "echo.p", "hold.p", "lost.p"};
@@ -159,7 +156,6 @@ public final class HitFx implements Disposable {
 
     // auto-drop ------------------------------------------------------------------------------------
     private Runnable onAutoDrop;
-    private boolean autoDropEnabled = true;
     private boolean autoDropped;
     private float probeWarmup = AUTO_DROP_WARMUP_SEC, probeTime;
     private int probeFrames;
@@ -227,14 +223,6 @@ public final class HitFx implements Disposable {
      */
     public void setOnAutoDrop(Runnable callback) {
         onAutoDrop = callback;
-    }
-
-    /**
-     * Enables (default) or disables the automatic High → Low drop, e.g. for benchmarks and test
-     * harnesses running on slow software GL (same role as {@code Backdrop.setAutoFallback}).
-     */
-    public void setAutoDrop(boolean enabled) {
-        autoDropEnabled = enabled;
     }
 
     /** True once the quality was dropped automatically this session (it is never re-armed). */
@@ -375,7 +363,7 @@ public final class HitFx implements Disposable {
         ringEstimate = rings.live(); // waiting (staggered) rings included
     }
 
-    /** Every {@value #HOLD_RING_PERIOD_SEC} s of a running hold stream, a small ring at its hold point. */
+    /** Every {@value WaterRings#HOLD_PERIOD_SEC} s of a running hold stream, a small ring at its hold point. */
     private void holdRings(float delta) {
         for (int i = 0; i < MAX_HOLDS; i++) {
             if (!holdActive[i]) continue;
@@ -433,31 +421,16 @@ public final class HitFx implements Disposable {
 
     /**
      * Particle quads the next {@link #draw} will submit (bursts, hold streams, LOST marks): the
-     * quantity of the {@value #QUAD_BUDGET} budget. The water rings add {@link #ringQuads()}.
+     * quantity of the {@value #QUAD_BUDGET} budget. The water rings add their own quads.
      */
     public int liveQuads() {
         return poolQuads();
-    }
-
-    /** Water-ring quads the next {@link #draw} will submit (started, unfinished rings; DESIGN §20.5). */
-    public int ringQuads() {
-        return rings.quads();
     }
 
     private int poolQuads() {
         int n = 0;
         for (int i = 0; i < allPools.size; i++) n += allPools.get(i).quads();
         return n;
-    }
-
-    /** Water rings alive, started or still waiting for their 65 ms stagger (diagnostics). */
-    public int liveRings() {
-        return rings.live();
-    }
-
-    /** Water rings spawned so far, never reset (diagnostics and tests). */
-    public long ringsSpawned() {
-        return rings.spawned();
     }
 
     /** Bursts spawned so far (taps, seals, LOST marks), never reset (diagnostics and tests). */
@@ -468,16 +441,6 @@ public final class HitFx implements Disposable {
     /** Hold streams started so far, never reset (diagnostics and tests). */
     public long streamsSpawned() {
         return streamsSpawned;
-    }
-
-    /**
-     * Effect instances created so far, live and free (diagnostics). It stays constant during play
-     * while the pre-filled pools suffice; every increase was a mid-play allocation.
-     */
-    public int instances() {
-        int n = 0;
-        for (int i = 0; i < allPools.size; i++) n += allPools.get(i).created();
-        return n;
     }
 
     /** Releases the pools and prototypes (the atlas belongs to {@link Draw}). */
@@ -550,7 +513,7 @@ public final class HitFx implements Disposable {
 
     /** Average-fps watch for the High → Low drop (frames with delta > 0 only). */
     private void probe(float delta) {
-        if (quality != QUALITY_HIGH || autoDropped || !autoDropEnabled) return;
+        if (quality != QUALITY_HIGH || autoDropped) return;
         if (probeWarmup > 0f) {
             probeWarmup -= delta;
             return;

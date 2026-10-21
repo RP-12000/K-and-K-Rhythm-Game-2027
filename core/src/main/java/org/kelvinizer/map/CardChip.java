@@ -41,7 +41,6 @@ final class CardChip extends Pressable {
     /** Name glitch (G2 on selection; ABYSS idles). */
     final GlitchState label = new GlitchState();
     private final Spring sel = new Spring(Spring.Preset.BOUNCY, 1f);
-    private final Color c1 = new Color(), c2 = new Color();
     private boolean selected, missing;
     private float sweep = 1f, roll = 1f;
     private CharSequence constant = "", mark = "";
@@ -93,10 +92,6 @@ final class CardChip extends Pressable {
         roll = 0f;
     }
 
-    boolean isSelected() {
-        return selected;
-    }
-
     @Override
     protected void onUpdate(float dt) {
         sel.update(dt);
@@ -129,7 +124,9 @@ final class CardChip extends Pressable {
             draw.roundRect(bx, by, fw, bh, rad, fill, alpha * Math.min(1f, e * 4f));
             Color border = Theme.difficultyBorder(o);
             if (o == 3) draw.roundRectStroke(bx + 2f * k, by, bw, bh, rad, 2f, Theme.ABYSS_BORDER_COPY, 0.9f * alpha);
-            if (border != null) draw.roundRectStroke(bx, by, bw, bh, rad, Theme.difficultyBorderWidth(o), border, alpha);
+            if (border != null) {
+                draw.roundRectStroke(bx, by, bw, bh, rad, Theme.difficultyBorderWidth(o), border, alpha);
+            }
         } else {
             draw.roundRect(bx, by, bw, bh, rad, Theme.PANEL_HI, alpha);
             if (o == 3) {
@@ -144,7 +141,6 @@ final class CardChip extends Pressable {
         }
         ripple.color(selected && o == 0 ? Theme.INK3 : Theme.INK1);
         drawRipple(alpha);
-        drawFocus(bx, by, bw, bh, rad, alpha);
     }
 
     private boolean filledText() {
@@ -154,8 +150,8 @@ final class CardChip extends Pressable {
     /** UI phase: the missing dash. */
     void drawUi(Batch b, float alpha) {
         if (!visible || !missing || alpha <= 0.002f) return;
-        r.ui(b, "—", MapUi.cap(26f, k), centerX() + shakeX(), centerY() - 20f * k, Align.center | Fonts.VCENTER, Theme.INK3,
-            alpha);
+        r.ui(b, "—", MapUi.cap(26f, k), centerX() + shakeX(), centerY() - 20f * k, Align.center | Fonts.VCENTER,
+            Theme.INK3, alpha);
     }
 
     /** UI_BOLD phase: the name (G2 on change). */

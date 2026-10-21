@@ -14,7 +14,7 @@
     {
       "id": "c3", "title": "MIDNIGHT", "titleZh": "午夜层", "subtitle": "Chapter III",
       "depthMeters": 1000, "depthBottom": 4000, "uncharted": false,
-      "songs": ["ICS4U", "marsh mally"]
+      "songs": ["marsh mally"]
     },
     {
       "id": "c4", "title": "BLACKWATER", "titleZh": "黑水层", "subtitle": "Chapter IV",

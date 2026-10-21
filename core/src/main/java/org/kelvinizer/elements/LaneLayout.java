@@ -13,21 +13,21 @@ import java.util.List;
  * <p>The caller passes what can be seen, {@code [left, right]} (the screen,
  * {@link #VIEW_LEFT}..{@link #VIEW_RIGHT} stretched); the chart's {@link JudgementLine} gives the
  * global lane scale {@code g} ({@link JudgementLine#laneScaleAt}) and the camera frame {@code c}
- * ({@link JudgementLine#cameraFrameAt}, owner 2026-10-13 05:29), which puts the lanes' axis (the
+ * ({@link JudgementLine#cameraFrameAt}, Kelvin 2026-10-13 05:29), which puts the lanes' axis (the
  * border between lanes −1 and 1) at {@code TILE_CENTRE + c·xScale} ({@link #axis()}). Two modes
  * ({@link Chart#laneLimit()}):
  * <ul>
- *   <li><b>Tiled</b> (unlimited lanes, owner 2026-10-13): lane i is {@code wᵢ·g·xScale} wide;
+ *   <li><b>Tiled</b> (unlimited lanes, Kelvin 2026-10-13): lane i is {@code wᵢ·g·xScale} wide;
  *       lanes with positive ids follow each other rightwards from the axis, negative ids
  *       leftwards. Each span is then clipped to {@code [left, right]} (the window), so a lane
  *       outside it has zero width at the window edge (not drawn, not touchable) and the lanes
  *       still tile {@code [fieldLeft, fieldRight]} in id order. Ids are taken as contiguous (the
- *       loader fills the gaps). <b>Inserted lanes</b> (owner 2026-10-15, {@link Lane#inserted()}):
+ *       loader fills the gaps). <b>Inserted lanes</b> (Kelvin 2026-10-15, {@link Lane#inserted()}):
  *       lane 0 sits centred on the axis; any other inserted lane pushes the lanes on both of its
  *       sides apart by half its width each; and all spans shrink about the window centre by
  *       {@code z = S / (S + I)} ({@code S} the window width, {@code I} the inserted lanes' current
  *       widths), so the lanes at the window edges stay there and the inserted lanes take their room
- *       from the lanes on the screen. <b>Deleted lanes</b> (owner 2026-10-17, {@link Lane#deleted()})
+ *       from the lanes on the screen. <b>Deleted lanes</b> (Kelvin 2026-10-17, {@link Lane#deleted()})
  *       mirror this: once its deletion starts, a lane that was not inserted gives back how much
  *       narrower it is than at that start ({@code I} counts it negative, at most {@link #MAX_WIDEN}
  *       times wider), so the lanes on its two sides close up by half each and the screen's lanes
@@ -203,9 +203,9 @@ public final class LaneLayout {
         totalWeight = sum;
         float span = right - left;
         if (tiled) {
-            // TIDE pattern (owner 2026-10-13): a default lane times the scale, capped at 1
+            // TIDE pattern (Kelvin 2026-10-13): a default lane times the scale, capped at 1
             tile(left, right, kx * g, beat);
-            // never sparser than the default, also when deleted lanes widen the others (owner 2026-10-17)
+            // never sparser than the default, also when deleted lanes widen the others (Kelvin 2026-10-17)
             float f = Math.min(g, 1f) * squeeze;
             if (f > 1f) f = 1f;
             float p = Lane.DEFAULT_WIDTH * kx * f;
@@ -240,9 +240,9 @@ public final class LaneLayout {
      * Tiled mode: lanes 1, 2, … rightwards and −1, −2, … leftwards from the axis, each
      * {@code weight·k} wide ({@code k = xScale·g}). A lane that reaches into the window keeps its
      * whole span, even past the screen edge (so lanes slide off the screen instead of squeezing,
-     * owner 2026-10-13 camera frame); one wholly outside collapses to zero width at its end
+     * Kelvin 2026-10-13 camera frame); one wholly outside collapses to zero width at its end
      * nearer the window. The field is the span of the lanes that reach into the window. Inserted
-     * lanes (owner 2026-10-15): lane 0 is centred on the axis, another inserted lane moves the
+     * lanes (Kelvin 2026-10-15): lane 0 is centred on the axis, another inserted lane moves the
      * lanes on its two sides apart by half its width each, then every span shrinks about the
      * window centre by {@link #squeeze()} so the window edges keep their lanes. Deleted lanes (owner
      * 2026-10-17) do the opposite with the room they give back ({@link #room}).
@@ -295,7 +295,7 @@ public final class LaneLayout {
             lefts[p] = axis - half;
             widths[p] = 2f * half;
         }
-        // Inserted lanes take their room from the screen (owner 2026-10-15), deleted lanes give it back
+        // Inserted lanes take their room from the screen (Kelvin 2026-10-15), deleted lanes give it back
         // (2026-10-17): every span shrinks or widens about the window centre so the lanes at the window
         // edges stay there.
         float c = 0.5f * (left + right);

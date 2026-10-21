@@ -76,11 +76,6 @@ final class DeferredBatch implements Batch {
         target = null;
     }
 
-    /** @return the number of texture groups recorded so far (diagnostics). */
-    int groupCount() {
-        return groups;
-    }
-
     // ------------------------------------------------------------------ recording
 
     private float[] slot(Texture t, int floats) {

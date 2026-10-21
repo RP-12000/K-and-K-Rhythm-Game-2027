@@ -126,8 +126,8 @@ public class SettingsScreen extends ShellScreen {
         OFFSET_LATE = Lang.of("MOSTLY LATE → TAP + TO INCREASE", "LATE 较多 → 点击增加（+）");
     private static final CharSequence HIT_DESC = Lang.of("FROM A TAP OR HOLD KEY'S MIDDLE TO THE LINE AT THE HIT",
             "判定时 TAP、HOLD 按键中线到判定线的距离"),
-        HIT_EDGE = Lang.of("20 = BOTTOM EDGE ON THE LINE (DEFAULT)", "20 = 按键下边缘碰线（默认）"),
-        HIT_MIDDLE = Lang.of("0 = THE LINE THROUGH THE KEY'S MIDDLE", "0 = 判定线横穿按键中间");
+        HIT_MIDDLE = Lang.of("0 = THE LINE THROUGH THE KEY'S MIDDLE (DEFAULT)", "0 = 判定线横穿按键中间（默认）"),
+        HIT_EDGE = Lang.of("20 = BOTTOM EDGE ON THE LINE", "20 = 按键下边缘碰线");
 
     // descriptions that depend on other values (refreshDynamic)
     private static final CharSequence HIT_ON = Lang.of("ADJUST THE VOLUME OF NOTE SOUND EFFECTS", "调整音符的打击音效音量"),
@@ -164,7 +164,8 @@ public class SettingsScreen extends ShellScreen {
             }
         });
         for (int i = 0; i < pages.length; i++) pages[i] = new SettingsPage(game.draw());
-        buildAudio(pages[TAB_AUDIO]);
+        // AUDIO's few rows share the height left under them (Kelvin 2026-10-21: 「把每一列的高度扩大，间隔开一点」)
+        buildAudio(pages[TAB_AUDIO].setSpreadCentred(true));
         buildVisual(pages[TAB_VISUAL]);
         buildGameplay(pages[TAB_GAMEPLAY]);
         buildOther(pages[TAB_OTHER]);
@@ -241,7 +242,6 @@ public class SettingsScreen extends ShellScreen {
         calibrate.setOnTap(new Runnable() {
             @Override
             public void run() {
-                game.calibration().setQuickMode(false);
                 openScreen(game.calibration(), CalibrationScreen.TITLE);
             }
         });
@@ -330,8 +330,8 @@ public class SettingsScreen extends ShellScreen {
                 }
             }));
         hitRow.setNudges(new float[]{-10f, -1f, 1f, 10f}, new CharSequence[]{"–10", "–1", "+1", "+10"});
-        hitRow.setDescription2(HIT_EDGE);
-        hitRow.setDescription3(HIT_MIDDLE);
+        hitRow.setDescription2(HIT_MIDDLE);
+        hitRow.setDescription3(HIT_EDGE);
         hitRow.setLead(new Button(game.draw(), game.fonts(), Button.Variant.PRIMARY, Lang.of("CALIBRATE…", "校准…")))
             .setOnTap(new Runnable() {
                 @Override
@@ -518,8 +518,8 @@ public class SettingsScreen extends ShellScreen {
                     diverChanged();
                 }
             }));
-        // from GAMEPLAY VISUALS between PAUSE INPUT and HAPTICS (Kelvin 2026-10-18 19:52), now a ring under every finger
-        // in a game; a plain switch since 04:06 (the old AUTO reads as off)
+        // from GAMEPLAY VISUALS between PAUSE INPUT and HAPTICS (Kelvin 2026-10-18 19:52), now a ring under every
+        // finger in a game; a plain switch since 04:06 (the old AUTO reads as off)
         p.add(new ToggleRow(game, Lang.of("SHOW TOUCHES", "显示触控"),
             Lang.of("A RING UNDER EACH FINGER DURING A GAME", "游戏中在每个手指下面显示一个圈"), false, new ToggleRow.Value() {
                 @Override
@@ -574,7 +574,7 @@ public class SettingsScreen extends ShellScreen {
                 }
             }));
         backupRow = p.add(new ActionRow(game, Lang.of("SAVE BACKUP", "备份存档"),
-            Lang.of("COPY THIS DIVER AS A KK1: CODE", "把当前玩家复制成一串 KK1: 备份码"), false));
+            Lang.of("COPY THIS PLAYER AS A KK1: CODE", "把当前玩家复制成一串 KK1: 备份码"), false));
         exportButton = backupRow.add(new Button(game.draw(), game.fonts(), Button.Variant.SECONDARY,
             Lang.of("EXPORT", "导出")));
         exportButton.setOnTap(new Runnable() {
@@ -585,7 +585,7 @@ public class SettingsScreen extends ShellScreen {
         });
         // everything goes since Kelvin 2026-10-18 20:16, after the hold, CONFIRM and the name typed in full
         ActionRow reset = p.add(new ActionRow(game, Lang.of("RESET RECORDS", "重置记录"),
-            Lang.of("ERASES ALL OF THIS DIVER'S PROGRESS", "清空当前玩家的全部进度"), false));
+            Lang.of("ERASES ALL OF THIS PLAYER'S PROGRESS", "清空当前玩家的全部进度"), false));
         reset.setDescription2(Lang.of("SCORES, DEPTH, GAME LOG, SHELLS AND BOUGHT SONGS",
             "成绩、深度、下潜记录、贝壳和买下的曲目"));
         Button hold = reset.add(new Button(game.draw(), game.fonts(), Button.Variant.DESTRUCTIVE,

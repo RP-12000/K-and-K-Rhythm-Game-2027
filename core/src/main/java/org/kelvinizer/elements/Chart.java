@@ -121,7 +121,7 @@ public final class Chart {
     }
 
     /**
-     * As the constructor above, with the lane mode (owner 2026-10-13, see {@link #laneLimit()}).
+     * As the constructor above, with the lane mode (Kelvin 2026-10-13, see {@link #laneLimit()}).
      *
      * @param laneLimit the file's {@code laneCount} (≥ 1: finite, the lanes share the camera frame
      *                  by width weight), 0 for unlimited lanes (each lane keeps its width), or −1 for
@@ -130,7 +130,9 @@ public final class Chart {
     public Chart(String title, String artist, String illustrator, String charter, String level,
                  String chartConstant, float bpm, float offsetMs, List<Lane> lanes, JudgementLine lineEvents,
                  List<Note> notes, float[] bpmBeats, float[] bpms, int laneLimit) {
-        if (!(bpm > 0f) || bpm == Float.POSITIVE_INFINITY) throw new IllegalArgumentException("bpm must be > 0: " + bpm);
+        if (!(bpm > 0f) || bpm == Float.POSITIVE_INFINITY) {
+            throw new IllegalArgumentException("bpm must be > 0: " + bpm);
+        }
         if (Float.isNaN(offsetMs) || Float.isInfinite(offsetMs)) {
             throw new IllegalArgumentException("offsetMs must be finite: " + offsetMs);
         }
@@ -387,7 +389,9 @@ public final class Chart {
     public float bpm() { return bpm; }
     /** @return song time in ms of beat 0 (format v2 {@code offsetMs}; 0 when absent). */
     public float offsetMs() { return offsetMs; }
-    /** @return milliseconds per beat of the first segment; use {@link #msBetween} for spans that may cross a BPM change. */
+    /**
+     * @return milliseconds per beat of the first segment; use {@link #msBetween} for spans that may cross a BPM change.
+     */
     public double msPerBeat() { return msPerBeat; }
     /** @return song time in ms of {@code beat}. */
     public double beatToMs(double beat) {
@@ -443,7 +447,7 @@ public final class Chart {
     public int laneCount() { return lanes.length; }
 
     /**
-     * Lane mode (owner 2026-10-13, chart key {@code laneCount}):
+     * Lane mode (Kelvin 2026-10-13, chart key {@code laneCount}):
      * <ul>
      *   <li><b>0, unlimited</b> (a v2 file without {@code laneCount}, and every v1 file): each
      *       lane keeps its width in reference units times the global lane scale, lanes 1, 2, …
@@ -552,8 +556,6 @@ public final class Chart {
 
     /** @return the chart JSON file, or null when loaded from a stream. */
     public FileHandle chartFile() { return chartFile; }
-    /** @return the folder holding the chart, or null. */
-    public FileHandle chartFolder() { return chartFile != null ? chartFile.parent() : null; }
     /** @return the song music, or null. */
     public FileHandle musicFile() { return musicFile; }
     /** @return the jacket image, or null. */

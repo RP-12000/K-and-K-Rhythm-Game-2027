@@ -16,7 +16,7 @@ import org.kelvinizer.ui.Ui;
  * 所有曲目页：所有的歌（隐藏的秘密曲包除外），手机上和地图默认缩放时一样大（平板小两成），每行两首、相邻两行错开半格（像单曲地图那样），
  * 上下行之间用线连成网格，不能缩放。网格可以上下拖，顶上不裁（像地图一样从玩家框下面滑过去），在难度行上面渐隐。上面原来的曲包框已经去掉。
  *
- * <p>The ALL SONGS page (Kelvin 2026-10-19 13:14–14:01, the design thread's round 5 and its notes 全部歌曲排版参数; the
+ * <p>The ALL SONGS page (Kelvin 2026-10-19 13:14–14:01, design round 5 and its notes 全部歌曲排版参数; the
  * grid itself 21:16–21:18): every song (hidden secret packs left out), two to a row, each row half a step along from
  * the one above as on the singles map, every song linked to the songs half a step either side of it in the next row so
  * that the links make a net. The songs are as big as a map's at its default zoom on a phone and a fifth smaller on a
@@ -50,8 +50,8 @@ final class GridPage {
     /** The singles map's half step along a row and its rows' distance (250 and 230 there), at the default zoom. */
     private static final float HALF_STEP = 250f * LOOK, ROW_GAP = 230f * LOOK;
     /**
-     * Everything below drawn this much smaller on a tablet (16:8.5 and taller, the result screen's split): a phone keeps
-     * the maps' size (Kelvin 2026-10-19 21:53: 「16：10的稍微小一点吧，平板会放大这个大小的，这里手机端观感可以但是平板太大了」).
+     * Everything below drawn this much smaller on a tablet (16:8.5 and taller, the result screen's split): a phone
+     * keeps the maps' size (Kelvin 2026-10-19 21:53: 「16：10的稍微小一点吧，平板会放大这个大小的，这里手机端观感可以但是平板太大了」).
      */
     static final float TABLET = 0.8f;
     /** Room over the first row (its ring and the selected song's glow), at the page's left and for the scroll bar. */
@@ -159,7 +159,8 @@ final class GridPage {
         row0 = gridTop - TOP - RING_R * size;
         // the singles map's rows apart, or as far as keeps a score row clear of the next row's score rings
         float side = Math.max(0f, step - ROW_HALF_W * size), clear = CLEAR_R * size;
-        rowGap = Math.max(ROW_GAP * size, LABEL_DOWN * size + (float) Math.sqrt(Math.max(0f, clear * clear - side * side)));
+        rowGap = Math.max(ROW_GAP * size,
+            LABEL_DOWN * size + (float) Math.sqrt(Math.max(0f, clear * clear - side * side)));
     }
 
     /** HUD x of blueprint x {@code bx}. */
@@ -206,8 +207,8 @@ final class GridPage {
     }
 
     /**
-     * True when HUD y {@code hy} is above the grid's faded bottom. The grid has no top (2026-10-20 16:37): a song showing
-     * under the player block takes a tap there too, after the HUD's own controls.
+     * True when HUD y {@code hy} is above the grid's faded bottom. The grid has no top (2026-10-20 16:37): a song
+     * showing under the player block takes a tap there too, after the HUD's own controls.
      */
     boolean inBand(float y) {
         return y >= hy(FADE_TO);
@@ -247,7 +248,9 @@ final class GridPage {
         cam.snap(Ui.CX, Ui.CY - MathUtils.clamp(scroll, 0f, maxScroll()), 1f);
     }
 
-    /** The song whose ring or labels (name, chip and score row) hold HUD point (hx, hy), the nearest of two, or null. */
+    /**
+     * The song whose ring or labels (name, chip and score row) hold HUD point (hx, hy), the nearest of two, or null.
+     */
     MapNode hit(float hx, float hy) {
         if (world == null || !inBand(hy)) return null;
         MapNode best = null;
@@ -255,7 +258,8 @@ final class GridPage {
         for (MapNode n : world.nodes) {
             if (n.wake < 0.5f) continue;
             float dx = hx - cam.hudX(n.drawX()), dy = hy - cam.hudY(n.drawY(0f, true)), d = dx * dx + dy * dy;
-            boolean in = d <= rr || (Math.abs(dx) <= ROW_HALF_W * size + 20f && dy <= 0f && dy >= -LABEL_DOWN * size - 8f);
+            boolean in = d <= rr
+                || (Math.abs(dx) <= ROW_HALF_W * size + 20f && dy <= 0f && dy >= -LABEL_DOWN * size - 8f);
             if (in && d < bestD) {
                 best = n;
                 bestD = d;

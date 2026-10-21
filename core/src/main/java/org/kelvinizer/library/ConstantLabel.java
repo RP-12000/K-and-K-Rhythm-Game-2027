@@ -18,13 +18,19 @@ public final class ConstantLabel {
     private ConstantLabel() {
     }
 
-    /** The whole number shown for {@code text} ("16" for "16.2"); {@code text} itself when it is not a number, null for null. */
+    /**
+     * The whole number shown for {@code text} ("16" for "16.2"); {@code text} itself when it is not a number, null for
+     * null.
+     */
     public static String base(String text) {
         int t = tenths(text);
         return t == NAN ? text : Integer.toString(Math.floorDiv(t, 10));
     }
 
-    /** The superscript mark of {@code text}: {@link #MINUS}, {@link #NONE} or {@link #PLUS} ({@link #NONE} when it is not a number). */
+    /**
+     * The superscript mark of {@code text}: {@link #MINUS}, {@link #NONE} or {@link #PLUS} ({@link #NONE} when it is
+     * not a number).
+     */
     public static String mark(String text) {
         int t = tenths(text);
         if (t == NAN) return NONE;

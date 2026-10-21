@@ -81,7 +81,6 @@ public final class Backdrop implements Disposable {
     private float dim;
     private float particleScale = 1f;
     private boolean reduceMotion;
-    private boolean tearBars = true;
     private float time;
 
     private Texture image;
@@ -98,7 +97,6 @@ public final class Backdrop implements Disposable {
     private float pulse;
     private float lastBeatPhase = 1f;
     private int combo, lastCombo;
-    private float comboFlash;
 
     // particulates (struct of arrays, normalised wrap space 0..1) ------------------------------
     private final float[] pX = new float[MAX_P], pY = new float[MAX_P], pSize = new float[MAX_P];
@@ -264,11 +262,6 @@ public final class Backdrop implements Disposable {
     /** Reduce motion: no parallax, no snow streaking. */
     public void setReduceMotion(boolean value) {
         reduceMotion = value;
-    }
-
-    /** Enables ambient tear bars on menus (P1). */
-    public void setTearBars(boolean enabled) {
-        tearBars = enabled;
     }
 
     /** Heartbeat source at a point (2.4 s, 900, α .18, layer accent). */
@@ -473,7 +466,7 @@ public final class Backdrop implements Disposable {
     }
 
     private void updateTears() {
-        if (mode != Mode.MENU || !tearBars) return;
+        if (mode != Mode.MENU) return;
         if (time >= nextTear) {
             tearStart = time;
             tearSeed = (int) (time * 977f);
@@ -658,7 +651,8 @@ public final class Backdrop implements Disposable {
             }
         }
         float vig = mode == Mode.GAMEPLAY ? 0.55f : params.vignette;
-        draw.sprite(draw.vignette(), vx0 + vw * 0.5f, vy0 + vh * 0.5f, vw * 1.05f, vh * 1.1f, Theme.ABYSS_BLACK, vig * 1.1f);
+        draw.sprite(draw.vignette(), vx0 + vw * 0.5f, vy0 + vh * 0.5f, vw * 1.05f, vh * 1.1f,
+            Theme.ABYSS_BLACK, vig * 1.1f);
     }
 
     /** Draws the image hook and the wash as their own quads (LOW, or no IMAGE shader variant). */
@@ -794,7 +788,7 @@ public final class Backdrop implements Disposable {
     }
 
     private void drawTears(Batch batch) {
-        if (mode != Mode.MENU || !tearBars || GlitchText.reduceFlashing()) return;
+        if (mode != Mode.MENU || GlitchText.reduceFlashing()) return;
         float I = GlitchText.intensity();
         if (I <= 0.001f) return;
         float t = time - tearStart;
@@ -902,11 +896,6 @@ public final class Backdrop implements Disposable {
 
     private static void fetch(ShaderProgram sp, int[] loc) {
         for (int i = 0; i < UNIFORMS.length; i++) loc[i] = sp.fetchUniformLocation(UNIFORMS[i], false);
-    }
-
-    /** True when the backdrop fell back (or was set) to LOW. */
-    public boolean isLow() {
-        return detail() == Detail.LOW;
     }
 
     @Override

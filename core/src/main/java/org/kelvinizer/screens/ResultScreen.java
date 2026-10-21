@@ -6,7 +6,6 @@ import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.utils.Align;
 import org.kelvinizer.Main;
 import org.kelvinizer.audio.AudioService;
-import org.kelvinizer.library.ChapterMeta;
 import org.kelvinizer.library.SongMeta;
 import org.kelvinizer.play.PlayResult;
 import org.kelvinizer.play.RecordOutcome;
@@ -42,7 +41,7 @@ import org.kelvinizer.ui.Ui;
 /**
  * 结算画面 DIVE LOG：ASCENT 转场盖住画面时一次算好全部数据，
  * 然后按时间线播放曲绘、分数、判定数量、评级印章、深度和贝壳变化等动画，点击可快进。
- * 2026-10-19 起是设计串第七、八版的排版：左上玩家框（深度在里面数）、右上贝壳胶囊、标题带、16:9 大曲绘（难度块在右下角）
+ * 2026-10-19 起按第七、八版设计稿排版：左上玩家框（深度在里面数）、右上贝壳胶囊、标题带、16:9 大曲绘（难度块在右下角）
  * 左下压着评级和分数，曲绘下面是连击线、早晚和判定数，右下角重开和继续，右边留给人物；比 16:8.5 宽的手机分三栏。
  * 深度明细、贝壳明细、早晚共鸣和分数明细都是点开看（早晚偏差的柱状图 10-19 去掉了）。
  * RETRY 重开同一张谱面，CONTINUE 用 IRIS 转场回到地图。
@@ -55,7 +54,7 @@ import org.kelvinizer.ui.Ui;
  * jacket, the title decode, the score decode and its landing over the jacket, the counts, the chain line and the
  * early / late line, the grade stamp slam and impact, the best line (or the AUTOPLAY pill), the player frame and
  * the shell capsule in the top corners with the depth (D) and shells (E) phases, the UNLOCKED beat, and the
- * buttons. The layout is rounds 7 and 8 of the design thread (Kelvin 2026-10-19 06:28 and 15:2x, {@link
+ * buttons. The layout is design rounds 7 and 8 (Kelvin 2026-10-19 06:28 and 15:2x, {@link
  * ResultLayout}): no clear badge since round 8, and three columns on screens wider than 16:8.5. Taps fast-forward
  * then jump to the end (§6.4); idle taps (§6.5) re-stamp and open the popovers: the depth breakdown (the player
  * frame), the shell breakdown (the capsule), the score breakdown (the score) and EARLY / LATE RESONANCE (PERFECT),
@@ -193,10 +192,9 @@ public class ResultScreen extends KkScreen<Main> {
         if (o == null) o = RecordOutcome.builder().recorded(false).tutorial(r.tutorial()).build();
         result = r;
         song = r.tutorial() ? game.library().tutorial() : game.library().song(r.songId());
-        ChapterMeta chapter = song != null ? game.library().chapterOf(song) : null;
         Profile p = game.profiles().active();
         DeviceSettings device = game.profiles().device();
-        model.set(r, o, song, chapter, p, device);
+        model.set(r, o, song, p, device);
         Settings s = p != null ? p.settings : null;
         reduceMotion = s != null && s.reduceMotion;
         choreo.plan(model);
@@ -215,7 +213,8 @@ public class ResultScreen extends KkScreen<Main> {
             unlockLine3 = ub.toString();
         }
         int quality = device != null ? device.particleQuality : DeviceSettings.PARTICLES_HIGH;
-        fx.setDensity(quality == DeviceSettings.PARTICLES_OFF ? 0f : (quality == DeviceSettings.PARTICLES_LOW ? 0.5f : 1f));
+        fx.setDensity(quality == DeviceSettings.PARTICLES_OFF ? 0f
+            : (quality == DeviceSettings.PARTICLES_LOW ? 0.5f : 1f));
         fx.clear();
         titleState.reset();
         stampState.reset();
@@ -246,11 +245,6 @@ public class ResultScreen extends KkScreen<Main> {
         relayout();
         warmText();
         presented = true;
-    }
-
-    /** Timeline time in seconds (t = 0 when the ASCENT starts opening); for tests and tooling. */
-    public float choreographyTime() {
-        return choreo.t();
     }
 
     /** True once the whole choreography has played (idle state); for tests and tooling. */
@@ -630,7 +624,9 @@ public class ResultScreen extends KkScreen<Main> {
         kit.normal();
 
         drawAlerts(t);
-        if (!reduceMotion) game.glitch().drawScreenTears(batch, g3State, t, Ui.left(), Ui.bottom(), Ui.worldW(), Ui.worldH());
+        if (!reduceMotion) {
+            game.glitch().drawScreenTears(batch, g3State, t, Ui.left(), Ui.bottom(), Ui.worldW(), Ui.worldH());
+        }
 
         if (shifted) {
             camera.position.x += kx;
@@ -835,7 +831,8 @@ public class ResultScreen extends KkScreen<Main> {
             String value = i == 0 ? model.breakdownAccuracy : i == 1 ? model.breakdownChain : model.breakdownPerfect;
             q.text(Fonts.Role.UI, 18f, BREAKDOWN_LABELS[i], lx + 22f, ry, Align.left | Fonts.VCENTER,
                 i == 2 ? Theme.RESONANCE : Theme.INK2, a);
-            q.fixed(20f, value, lx + w - 22f, ry, Align.right | Fonts.VCENTER, i == 2 ? Theme.RESONANCE : Theme.INK1, a);
+            q.fixed(20f, value, lx + w - 22f, ry, Align.right | Fonts.VCENTER,
+                i == 2 ? Theme.RESONANCE : Theme.INK1, a);
         }
         float ty = by + 30f;
         game.draw().rect(lx + 22f, ty + 22f, w - 44f, 1f, Theme.STROKE, a);
@@ -845,7 +842,7 @@ public class ResultScreen extends KkScreen<Main> {
     }
 
     /**
-     * EARLY / LATE RESONANCE (owner, 2026-10-14): tapping {@code PERFECT n} under RESONANCE slides
+     * EARLY / LATE RESONANCE (Kelvin, 2026-10-14): tapping {@code PERFECT n} under RESONANCE slides
      * {@code EARLY n · LATE n} out to its right in the same font. They count the RESONANCE hits that are not PERFECT
      * (33–67 ms off) by sign, so PERFECT + EARLY + LATE = RESONANCE. Any tap hides them again.
      */
@@ -977,7 +974,8 @@ public class ResultScreen extends KkScreen<Main> {
         if (!model.autoplay) {
             stampState.trigger("F".equals(model.grade) ? GlitchText.Level.G2_RED : GlitchText.Level.G2,
                 t + GradeStamp.RESTAMP_D);
-            game.backdrop().sonar().ping(layout.stampX, layout.stampY, layout.stampR * 2.4f, 1.0f, stampColor, 0.35f, 1);
+            game.backdrop().sonar().ping(layout.stampX, layout.stampY, layout.stampR * 2.4f, 1.0f,
+                stampColor, 0.35f, 1);
         }
         Haptics.light();
     }
@@ -1074,7 +1072,8 @@ public class ResultScreen extends KkScreen<Main> {
     private void idleTap(float x, float y) {
         float dx = x - layout.stampX, dy = y - layout.stampY;
         float capGrow = Math.max(0f, (Ui.touchTarget() - layout.capsuleH) * 0.5f);
-        if (model.grade != null && !model.tutorial && dx * dx + dy * dy <= (layout.stampR + 12f) * (layout.stampR + 12f)) {
+        if (model.grade != null && !model.tutorial
+            && dx * dx + dy * dy <= (layout.stampR + 12f) * (layout.stampR + 12f)) {
             restamp();
         } else if (hitScore(x, y)) {
             popScoreX = x;

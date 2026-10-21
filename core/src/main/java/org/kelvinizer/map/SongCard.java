@@ -37,7 +37,7 @@ import org.kelvinizer.ui.Ui;
  * either springs to its detent ({@code pos + v·0.15} picks the sheet detent) or is dismissed
  * (velocity &gt; 900 /s or past 35 % of its size). The exit is a 220 ms {@code pow2In} tween.
  *
- * <p><b>Content</b> (§4.2–§4.7; the side card is the design thread's round 5, Kelvin 2026-10-19 07:00 / 07:01):
+ * <p><b>Content</b> (§4.2–§4.7; the side card is design round 5, Kelvin 2026-10-19 07:00 / 07:01):
  * header (‹ at its left end and › at its right step through songs, the level's name between them, all a little
  * larger since Kelvin 2026-10-19 13:37, who also dropped the ×: tapping the map, swiping the card away or Back closes
  * it); the 16:9 jacket (centre crop, scanline reveal, thin stroke) over a glow of its own colours (the library's
@@ -122,7 +122,7 @@ final class SongCard {
     private static final float LABEL_TRACK = 0.12f;
     private static final float JACKET_R = 14f;
     /** Glow: the wash over 1.16 × 1.24 of the jacket, its alpha rising from the edges over these fractions of its
-     *  size to the peak (the design thread's round 5, after the result screen's). */
+     *  size to the peak (design round 5, after the result screen's). */
     private static final float GLOW_W = 1.16f, GLOW_H = 1.24f, GLOW_FX = 0.16f, GLOW_FY = 0.2f, GLOW_A = 0.47f;
     private static final Color BAND_FILL = new Color(8 / 255f, 13 / 255f, 38 / 255f, 150 / 255f);
     private static final Color BAND_LINE = new Color(120 / 255f, 200 / 255f, 1f, 70 / 255f);
@@ -130,8 +130,8 @@ final class SongCard {
     private static final String ACC_LABEL = "ACC ", DEPTH_LABEL = " · DEPTH ", DEPTH_WORD = "DEPTH",
         PLAYS_WORD = "PLAYS";
     /** Sheet action row width at scale 1: padding, chips 4 × 184 + 3 × 16, gap, AUTO, gap, DESCEND. */
-    private static final float SHEET_ROW_W = 2f * MapStyle.CARD_PAD + 4f * MapStyle.SHEET_CHIP_W + 3f * MapStyle.CHIP_GAP
-        + 40f + MapStyle.AUTO_W_WIDE + MapStyle.ACTION_GAP + MapStyle.SHEET_DESCEND_W;
+    private static final float SHEET_ROW_W = 2f * MapStyle.CARD_PAD + 4f * MapStyle.SHEET_CHIP_W
+        + 3f * MapStyle.CHIP_GAP + 40f + MapStyle.AUTO_W_WIDE + MapStyle.ACTION_GAP + MapStyle.SHEET_DESCEND_W;
 
     private final Draw draw;
     /** The current level (its card header); swapped with the level. */
@@ -255,7 +255,8 @@ final class SongCard {
             @Override
             public void run() {
                 if (content != null && swap != SWAP_OUT && !descend.isLocked() && !descend.isBuying()) {
-                    actions.descend(content, diff, auto.isOn() && !content.launch, descend.centerX(), descend.centerY());
+                    actions.descend(content, diff, auto.isOn() && !content.launch, descend.centerX(),
+                        descend.centerY());
                 }
             }
         });
@@ -359,8 +360,8 @@ final class SongCard {
             CardChip c = chips[i];
             Difficulty d = c.d;
             boolean has = !n.launch && n.has[i];
-            c.setChart(n.song != null && has ? n.song.constantBase(d) : null, n.song != null ? n.song.constantMark(d) : null,
-                !has);
+            c.setChart(n.song != null && has ? n.song.constantBase(d) : null,
+                n.song != null ? n.song.constantMark(d) : null, !has);
             c.setVisible(has); // no chip at all for a chart the song lacks (Kelvin 2026-10-17)
             c.setSelected(i == diff.ordinal(), false, time);
             if (animate) c.rollIn();
@@ -472,11 +473,6 @@ final class SongCard {
         return diff;
     }
 
-    /** AUTO toggle state. */
-    boolean autoOn() {
-        return auto.isOn();
-    }
-
     /** Open amount: 0 closed, 1 at the (peek) detent. */
     float amount() {
         if (sheet()) return Math.max(0f, pos) / Math.max(1f, peekH());
@@ -571,7 +567,9 @@ final class SongCard {
             float dw = MapStyle.SHEET_DESCEND_W * k, aw = MapStyle.AUTO_W_WIDE * k;
             descend.setBounds(sr - dw, base, dw, actH);
             auto.setBounds(sr - dw - actGap - aw, base, aw, actH);
-            if (content != null && content.launch) descend.setBounds(sr - dw - actGap - aw, base, dw + actGap + aw, actH);
+            if (content != null && content.launch) {
+                descend.setBounds(sr - dw - actGap - aw, base, dw + actGap + aw, actH);
+            }
             float hy = sheetTop - 44f * k;
             float hx = Ui.safeRight() - 8f * k - ic * 0.5f;
             next.setBounds(hx - ic * 0.5f, hy - ic * 0.5f, ic, ic);
@@ -1119,7 +1117,8 @@ final class SongCard {
             c2.set(Theme.SHADOW);
             c1.a = 0f;
             draw.rectGradientH(x0 - 40f * k, Ui.bottom(), 40f * k, h, c1, c2, 0.45f * a);
-            draw.roundRect(x0, Ui.bottom() - 30f, sideWidth() + 60f, h + 60f, rad, Theme.ABYSS_BLACK, MapStyle.UNDERLAY * a);
+            draw.roundRect(x0, Ui.bottom() - 30f, sideWidth() + 60f, h + 60f, rad, Theme.ABYSS_BLACK,
+                MapStyle.UNDERLAY * a);
             draw.roundRect(x0, Ui.bottom() - 30f, sideWidth() + 60f, h + 60f, rad, Theme.PANEL, a);
             // the title band across the whole card, fixed height whatever the title's size (round 5)
             float bw = sideWidth() + 60f, lw = 1.2f;
@@ -1513,8 +1512,8 @@ final class SongCard {
         if (sheetLayout) {
             float right = rec.played && !content.launch ? sheetBestLeft - 16f * k - r.uiWidth("BEST", c20) - 32f * k
                 : content.launch ? cx1 : cx1 - r.uiWidth("NOT YET DIVED", c20) - 32f * k;
-            r.boldFit(b, title, MapUi.cap(34f, k), cx0, row(190f) + dy, Align.left, Math.min(900f * k, right - cx0), 0.7f,
-                Theme.INK1, ca);
+            r.boldFit(b, title, MapUi.cap(34f, k), cx0, row(190f) + dy, Align.left, Math.min(900f * k, right - cx0),
+                0.7f, Theme.INK1, ca);
             return;
         }
         drawTitle(b, title, titleBase + dy, ca);
@@ -1574,11 +1573,6 @@ final class SongCard {
     /** Current accent (difficulty accent, animated). */
     Color accent() {
         return accent;
-    }
-
-    /** Content node drawn now (may lag {@link #node()} during a swap). */
-    MapNode contentNode() {
-        return content;
     }
 
     /** The card scale of this frame (for the overlays and tests). */

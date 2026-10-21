@@ -26,18 +26,12 @@ public final class Anim {
     public static final float EXIT = 0.20f;
     /** Camera glides, screen-level moves. */
     public static final float LONG = 0.48f;
-    /** Hero moments (count-ups, the dive), lower bound. */
-    public static final float HERO = 0.80f;
     /** Badges, stamps, node select. */
     public static final float POP = 0.32f;
-    /** Sonar rings. */
-    public static final float PING = 1.20f;
     /** Numbers counting. */
     public static final float COUNT = 0.75f;
     /** Stagger between list items. */
     public static final float STAGGER_LIST = 0.04f;
-    /** Stagger between buttons. */
-    public static final float STAGGER_BUTTONS = 0.08f;
     /** Shared heartbeat period (s). */
     public static final float HEARTBEAT = 2.4f;
 
@@ -54,14 +48,8 @@ public final class Anim {
     public static final Interpolation POW3 = Interpolation.pow3;
     /** {@code pow4In}. */
     public static final Interpolation POW4_IN = Interpolation.pow4In;
-    /** {@code pow4Out}. */
-    public static final Interpolation POW4_OUT = Interpolation.pow4Out;
-    /** {@code pow5Out}. */
-    public static final Interpolation POW5_OUT = Interpolation.pow5Out;
     /** {@code exp5Out}. */
     public static final Interpolation EXP5_OUT = Interpolation.exp5Out;
-    /** {@code exp5In}. */
-    public static final Interpolation EXP5_IN = Interpolation.exp5In;
     /** {@code sine} (in-out). */
     public static final Interpolation SINE = Interpolation.sine;
     /** {@code linear}. */
@@ -75,39 +63,13 @@ public final class Anim {
     /** Alias of {@link #SWING_OUT_18} for the {@code pop} token. */
     public static final Interpolation POP_EASE = SWING_OUT_18;
 
-    // ------------------------------------------------------------------ ARCHITECTURE aliases
-    /** Cubic ease-out (alias of {@code pow3Out}). */
-    public static float outCubic(float t) {
-        return POW3_OUT.apply(clamp01(t));
-    }
-
-    /** Back ease-out (overshoot 1.8, the pop token). */
-    public static float outBack(float t) {
-        return SWING_OUT_18.apply(clamp01(t));
-    }
-
-    /** Exponential ease-out ({@code exp5Out}). */
-    public static float outExpo(float t) {
-        return EXP5_OUT.apply(clamp01(t));
-    }
-
-    /** Sine ease-in-out. */
-    public static float inOutSine(float t) {
-        return SINE.apply(clamp01(t));
-    }
-
-    /** Elastic ease-out (libGDX {@code elasticOut}). */
-    public static float outElastic(float t) {
-        return Interpolation.elasticOut.apply(clamp01(t));
-    }
-
+    // ------------------------------------------------------------------ helpers
     /** Ping alpha curve: {@code (1 - t)²}. */
     public static float pingAlpha(float t) {
         float u = 1f - clamp01(t);
         return u * u;
     }
 
-    // ------------------------------------------------------------------ helpers
     /** Clamps to 0..1. */
     public static float clamp01(float t) {
         return t < 0f ? 0f : (t > 1f ? 1f : t);

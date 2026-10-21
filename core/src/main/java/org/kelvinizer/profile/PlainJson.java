@@ -160,16 +160,22 @@ final class PlainJson {
         Class<?> raw = rawClass(type);
         if (p.currentToken() == JsonToken.VALUE_NULL) return raw.isPrimitive() ? zero(raw) : null;
         if (raw == String.class) return readText(p, where);
-        if (raw == int.class || raw == Integer.class) return (int) readLong(p, Integer.MIN_VALUE, Integer.MAX_VALUE, where);
+        if (raw == int.class || raw == Integer.class) {
+            return (int) readLong(p, Integer.MIN_VALUE, Integer.MAX_VALUE, where);
+        }
         if (raw == long.class || raw == Long.class) return readLong(p, Long.MIN_VALUE, Long.MAX_VALUE, where);
-        if (raw == short.class || raw == Short.class) return (short) readLong(p, Short.MIN_VALUE, Short.MAX_VALUE, where);
+        if (raw == short.class || raw == Short.class) {
+            return (short) readLong(p, Short.MIN_VALUE, Short.MAX_VALUE, where);
+        }
         if (raw == byte.class || raw == Byte.class) return (byte) readLong(p, Byte.MIN_VALUE, Byte.MAX_VALUE, where);
         if (raw == float.class || raw == Float.class) return (float) readDouble(p, where);
         if (raw == double.class || raw == Double.class) return readDouble(p, where);
         if (raw == boolean.class || raw == Boolean.class) return readBoolean(p, where);
         if (raw.isEnum()) return readEnum(p, raw, where);
         if (Map.class.isAssignableFrom(raw)) {
-            if (typeArgument(type, 0, where) != String.class) throw new IOException("map keys must be strings at " + where);
+            if (typeArgument(type, 0, where) != String.class) {
+                throw new IOException("map keys must be strings at " + where);
+            }
             return readMap(p, raw, typeArgument(type, 1, where), where);
         }
         if (Collection.class.isAssignableFrom(raw)) return readCollection(p, raw, typeArgument(type, 0, where), where);

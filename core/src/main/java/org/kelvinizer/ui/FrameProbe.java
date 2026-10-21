@@ -67,11 +67,6 @@ public final class FrameProbe {
         failures = 0;
     }
 
-    /** True when not measuring. */
-    public boolean isDone() {
-        return done;
-    }
-
     /** Consecutive slow windows so far (0 or 1 while running). */
     public int failures() {
         return failures;

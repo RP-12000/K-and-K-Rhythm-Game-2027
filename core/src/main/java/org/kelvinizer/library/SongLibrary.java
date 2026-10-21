@@ -260,9 +260,6 @@ public final class SongLibrary implements Disposable {
     /** @return true once {@link #load()} has run. */
     public boolean isLoaded() { return loaded; }
 
-    /** @return wall time of the last {@link #load()} in ms. */
-    public long lastLoadMillis() { return loadMillis; }
-
     /** @return chapters in manifest order (unmodifiable). */
     public List<ChapterMeta> chapters() { return chaptersView; }
 
@@ -280,11 +277,6 @@ public final class SongLibrary implements Disposable {
             if (chapters.get(i).id().equals(id)) return chapters.get(i);
         }
         return null;
-    }
-
-    /** @return the chapter a song belongs to. */
-    public ChapterMeta chapterOf(SongMeta song) {
-        return chapters.get(song.chapterIndex());
     }
 
     /** @return number of difficulty charts across every song. */
@@ -834,7 +826,9 @@ public final class SongLibrary implements Disposable {
     /** The value as an int (numbers, numeric strings and booleans), else {@code def}. */
     private static int intOf(JsonValue v, int def) {
         if (v == null || !v.isValue() || v.isNull()) return def;
-        if (v.isNumber() || v.isBoolean()) return (int) Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, v.asLong()));
+        if (v.isNumber() || v.isBoolean()) {
+            return (int) Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, v.asLong()));
+        }
         try {
             return (int) Double.parseDouble(v.asString().trim());
         } catch (NumberFormatException e) {
@@ -854,7 +848,10 @@ public final class SongLibrary implements Disposable {
         }
     }
 
-    /** The value as a boolean ({@code true}/{@code false}, either as JSON or as text, or a number ≠ 0), else {@code def}. */
+    /**
+     * The value as a boolean ({@code true}/{@code false}, either as JSON or as text, or a number ≠ 0), else
+     * {@code def}.
+     */
     private static boolean boolOf(JsonValue v, boolean def) {
         if (v == null || !v.isValue() || v.isNull()) return def;
         if (v.isBoolean()) return v.asBoolean();

@@ -83,19 +83,9 @@ final class MapCamera {
         return zMax;
     }
 
-    /** Raw (unsoftened) zoom: past {@link #zoomMax()} while a pinch pulls beyond the overview. */
-    float rawZoom() {
-        return rz;
-    }
-
     /** The zoom the camera is at, or is gliding to. */
     float targetZoom() {
         return gliding ? gz1 : zoom;
-    }
-
-    /** True while two fingers pinch. */
-    boolean isPinching() {
-        return pinching;
     }
 
     // ------------------------------------------------------------------ configuration
@@ -150,16 +140,6 @@ final class MapCamera {
         prevX = x;
         prevY = y;
         dispVx = dispVy = 0f;
-    }
-
-    /** View width in world units at the current zoom. */
-    float viewW() {
-        return viewHudW * zoom;
-    }
-
-    /** View height in world units at the current zoom. */
-    float viewH() {
-        return viewHudH * zoom;
     }
 
     /** World x under HUD x. */
@@ -217,16 +197,6 @@ final class MapCamera {
     /** True while a glide runs. */
     boolean isGliding() {
         return gliding;
-    }
-
-    /** True while a finger holds the camera. */
-    boolean isHeld() {
-        return held;
-    }
-
-    /** True when the camera moves on its own (fling, spring-back or glide). */
-    boolean isMoving() {
-        return gliding || Math.abs(vx) > 1f || Math.abs(vy) > 1f || rx != x || ry != y || rz != zoom;
     }
 
     /** Resets the idle timer (any touch). */
@@ -378,11 +348,6 @@ final class MapCamera {
         diving = true;
     }
 
-    /** True while a dive glide runs or holds. */
-    boolean isDiving() {
-        return diving;
-    }
-
     /** Standard fly-to duration for a distance (DESIGN §3.6). */
     static float flyDuration(float dist) {
         return MathUtils.clamp(0.35f + dist / 6000f, 0.45f, 1.1f);
@@ -420,29 +385,6 @@ final class MapCamera {
         if (zoomLocked || gliding || held || pinching) return;
         rz = Math.max(rz, zMax + 1e-3f);
         zoomSpring.setValue(rz).setTarget(zMax).setVelocity(amount * zMax * Spring.Preset.CAMERA.omega * MathUtils.E);
-    }
-
-    /** Gauge scrub: holds the camera and moves its raw y to {@code cy} (the rubber band applies). */
-    void scrubY(float cy) {
-        held = true;
-        gliding = false;
-        vx = vy = 0f;
-        ry = cy;
-        display();
-        idle = 0f;
-    }
-
-    /**
-     * Moves the camera and everything it is doing (a drag, a fling, a glide) by {@code dy} in y at once, unclamped:
-     * ALL SONGS keeps a song in place on screen while its grid changes under it.
-     */
-    void shiftY(float dy) {
-        y += dy;
-        ry += dy;
-        prevY += dy;
-        gy0 += dy;
-        gy1 += dy;
-        for (int i = 0; i < SAMPLES; i++) sY[i] += dy;
     }
 
     /** Pans by a world delta immediately (keyboard), clamped. */

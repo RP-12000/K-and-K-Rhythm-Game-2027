@@ -89,8 +89,6 @@ public final class Theme {
     public static final Color ALL_RESONANCE = rgb(0xA6DDFF, 1f);
     /** Surface band (map, above 0 m): top. */
     public static final Color SURFACE_TOP = rgb(0x9FD8F0, 1f);
-    /** Surface band (map, above 0 m): bottom. */
-    public static final Color SURFACE_BOTTOM = rgb(0x2A8FB8, 1f);
     /** Plain white (convenience, never mutate). */
     public static final Color WHITE = rgb(0xFFFFFF, 1f);
     /** CURTAIN upper panel. */
@@ -127,20 +125,20 @@ public final class Theme {
     public static final Color SKY_TIDE_HEAD_DIM = rgb(0x808EA0, 1f);
     /** Sky TIDE head fill at its leading edge: the bright end of the pearl gradient (DESIGN §21.6). */
     public static final Color SKY_TIDE_HEAD_BRIGHT = rgb(0xECF4FC, 1f);
-    /** Ground T4 TIDE wave fill, drawn at α .85 (owner 2026-10-12 04:36, 「天键地键tide的改为T4」). */
+    /** Ground T4 TIDE wave fill, drawn at α .85 (Kelvin 2026-10-12 04:36, 「天键地键tide的改为T4」). */
     public static final Color TIDE_WAVE = rgb(0x1FBF98, 1f);
     /** Ground T4 TIDE wave crest line. */
     public static final Color TIDE_WAVE_CREST = rgb(0xC8FFF0, 1f);
     /** Ground T4 TIDE leading-edge base line. */
     public static final Color TIDE_WAVE_BASE = rgb(0xEAFFF8, 1f);
     /**
-     * The LOST word drawn at a touched MINE or LANE MINE contact (owner 2026-10-12: a touched mine
+     * The LOST word drawn at a touched MINE or LANE MINE contact (Kelvin 2026-10-12: a touched mine
      * shows a red judgement). Redder than the {@link #LOST} pink, so a missed note and a touched
      * mine read differently.
      */
     public static final Color MINE_LOST = rgb(0xFF2A3D, 1f);
     /**
-     * Sync pearl body (owner 2026-10-12 12:33 / 12:42: the sync mark is a gold pearl): the three pearls
+     * Sync pearl body (Kelvin 2026-10-12 12:33 / 12:42: the sync mark is a gold pearl): the three pearls
      * across the middle of a DROP or STREAM head that shares its beat (16:07), the gold sky TIDE pearls and the
      * rows of gold pearls on the ground TIDE wave and the TIDE STREAM head. A deeper gold
      * than {@link #GOLD}, so it reads as gold, not yellow, on cyan and pearl-white heads.
@@ -159,7 +157,9 @@ public final class Theme {
     public static final Color SYNC_PEARL_RIM = rgb(0x8A5A12, 1f);
     /** Soft light-gold lustre toward the upper left of a sync pearl. */
     public static final Color SYNC_PEARL_LUSTRE = rgb(0xFFE6A6, 1f);
-    /** Red sync pearls, three across the middle of a MINE or LANE MINE head that shares its beat (owner 12:33, 16:07). */
+    /**
+     * Red sync pearls, three across the middle of a MINE or LANE MINE head that shares its beat (Kelvin 12:33, 16:07).
+     */
     public static final Color MINE_PEARL = rgb(0xFF5A4E, 1f);
     /** Dark-red rim of the red sync pearl. */
     public static final Color MINE_PEARL_RIM = rgb(0x5C0712, 1f);
@@ -282,7 +282,10 @@ public final class Theme {
         return clampDiff(difficulty.ordinal());
     }
 
-    /** Difficulty colour (the chip fill) of a {@code library.Difficulty}: ARCHITECTURE §3's {@code Theme.difficulty(Difficulty)}. */
+    /**
+     * Difficulty colour (the chip fill) of a {@code library.Difficulty}: ARCHITECTURE §3's
+     * {@code Theme.difficulty(Difficulty)}.
+     */
     public static Color difficulty(Enum<?> difficulty) {
         return DIFF_FILL[difficultyIndex(difficulty)];
     }
@@ -422,12 +425,6 @@ public final class Theme {
         out.g = Math.min(1f, c.g * k);
         out.b = Math.min(1f, c.b * k);
         out.a = c.a;
-        return out;
-    }
-
-    /** Fills the depth parameters for {@code meters}; delegates to {@link DepthPalette}. */
-    public static DepthParams depthParams(float meters, DepthParams out) {
-        DepthPalette.params(meters, out);
         return out;
     }
 

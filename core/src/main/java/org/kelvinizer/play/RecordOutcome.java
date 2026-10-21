@@ -90,8 +90,6 @@ public final class RecordOutcome {
     public int depthBefore() { return depthBefore; }
     /** @return player depth in whole metres after. */
     public int depthAfter() { return depthAfter; }
-    /** @return depth gained in metres (≥ 0 in practice). */
-    public int depthDelta() { return depthAfter - depthBefore; }
     /** @return index 0..9 of this chart in the player's top 10 after the play, or −1. */
     public int topTenIndex() { return topTenIndex; }
     /** @return shells granted by this play. */
@@ -182,8 +180,6 @@ public final class RecordOutcome {
             this.shellsAfter = after;
             return this;
         }
-        /** Adds an avatar option unlocked by the new depth. */
-        public Builder addUnlock(String label) { unlocks.add(label); return this; }
         /** @return the mutable unlock list (filled by {@code Depth.unlocksBetween}). */
         public List<String> unlockList() { return unlocks; }
         /** Sets the local ranking among profiles on this device (rank 0 = none). */

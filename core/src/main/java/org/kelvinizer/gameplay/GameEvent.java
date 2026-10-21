@@ -27,7 +27,7 @@ import org.kelvinizer.play.Judgement;
  * TIDE group of that line at exactly the same beat; the lane note's {@link #HIT} /
  * {@link #HOLD_START} comes first, then the group's {@link #HIT} with {@link #FLAG_JOINT}.
  *
- * <p>Mines (owner 2026-10-12): every touched MINE and every LANE MINE contact is one {@link #MINE}
+ * <p>Mines (Kelvin 2026-10-12): every touched MINE and every LANE MINE contact is one {@link #MINE}
  * event; the screen shows the red LOST word ({@code Theme.MINE_LOST}) and the shock for each.
  */
 public final class GameEvent {

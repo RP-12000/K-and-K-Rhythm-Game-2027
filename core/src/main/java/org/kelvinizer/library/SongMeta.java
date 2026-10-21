@@ -64,7 +64,9 @@ public final class SongMeta {
     public String artist() { return artist; }
     /** @return illustrator. */
     public String illustrator() { return illustrator; }
-    /** @return the display chart's charter (SHALLOW, else SURFACE); prefer {@link #charter(Difficulty)} for one chart. */
+    /**
+     * @return the display chart's charter (SHALLOW, else SURFACE); prefer {@link #charter(Difficulty)} for one chart.
+     */
     public String charter() { return charter; }
     /** @return beats per minute. */
     public float bpm() { return bpm; }
@@ -96,7 +98,9 @@ public final class SongMeta {
         return constantText[d.ordinal()];
     }
 
-    /** @return the whole number shown for the constant, e.g. "15" for "15.9" ({@link ConstantLabel}; null if absent). */
+    /**
+     * @return the whole number shown for the constant, e.g. "15" for "15.9" ({@link ConstantLabel}; null if absent).
+     */
     public String constantBase(Difficulty d) {
         return constantBase[d.ordinal()];
     }
@@ -147,12 +151,6 @@ public final class SongMeta {
         return n;
     }
 
-    /** @return the hardest difficulty present (SURFACE if none). */
-    public Difficulty hardest() {
-        for (int i = present.length - 1; i >= 0; i--) if (present[i]) return Difficulty.byOrdinal(i);
-        return Difficulty.SURFACE;
-    }
-
     /** @return the easiest difficulty present (SURFACE if none). */
     public Difficulty easiest() {
         for (int i = 0; i < present.length; i++) if (present[i]) return Difficulty.byOrdinal(i);
@@ -188,7 +186,7 @@ public final class SongMeta {
     @Override
     public String toString() {
         return "SongMeta{" + id + " '" + title + "' " + chapterId + "#" + indexInChapter + " charts=" + chartCount()
-            + " music=" + (music != null ? music.name() : "none") + " jacket=" + (jacket != null ? jacket.name() : "none")
-            + " durMs=" + (int) durationMs + "}";
+            + " music=" + (music != null ? music.name() : "none")
+            + " jacket=" + (jacket != null ? jacket.name() : "none") + " durMs=" + (int) durationMs + "}";
     }
 }

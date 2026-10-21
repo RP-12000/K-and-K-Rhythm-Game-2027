@@ -61,7 +61,9 @@ final class AutoChip extends Pressable {
         if (t > 0f) draw.roundRect(bx, by, bw, bh, rad, Theme.AUTO, 0.16f * t * alpha);
         Theme.mix(Theme.STROKE, Theme.AUTO, t, c1);
         draw.roundRectStroke(bx, by, bw, bh, rad, 2f, c1, (0.8f + 0.2f * t) * alpha);
-        if (press > 0f || hover > 0f) draw.roundRect(bx, by, bw, bh, rad, Theme.INK1, (0.08f * press + 0.05f * hover) * alpha);
+        if (press > 0f || hover > 0f) {
+            draw.roundRect(bx, by, bw, bh, rad, Theme.INK1, (0.08f * press + 0.05f * hover) * alpha);
+        }
         ripple.color(Theme.AUTO);
         drawRipple(alpha);
         float ks = k * s;
@@ -69,7 +71,6 @@ final class AutoChip extends Pressable {
         if (t > 0f) draw.glowDot(cx, dy, 46f * ks, Theme.AUTO, 0.5f * t * alpha);
         draw.circle(cx, dy, 9f * ks, 2.5f, t > 0.5f ? Theme.AUTO : Theme.INK3, alpha);
         draw.disc(cx, dy, 6f * ks * t, Theme.AUTO, t * alpha);
-        drawFocus(bx, by, bw, bh, 18f * k, alpha);
     }
 
     /** UI_BOLD phase: the label. */

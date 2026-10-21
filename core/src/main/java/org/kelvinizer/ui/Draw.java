@@ -115,7 +115,8 @@ public final class Draw implements Disposable {
         for (int i = 0; i < RING_WATER_LODS; i++) {
             PixmapPacker.PixmapPackerRectangle r = packer.getRect(RING_WATER + i);
             if (r == null) throw new GdxRuntimeException("Atlas region not packed: " + RING_WATER + i);
-            ringWater[i] = atlas.addRegion(RING_WATER + i, atlasTexture, r.getX(), r.getY(), r.getWidth(), r.getHeight());
+            ringWater[i] = atlas.addRegion(RING_WATER + i, atlasTexture, r.getX(), r.getY(),
+                r.getWidth(), r.getHeight());
             regions.put(RING_WATER + i, ringWater[i]);
         }
         white = regions.get(WHITE);
@@ -565,7 +566,8 @@ public final class Draw implements Disposable {
     }
 
     /** Filled rounded rectangle with a vertical gradient. */
-    public void roundRectGradient(float x, float y, float w, float h, float radius, Color bottom, Color top, float alpha) {
+    public void roundRectGradient(float x, float y, float w, float h, float radius, Color bottom,
+                                  Color top, float alpha) {
         float cb = Color.toFloatBits(bottom.r, bottom.g, bottom.b, bottom.a * alpha);
         float ct = Color.toFloatBits(top.r, top.g, top.b, top.a * alpha);
         nine(pickFill(radius), x, y, w, h, radius, cb, ct);
@@ -817,7 +819,8 @@ public final class Draw implements Disposable {
         pack(CHIP_9P, 40, 40, (px, py, w, h) -> white(MathUtils.clamp(0.5f - sdRoundRect(px, py, w, h, 12f), 0f, 1f)));
         pack(CHIP_STROKE2_9P, 40, 40, (px, py, w, h) -> white(stroke(sdRoundRect(px, py, w, h, 12f), 2f)));
         pack(PILL_9P, 64, 32, (px, py, w, h) -> white(MathUtils.clamp(0.5f - sdRoundRect(px, py, w, h, 16f), 0f, 1f)));
-        pack(ROUND_LG_9P, 112, 112, (px, py, w, h) -> white(MathUtils.clamp(0.5f - sdRoundRect(px, py, w, h, 48f), 0f, 1f)));
+        pack(ROUND_LG_9P, 112, 112,
+            (px, py, w, h) -> white(MathUtils.clamp(0.5f - sdRoundRect(px, py, w, h, 48f), 0f, 1f)));
         pack(ROUND_LG_STROKE2_9P, 112, 112, (px, py, w, h) -> white(stroke(sdRoundRect(px, py, w, h, 48f), 2f)));
         pack(ROUND_LG_STROKE3_9P, 112, 112, (px, py, w, h) -> white(stroke(sdRoundRect(px, py, w, h, 48f), 3f)));
         pack(VIGNETTE, 256, 256, (px, py, w, h) -> {

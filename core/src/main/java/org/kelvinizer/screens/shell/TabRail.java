@@ -10,7 +10,6 @@ import org.kelvinizer.ui.Fonts;
 import org.kelvinizer.ui.Icons;
 import org.kelvinizer.ui.Spring;
 import org.kelvinizer.ui.Theme;
-import org.kelvinizer.ui.Ui;
 import space.earlygrey.shapedrawer.ShapeDrawer;
 
 /**
@@ -208,10 +207,5 @@ public final class TabRail {
         draw.rect(cx - 26f * k, cy - 20f * k, 52f * k, 5f * k, c, alpha);
         draw.rect(cx - 26f * k, cy + 15f * k, 52f * k, 5f * k, c, 0.6f * alpha);
         draw.roundRect(cx - 12f * k, cy - 8f * k, 24f * k, 10f * k, 3f * k, c, alpha);
-    }
-
-    /** Visible height needed for the vertical rail. */
-    public static float railHeight(int items) {
-        return items * Math.max(Ui.touchTarget(), 96f);
     }
 }

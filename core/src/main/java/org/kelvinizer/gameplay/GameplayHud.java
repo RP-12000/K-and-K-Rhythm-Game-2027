@@ -21,22 +21,27 @@ import org.kelvinizer.ui.Ui;
 
 /**
  * 游玩界面的 HUD：分数在左上角（不显示准确率，离屏幕左边固定距离；顶边到上判定线默认位置这一段按 0.3 / 0.4 / 0.3 分，
- * 分数字高占中间 0.4），暂停键在右上角，难度标签和曲名在左下角，
- * 剩余时间在右下角；连击数和判定字仍在屏幕中央，自动游玩时连击数下面写 AUTOPLAY。四角的 HUD 最后绘制，光柱和按住的长条都盖不住它。
+ * 分数字高占中间 0.4），暂停键在右上角，难度标签和曲名在左下角，剩余时间在右下角（这一行贴着屏幕底边，
+ * 三样都比 §5.3 大 1.25 倍）；顶上的进度条厚度是屏幕高度的 1%；连击数和判定字仍在屏幕中央，自动游玩时连击数下面写
+ * AUTOPLAY。四角的 HUD 最后绘制，光柱和按住的长条都盖不住它。
  *
- * <p>Persistent gameplay HUD in the screen corners (owner decisions 2026-10-12; DESIGN §21.5, which
+ * <p>Persistent gameplay HUD in the screen corners (Kelvin's decisions 2026-10-12; DESIGN §21.5, which
  * they override where they differ, §5.3, §5.5, §5.6): the score top-left, the pause
  * control top-right ({@link PauseControl}), difficulty chip and song title bottom-left, time
  * remaining bottom-right, each anchored to the {@code Ui.safe*()} edges at every aspect (16:9, 20:9,
- * 16:10, 3:2, 4:3), except that the score keeps a fixed distance from the screen's left edge, the device's
- * cutout inset left out (Kelvin 2026-10-20 05:56); the progress hairline runs along the top edge. The score's cap
+ * 16:10, 3:2, 4:3), except that the score and the chip keep a fixed distance from the screen's left edge, the
+ * device's cutout inset left out (Kelvin 2026-10-20 05:56; the chip from 22:12). The progress bar, 1 % of the
+ * screen high, runs along the top edge (Kelvin 2026-10-20 on the gallery's p.7: 「上面的进度条可以厚一点，大约占屏幕
+ * 高度的1%，手机端也一样」); chip, title and
+ * time share one row on the safe bottom edge, all three 1.25 × §5.3 (p.7: 「这个东西放大一点」; 22:12: 「时间点的大小也
+ * 放大。surface 2那一串锚定屏幕左下角边缘」, after a round centred in the bottom band). The score's cap
  * is {@link #SCORE_BAND_CAP} of the top band, from the top edge down to the default sky line, with
  * {@link #SCORE_BAND_TOP} of the band above it and as much under it (Kelvin 2026-10-20 06:27, the shares from
  * 07:01). The accuracy is not shown anywhere (Kelvin 2026-10-20 05:00, and again 05:56 after it came back at 05:31;
  * it still counts in the score). Combo, judgement word and the hit error meter stay in the middle band; in an
  * autoplay run AUTOPLAY stands under the combo in place of COMBO, the whole run (Kelvin 2026-10-20 05:57). The band
  * layout (live counters centred in a free bottom band, formerly 3:2 and 4:3) no longer switches on:
- * the playfield is stretched to fill the screen ({@link Field}, owner 2026-10-12 16:17), so there is
+ * the playfield is stretched to fill the screen ({@link Field}, Kelvin 2026-10-12 16:17), so there is
  * no free band ({@link Ui#useBandHud}). The corner HUD itself is not stretched. Score, chip, title and
  * time are display-only: every touch on them goes to gameplay.
  *
@@ -61,14 +66,15 @@ import org.kelvinizer.ui.Ui;
  *
  * <p><b>Draw passes.</b> {@link #drawUnder} (normal block A: meter frame, glint) and
  * {@link #drawUnderText} (HUD-under text: combo, word) sit under the notes; {@link #drawCorners}
- * (shapes: hairline, chip plate, pause icon, hint, hold ring) and {@link #drawCornerText} (score,
+ * (shapes: progress bar, chip plate, pause icon, hint, hold ring) and {@link #drawCornerText} (score,
  * chip text, title, time, counters) run last, after the additive block and above the
  * pause scrim, so lane glows and held bodies never cover the corners.
  *
  * <p><b>Font pages (DESIGN §14).</b> Every HUD text comes from one of six rasters, whatever
  * its drawn size: NUMBER digits at the score's cap, NUMBER digits at the §5.3 score cap
- * {@link #SCORE_CAP} (time, chip constant), NUMBER digits at the combo cap, UI at 20 (title, and the COMBO / AUTOPLAY labels drawn as UI with
- * the UI_LABEL tracking), UI_BOLD at 22 (chip name, EARLY/LATE, live counters) and the current
+ * {@link #SCORE_CAP} (time, chip constant), NUMBER digits at the combo cap, UI at the title's cap 25 (title, and the
+ * COMBO / AUTOPLAY labels drawn as UI with the UI_LABEL tracking), UI_BOLD at the chip's cap 22.5 (chip name,
+ * EARLY/LATE, live counters) and the current
  * judgement word's face. Smaller sizes are drawn from the shared raster through
  * {@link Fonts#pushPixelScale}; the screen records the text with a {@link DeferredBatch} so each
  * page is one draw call per pass.
@@ -77,7 +83,8 @@ final class GameplayHud {
     // ------------------------------------------------------------------ corner layout (HUD scale 1)
     /**
      * §5.3 score cap (NUMBER 40) at HUD scale 1, the score's size until Kelvin 2026-10-20 06:27; now the raster of the
-     * small NUMBER page only (time, chip constant), the score taking its cap from the top band ({@link #SCORE_BAND_CAP}).
+     * small NUMBER page only (time, chip constant), the score taking its cap from the top band
+     * ({@link #SCORE_BAND_CAP}).
      */
     static final float SCORE_CAP = 40f;
     /**
@@ -99,24 +106,32 @@ final class GameplayHud {
     static final float AUTO_CAP = 20f;
     /** AUTOPLAY label alpha in the centre, under the notes. */
     static final float AUTO_ALPHA = 0.70f;
-    /** Difficulty chip height (§5.3). */
-    static final float CHIP_H = 40f;
-    /** Chip text cap (UI_BOLD name and NUMBER constant, §5.3). */
-    static final float CHIP_CAP = 18f;
-    /** Chip side padding, name-to-constant gap and corner radius. */
-    static final float CHIP_PAD = 14f;
-    static final float CHIP_GAP = 10f;
-    static final float CHIP_RADIUS = 10f;
-    /** Title cap (UI 20), gap after the chip and widest title (§5.3). */
-    static final float TITLE_CAP = 20f;
-    static final float TITLE_GAP = 16f;
-    static final float TITLE_MAX = 560f;
-    /** Time cap (NUMBER 20, §5.3) and the least gap kept between the title and the time. */
-    static final float TIME_CAP = 20f;
+    /**
+     * Difficulty chip height: §5.3's 40, × 1.25 like the rest of the chip and the title (Kelvin 2026-10-20 on the
+     * gallery's p.7: 「这个东西放大一点」).
+     */
+    static final float CHIP_H = 50f;
+    /** Chip text cap (UI_BOLD name and NUMBER constant; §5.3's 18 × 1.25). */
+    static final float CHIP_CAP = 22.5f;
+    /** Chip side padding, name-to-constant gap and corner radius (§5.3's 14, 10 and 10 × 1.25). */
+    static final float CHIP_PAD = 17.5f;
+    static final float CHIP_GAP = 12.5f;
+    static final float CHIP_RADIUS = 12.5f;
+    /** Title cap (UI), gap after the chip and widest title (§5.3's 20, 16 and 560 × 1.25). */
+    static final float TITLE_CAP = 25f;
+    static final float TITLE_GAP = 20f;
+    static final float TITLE_MAX = 700f;
+    /**
+     * Time cap (NUMBER, §5.3's 20 × 1.25 like the chip and the title; Kelvin 2026-10-20 22:12: 「时间点的大小也放大」)
+     * and the least gap kept between the title and the time.
+     */
+    static final float TIME_CAP = 25f;
     static final float TIME_GAP = 32f;
-    /** Progress hairline (§5.3): this far below the top edge, this thick (16:9: y 1074–1077). */
-    static final float PROGRESS_DROP = 6f;
-    static final float PROGRESS_H = 3f;
+    /**
+     * Progress bar thickness against the screen height, flush with the top edge (Kelvin 2026-10-20 on the gallery's
+     * p.7: 「上面的进度条可以厚一点，大约占屏幕高度的1%，手机端也一样」; §5.3's hairline was 3 thick, 6 below the edge).
+     */
+    static final float PROGRESS_SHARE = 0.01f;
     /**
      * A judgement line closer than this to a corner element fades it (guard, §5.1): about half a
      * DROP's height, so notes landing on a moved line would touch the text. Below the 11.45 left
@@ -138,7 +153,7 @@ final class GameplayHud {
     static final int EL_CHIP = 2;
     /** Time remaining, bottom-right. */
     static final int EL_TIME = 3;
-    /** Progress hairline along the top edge. */
+    /** Progress bar along the top edge. */
     static final int EL_PROGRESS = 4;
     /** Live counters (band layout only; empty otherwise). */
     static final int EL_COUNTERS = 5;
@@ -199,7 +214,10 @@ final class GameplayHud {
     private float scoreW;
     private float scoreTop;
     private boolean constDigits;
-    /** The constant's superscript mark ({@code ConstantLabel}; {@link #constText} is its whole number) and the number's width. */
+    /**
+     * The constant's superscript mark ({@code ConstantLabel}; {@link #constText} is its whole number) and the number's
+     * width.
+     */
     private String constMark = "";
     private float constW;
     private float chipX;
@@ -213,13 +231,14 @@ final class GameplayHud {
     private float timeW;
     private float timeMaxW;
     private float progY;
+    private float progH;
     private float countersY;
     private float bandBottomY;
     /** Viewport generation, HUD scale and score cap the text widths were measured for. */
     private int measuredGen = -1;
     private float measuredK = -1f;
     private float measuredCap = -1f;
-    /** Pause control hit box (field names read by the screen harnesses). */
+    /** Pause control hit box (field names read by the screenshot tests). */
     private float pauseX;
     private float pauseY;
     private float pauseW;
@@ -379,14 +398,14 @@ final class GameplayHud {
         return SCORE_CAP * k;
     }
 
-    /** Raster cap of the UI page. */
+    /** Raster cap of the UI page: the title's cap, so the title draws from the page itself. */
     private float uiRaster() {
-        return 20f * k;
+        return TITLE_CAP * k;
     }
 
-    /** Raster cap of the UI_BOLD page. */
+    /** Raster cap of the UI_BOLD page: the chip's cap (EARLY/LATE and the live counters at 22 draw from it too). */
     private float boldRaster() {
-        return 22f * k;
+        return CHIP_CAP * k;
     }
 
     /** Makes the next font calls at cap {@code cap} use the font generated for cap {@code raster}. */
@@ -523,13 +542,16 @@ final class GameplayHud {
         // padding either)
         scoreX = scoreOnly ? sl : Ui.left() + SCORE_LEFT + Ui.edgePadding();
         scoreTop = bandTop - SCORE_BAND_TOP * topBand;
-        // bottom-left: chip on the safe bottom, title after it; bottom-right: time on the chip's row
-        chipX = sl;
+        // bottom-left: chip, title after it; bottom-right: time; one row on the safe bottom edge, the chip under the
+        // score, a fixed distance from the screen's left edge (Kelvin 2026-10-20 22:12: anchored to the bottom-left
+        // corner)
+        chipX = scoreX;
         chipY = sb;
         titleX = chipX + chipW + TITLE_GAP * k;
         titleMax = Math.max(0f, Math.min(TITLE_MAX * k, sr - timeMaxW - TIME_GAP * k - titleX));
-        // the hairline along the top edge (visible edge less cutout and edge padding)
-        progY = pause.edgeTop() - PROGRESS_DROP;
+        // the progress bar along the top edge (visible edge less cutout and edge padding), 1 % of the screen high
+        progH = PROGRESS_SHARE * Ui.worldH();
+        progY = pause.edgeTop() - progH;
         float bottom = Math.max(Ui.bottom(), sb - 24f);
         bandBottomY = (bottom + 12f) * 0.5f;
         countersY = bandBottomY;
@@ -553,7 +575,8 @@ final class GameplayHud {
             cw += CHIP_CAP * k * Theme.CONST_MARK_GAP + fonts.width(Fonts.Role.NUMBER, mc, constMark);
             unraster();
         }
-        chipW = diffName.length() == 0 ? 0f : CHIP_PAD * k + chipNameW + (cw > 0f ? CHIP_GAP * k + cw : 0f) + CHIP_PAD * k;
+        chipW = diffName.length() == 0 ? 0f
+            : CHIP_PAD * k + chipNameW + (cw > 0f ? CHIP_GAP * k + cw : 0f) + CHIP_PAD * k;
         titleW = title.length() == 0 ? 0f : fonts.width(Fonts.Role.UI, TITLE_CAP * k, title);
         timeMaxW = numFixedWidth("00:00", TIME_CAP * k);
         timeW = timeSb.length() == 0 ? 0f : numFixedWidth(timeSb, TIME_CAP * k);
@@ -567,7 +590,7 @@ final class GameplayHud {
         float cy = chipY + chipH * 0.5f;
         float th = TIME_CAP * k * 0.5f;
         setRect(EL_TIME, sr - timeW, cy - th, sr, cy + th);
-        setRect(EL_PROGRESS, Ui.left(), progY, Ui.right(), progY + PROGRESS_H);
+        setRect(EL_PROGRESS, Ui.left(), progY, Ui.right(), progY + progH);
         if (band && settings.liveCounters && cntVal[0] >= 0) {
             float total = cntW[0] + cntW[1] + cntW[2] + 2f * sepW;
             float ch = 22f * k * 0.5f;
@@ -622,23 +645,6 @@ final class GameplayHud {
         }
     }
 
-    /** Tour target: centre x of the corner element a HUD anchor names (NaN for other anchors). */
-    float targetX(GuidingText.Anchor a) {
-        int el = element(a);
-        return el < 0 ? Float.NaN : (left(el) + right(el)) * 0.5f;
-    }
-
-    /** Tour target: centre y of the corner element a HUD anchor names (NaN for other anchors). */
-    float targetY(GuidingText.Anchor a) {
-        int el = element(a);
-        return el < 0 ? Float.NaN : (bottom(el) + top(el)) * 0.5f;
-    }
-
-    /** True when the band layout is in use (live counters in a free bottom band; off while the field is stretched). */
-    boolean isBand() {
-        return band;
-    }
-
     /** The pause control (geometry and input rule). */
     PauseControl pause() {
         return pause;
@@ -659,20 +665,6 @@ final class GameplayHud {
 
     float pauseH() {
         return pauseH;
-    }
-
-    /** Centre of the pause icon. */
-    float pauseCx() {
-        return pause.cx();
-    }
-
-    float pauseCy() {
-        return pause.cy();
-    }
-
-    /** True when (x, y) is on the pause control's hit box. */
-    boolean inPause(float x, float y) {
-        return pause.contains(x, y);
     }
 
     /** Bottom-left of the difficulty chip. */
@@ -741,7 +733,7 @@ final class GameplayHud {
     }
 
     /**
-     * Keeps only the score of the corners (no progress hairline, pause control, chip, title or time):
+     * Keeps only the score of the corners (no progress bar, pause control, chip, title or time):
      * the live preview of GAMEPLAY VISUALS, whose caption takes the bottom-right (Kelvin 2026-10-18 19:52). The corners
      * then sit the minimum margin from the screen's edges, without the device's insets or edge padding.
      */
@@ -780,7 +772,7 @@ final class GameplayHud {
     }
 
     /**
-     * A touched MINE or a LANE MINE contact (owner 2026-10-12 00:42): the LOST word like a missed
+     * A touched MINE or a LANE MINE contact (Kelvin 2026-10-12 00:42): the LOST word like a missed
      * note's, in {@code Theme.MINE_LOST}, at the centre or at the mine x per the judgement display
      * setting; no meter tick, no EARLY/LATE.
      */
@@ -956,15 +948,19 @@ final class GameplayHud {
         gChip = approach(gChip, cornerHit(EL_CHIP, wl, wr, ly0, ly1, now), step);
         gTime = approach(gTime, cornerHit(EL_TIME, wl, wr, ly0, ly1, now), step);
         // centre: the zone-overlap rule
-        gCombo = approach(gCombo, hit(Ui.CX - 300f, Ui.CX + 300f, 500f, 540f + 96f * k, wl, wr, lo0, hi0, lo1, hi1), step);
-        gWord = approach(gWord, hit(Ui.CX - 300f, Ui.CX + 300f, 440f, 444f + 34f * k, wl, wr, lo0, hi0, lo1, hi1), step);
-        gMeter = approach(gMeter, hit(Ui.CX - 170f, Ui.CX + 170f, METER_Y - 14f, METER_Y + 14f, wl, wr, lo0, hi0, lo1, hi1),
-            step);
-        gCounters = approach(gCounters, hit(Ui.CX - 300f, Ui.CX + 300f, countersY - 14f, countersY + 14f, wl, wr, lo0, hi0,
-            lo1, hi1), step);
+        gCombo = approach(gCombo,
+            hit(Ui.CX - 300f, Ui.CX + 300f, 500f, 540f + 96f * k, wl, wr, lo0, hi0, lo1, hi1), step);
+        gWord = approach(gWord,
+            hit(Ui.CX - 300f, Ui.CX + 300f, 440f, 444f + 34f * k, wl, wr, lo0, hi0, lo1, hi1), step);
+        gMeter = approach(gMeter,
+            hit(Ui.CX - 170f, Ui.CX + 170f, METER_Y - 14f, METER_Y + 14f, wl, wr, lo0, hi0, lo1, hi1), step);
+        gCounters = approach(gCounters,
+            hit(Ui.CX - 300f, Ui.CX + 300f, countersY - 14f, countersY + 14f, wl, wr, lo0, hi0, lo1, hi1), step);
     }
 
-    /** True while a judgement line runs within {@link #LINE_GUARD} of element {@code el} or an at-lane word covers it. */
+    /**
+     * True while a judgement line runs within {@link #LINE_GUARD} of element {@code el} or an at-lane word covers it.
+     */
     private boolean cornerHit(int el, float wl, float wr, float ly0, float ly1, float now) {
         float x0 = left(el);
         float x1 = right(el);
@@ -1083,7 +1079,7 @@ final class GameplayHud {
     }
 
     /**
-     * Last pass, shapes (atlas): progress hairline, difficulty chip plate, the pause icon with its
+     * Last pass, shapes (atlas): progress bar, difficulty chip plate, the pause icon with its
      * first-tap hint, demo taps and hold ring.
      *
      * @param paused       the pause menu is open (the ring turns cyan)
@@ -1093,11 +1089,11 @@ final class GameplayHud {
         if (scoreOnly) return;
         float s = slide(introT);
         float off = (1f - s) * 90f;
-        // progress hairline along the top edge
+        // progress bar along the top edge
         float vl = Ui.left();
         float vw = Ui.worldW();
-        draw.rect(vl, progY, vw, PROGRESS_H, Theme.INK1, 0.12f * s);
-        draw.rect(vl, progY, vw * e.progress(), PROGRESS_H, Theme.GROUND_SIG, 0.60f * s);
+        draw.rect(vl, progY, vw, progH, Theme.INK1, 0.12f * s);
+        draw.rect(vl, progY, vw * e.progress(), progH, Theme.GROUND_SIG, 0.60f * s);
         // difficulty chip plate
         if (chipW > 0f) draw.roundRect(chipX - off, chipY, chipW, chipH, CHIP_RADIUS * k, diffFill, 0.70f * s * gChip);
         drawPauseIcon(now, s * gPause, off, paused, holdProgress);
@@ -1232,7 +1228,9 @@ final class GameplayHud {
         float keep = 1f - centreCover;
         if (keep <= 0.003f) return;
         // an autoplay run says so in the middle, under the combo in COMBO's place, from the first frame on
-        if (autoplay) label(b, AUTOPLAY, AUTO_CAP * k, Ui.CX, 504f, Align.center, Theme.AUTO, AUTO_ALPHA * keep * gCombo);
+        if (autoplay) {
+            label(b, AUTOPLAY, AUTO_CAP * k, Ui.CX, 504f, Align.center, Theme.AUTO, AUTO_ALPHA * keep * gCombo);
+        }
         float cap = 96f * k;
         float bt = now - breakT;
         if (c < 3 && bt >= 0f && bt < BREAK_FLICKER + BREAK_FADE) {

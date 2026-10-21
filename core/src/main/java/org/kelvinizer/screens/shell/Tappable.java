@@ -59,11 +59,6 @@ public class Tappable extends Pressable {
         return hover;
     }
 
-    /** Draws the keyboard focus ring around the visual rect (when focused). */
-    public void drawFocusRing(float radius, float alpha) {
-        drawFocus(x, y, w, h, radius, alpha);
-    }
-
     /** Draws nothing: the owner draws the content (see the class doc). */
     @Override
     public void draw(Batch b, float alpha) {

@@ -47,7 +47,9 @@ public final class ScorePanel implements TextQueue.Deferred {
     /** Total width of the 11 score cells (9 digits, 2 commas) at {@code cap}. */
     public float scoreWidth(ResultModel m, float cap) {
         float w = 0f;
-        for (int i = 0; i < ResultModel.SCORE_CELLS; i++) w += k.fonts.cellWidth(Fonts.Role.NUMBER, cap, m.scoreChars[i]);
+        for (int i = 0; i < ResultModel.SCORE_CELLS; i++) {
+            w += k.fonts.cellWidth(Fonts.Role.NUMBER, cap, m.scoreChars[i]);
+        }
         return w;
     }
 

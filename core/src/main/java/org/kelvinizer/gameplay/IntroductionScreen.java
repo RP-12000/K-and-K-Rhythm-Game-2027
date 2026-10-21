@@ -79,8 +79,6 @@ public class IntroductionScreen extends GameplayScreen {
     private static final float DEMO_LANE_W = 240f;
     /** The demo mine sits left of the MINES heading, this far from its first letter (EN: centre x ≈ 1520, lane +3). */
     private static final float DEMO_MINE_GAP = 32f;
-    /** The two demo heads sit beside the GOLD PEARLS heading, this far from its ends (EN: centres ≈ 598 / 1322). */
-    private static final float SYNC_DEMO_GAP = 56f;
     /**
      * Ghost notes of the two-lines demo: a ground DROP falls in lane −4, a sky DROP rises in lane +4 (the outer
      * lanes, clear of the centred body line between them).
@@ -104,14 +102,13 @@ public class IntroductionScreen extends GameplayScreen {
     private float lastEarlyLate = -10f;
     private boolean lateNext;
     private float lastMineTouch = -10f;
-    /** Chart index of the first stacked TIDE at {@link IntroductionGuidelines#STACK_BEAT}, or −1 (none in this chart). */
-    private int stackNote = -1;
     /** Chart indices of the two lane mines the hint outlines (LANE_MINE and LANE_MINE2), or −1. */
     private int laneMineNote = -1;
     private int laneMine2Note = -1;
-    /** The GOLD PEARLS and MINES headings the demo heads and the demo mine sit beside (null if absent). */
-    private GuidingText syncHeading;
+    /** The MINES heading the demo mine sits beside (null if absent). */
     private GuidingText mineHeading;
+    /** The closing {@code K & K} (its fade-in starts the centre cover). */
+    private GuidingText finale;
 
     /** Creates the screen once (Main caches it). */
     public IntroductionScreen(Main game) {
@@ -138,16 +135,11 @@ public class IntroductionScreen extends GameplayScreen {
         if (guidelines.zh() != zh || guidelines.pauseMode() != pauseMode) {
             guidelines = new IntroductionGuidelines(zh, pauseMode);
         }
-        stackNote = -1;
         laneMineNote = -1;
         laneMine2Note = -1;
         Note[] all = chart.notes();
         for (int i = 0; i < all.length; i++) {
             Note n = all[i];
-            if (stackNote < 0 && n.line() == Line.LOWER && n.type() == NoteType.UNIVERSAL
-                && n.judgement() == IntroductionGuidelines.STACK_BEAT) {
-                stackNote = i;
-            }
             if (n.type() != NoteType.MINE) continue;
             if (laneMineNote < 0 && n.laneId() == IntroductionGuidelines.LANE_MINE_LANE
                 && n.judgement() == IntroductionGuidelines.LANE_MINE_BEAT) {
@@ -160,13 +152,13 @@ public class IntroductionScreen extends GameplayScreen {
         }
         Fonts fonts = game.fonts();
         List<GuidingText> list = guidelines.getGuidelines();
-        syncHeading = null;
         mineHeading = null;
+        finale = null;
         for (int i = 0; i < list.size(); i++) {
             GuidingText g = list.get(i);
             g.prewarm(fonts);
+            if (g.style() == GuidingText.Style.FINALE) finale = g;
             if (g.style() != GuidingText.Style.HEADING) continue;
-            if (g.startBeat() == IntroductionGuidelines.SYNC_DEMO_START) syncHeading = g;
             if (g.startBeat() == IntroductionGuidelines.MINE_DEMO_START) mineHeading = g;
         }
         fonts.prewarm(Fonts.Role.UI, GuidingText.uiRaster(), Fonts.GlyphSet.FULL);
@@ -208,6 +200,18 @@ public class IntroductionScreen extends GameplayScreen {
         if (beat < in || beat > out + ramp) return 0f;
         return Math.min(MathUtils.clamp((beat - in) / ramp, 0f, 1f),
             MathUtils.clamp((out + ramp - beat) / ramp, 0f, 1f));
+    }
+
+    /**
+     * The closing {@code K & K} owns the centre from its fade-in to the end, like the end banner: the HUD combo
+     * drawn on the same spot gives way instead of showing between the letters (Kelvin 2026-10-21 04:57).
+     */
+    @Override
+    protected float centreCover() {
+        float cover = super.centreCover();
+        if (finale == null) return cover;
+        float in = (engine.visualBeat() - finale.startBeat()) / finale.fadeInBeats();
+        return Math.max(cover, MathUtils.clamp(in, 0f, 1f));
     }
 
     @Override
@@ -336,7 +340,6 @@ public class IntroductionScreen extends GameplayScreen {
         text.start(batch);
         drawGhostCombo(text, beat);
         drawFallRise(beat);
-        drawSyncHeads(beat);
         drawDemoMine(beat);
         drawLaneMineHint(draw, beat);
         List<GuidingText> list = guidelines.getGuidelines();
@@ -352,8 +355,8 @@ public class IntroductionScreen extends GameplayScreen {
     /**
      * Resolves the caption's x for its anchor: corner labels align with the edge of what they name (left
      * corners with its left edge, right corners with its right edge), always inside the safe area. A world
-     * or line-anchored x is a reference x stretched with the field ({@link Field#x}), a TIDE_STACK offset from
-     * the window edge is stretched by kx; safe-edge offsets are not (the corners are not stretched).
+     * or line-anchored x is a reference x stretched with the field ({@link Field#x}); safe-edge offsets are not
+     * (the corners are not stretched).
      */
     private float anchorX(GuidingText g) {
         switch (g.anchor()) {
@@ -373,8 +376,6 @@ public class IntroductionScreen extends GameplayScreen {
                 float half = g.width(game.fonts()) * 0.5f;
                 return inSafe(box[2] - half, half);
             }
-            case TIDE_STACK:
-                return engine.layout().windowRight() + g.x() * Field.kx();
             default:
                 return Field.x(g.x());
         }
@@ -406,13 +407,6 @@ public class IntroductionScreen extends GameplayScreen {
                 float y = box[3] + TOUR_GAP;
                 return y <= ground - LINE_CLEAR ? y : ground + LINE_SIDE;
             }
-            case TIDE_STACK: {
-                float pos = stackNote >= 0 ? Math.max(0f, NoteRenderer.position(chart.note(stackNote), beatNow())) : 0f;
-                // the design's offset clears the T4 wave crest (NoteShapes.T4_REACH) at note size 1; larger notes
-                // raise the crest, and the badge rises with it
-                float u = noteDemoHeight() / NoteRenderer.NOTE_H;
-                return ground + Field.dist(pos + g.y()) - noteHitShift() + Math.max(0f, u - 1f) * NoteShapes.T4_REACH;
-            }
             default:
                 return Field.y(g.y());
         }
@@ -443,10 +437,6 @@ public class IntroductionScreen extends GameplayScreen {
         return Math.max(Ui.safeLeft() + half, Math.min(Ui.safeRight() - half, x));
     }
 
-    private float beatNow() {
-        return engine.visualBeat();
-    }
-
     /** Ghost combo "25 COMBO" while COMBO · CENTRE shows and the real combo is under 3. */
     private void drawGhostCombo(com.badlogic.gdx.graphics.g2d.Batch text, float beat) {
         if (beat < IntroductionGuidelines.COMBO_START || beat > IntroductionGuidelines.TOUR_END + 1f) return;
@@ -475,23 +465,8 @@ public class IntroductionScreen extends GameplayScreen {
         float p = ((beat - IntroductionGuidelines.FALL_RISE_START) % 2f) / 2f; // 0..1 over one approach
         float alpha = FALL_RISE_ALPHA * a * Math.min(1f, p / 0.1f);
         float dist = Field.dist((1f - p) * FALL_RISE_UNITS);
-        drawNoteDemo(lay.centre(gi), engine.lineY(Line.LOWER) + dist, lay.width(gi), false, false, alpha);
-        drawNoteDemo(lay.centre(si), engine.lineY(Line.UPPER) - dist, lay.width(si), true, false, alpha);
-    }
-
-    /**
-     * Sync lesson: two ground DROP heads with the gold sync pearls, one each side of the GOLD PEARLS heading
-     * (the caption keeps its words until the tutorial text is revised; {@link #SYNC_DEMO_GAP} from its ends,
-     * centred on its line), with the heading's fades.
-     */
-    private void drawSyncHeads(float beat) {
-        float a = window(beat, IntroductionGuidelines.SYNC_DEMO_START, IntroductionGuidelines.SYNC_DEMO_END, 0.5f);
-        if (a <= 0f || syncHeading == null) return;
-        float off = syncHeading.width(game.fonts()) * 0.5f + SYNC_DEMO_GAP + noteDemoWidth(DEMO_LANE_W) * 0.5f;
-        float y = anchorY(syncHeading) - noteDemoHeight() * 0.5f; // leading edge, so the head is centred on the heading
-        float hx = anchorX(syncHeading);
-        drawNoteDemo(hx - off, y, DEMO_LANE_W, false, true, a);
-        drawNoteDemo(hx + off, y, DEMO_LANE_W, false, true, a);
+        drawNoteDemo(lay.centre(gi), engine.lineY(Line.LOWER) + dist, lay.width(gi), false, alpha);
+        drawNoteDemo(lay.centre(si), engine.lineY(Line.UPPER) - dist, lay.width(si), true, alpha);
     }
 
     /** Centre x of the demo mine: {@link #DEMO_MINE_GAP} left of the MINES heading. */

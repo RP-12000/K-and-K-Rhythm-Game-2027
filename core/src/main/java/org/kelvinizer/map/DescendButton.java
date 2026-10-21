@@ -40,7 +40,6 @@ final class DescendButton extends Pressable {
     private static final float PRESSURE_T = 0.25f, FLASH_T = 0.3f, CHEVRON_LOOP = 0.9f;
     /** Hold-to-buy length (s). */
     static final float HOLD_T = 0.6f;
-    private static final Color SHELL_RIB = Theme.mix(Theme.GOLD, Theme.ABYSS_BLACK, 0.55f, new Color());
 
     private final MapRenderer r;
     /** Label glitch: ambient G1, G2 on release. */
@@ -187,7 +186,9 @@ final class DescendButton extends Pressable {
 
     /** Label width at the scaled cap ({@code DISPLAY 40}). */
     private float labelWidth() {
-        if (textW < 0f) textW = r.fonts().width(Fonts.Role.DISPLAY, MapRenderer.R_DISPLAY, text) / MapRenderer.R_DISPLAY;
+        if (textW < 0f) {
+            textW = r.fonts().width(Fonts.Role.DISPLAY, MapRenderer.R_DISPLAY, text) / MapRenderer.R_DISPLAY;
+        }
         return textW * labelCap();
     }
 
@@ -221,7 +222,6 @@ final class DescendButton extends Pressable {
             float w1 = r.boldWidth(buyPre, cap), w2 = r.boldWidth(buyPost, cap);
             float ix = cx - (w1 + w2 + icon + 2f * gap) * 0.5f + w1 + gap + icon * 0.5f;
             draw.shell(ix, cy, icon, afford ? Theme.ABYSS_BLACK : Theme.INK3, afford ? Theme.GOLD : Theme.PANEL_HI, a);
-            drawFocus(bx, by, bw, bh, Button.RADIUS * k, a);
             return;
         }
         if (locked) {
@@ -229,7 +229,6 @@ final class DescendButton extends Pressable {
             draw.roundRectStroke(bx, by, bw, bh, rad, 2f, Theme.STROKE, a);
             float lx = cx - lockRowW(s) * 0.5f + 14f * k * s;
             Icons.draw(draw.shapes(), Icons.Icon.LOCK, lx, cy, 30f * k * s, Theme.GOLD, lockA * a);
-            drawFocus(bx, by, bw, bh, Button.RADIUS * k, a);
             return;
         }
         // breathing outer glow on the heartbeat (strongest on the beat)
@@ -262,7 +261,6 @@ final class DescendButton extends Pressable {
         float chx = labelX(cx, s) + lw * 0.5f + 46f * k * s;
         Icons.draw(draw.shapes(), Icons.Icon.CHEVRONS_DOWN, chx, cy + (8f - 16f * p) * k * s, 44f * k * s, labelColor(),
             (0.35f + 0.65f * fade) * a);
-        drawFocus(bx, by, bw, bh, Button.RADIUS * k, a);
     }
 
     private Color labelColor() {
@@ -302,7 +300,7 @@ final class DescendButton extends Pressable {
         float maxW = (w - 150f * k) * s;
         float lw = labelWidth() * s;
         if (lw > maxW) cap *= maxW / lw;
-        r.glitch(b, Fonts.Role.DISPLAY, MapRenderer.R_DISPLAY, text, cap, labelX(cx, s), cy, Align.center | Fonts.VCENTER,
-            labelColor(), a, label);
+        r.glitch(b, Fonts.Role.DISPLAY, MapRenderer.R_DISPLAY, text, cap, labelX(cx, s), cy,
+            Align.center | Fonts.VCENTER, labelColor(), a, label);
     }
 }

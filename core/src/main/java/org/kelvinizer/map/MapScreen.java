@@ -145,12 +145,6 @@ public class MapScreen extends KkScreen<Main>
     private boolean[] lockedBefore = new boolean[0];
     private MapWorld lockedWorld;
 
-    /**
-     * Test hook: when &gt; 0 every frame advances by this many seconds instead of the real delta
-     * (deterministic screenshots of the animations).
-     */
-    float fixedDelta;
-
     /** Loads the map data, builds the hub and starts the thumbnail worker. */
     public MapScreen(final Main game) {
         super(game);
@@ -170,7 +164,8 @@ public class MapScreen extends KkScreen<Main>
         gestures = new MapGestures(cam, this);
         sonar = new SonarField(game.draw());
         bubbles = new MapBubbles();
-        renderer = new MapRenderer(game.draw(), game.fonts(), game.glitch(), thumbs, slots, lib.size(), sonar, bubbles, data);
+        renderer = new MapRenderer(game.draw(), game.fonts(), game.glitch(), thumbs, slots, lib.size(),
+            sonar, bubbles, data);
         renderer.cam = cam;
         hud = new MapHud(game.draw(), game.fonts(), game.avatars(), cam, renderer, this);
         grid = new GridPage(game.draw(), renderer, cam);
@@ -286,11 +281,12 @@ public class MapScreen extends KkScreen<Main>
         final String prev = world.level.id;
         final String atSpot = from != null && from.spot != null && how != CaveFx.RISE ? from.spot.at : null;
         if (from != null && from.spot != null && how != CaveFx.RISE) downVia.put(prev, from.spot.id);
-        float hx = from != null ? cam.hudX(from.drawX()) : Ui.CX, hy = from != null ? cam.hudY(from.drawY(time, reduceMotion)) : Ui.CY;
+        float hx = from != null ? cam.hudX(from.drawX()) : Ui.CX;
+        float hy = from != null ? cam.hudY(from.drawY(time, reduceMotion)) : Ui.CY;
         if (from != null && how != CaveFx.RISE && !reduceMotion) {
             float z = 0.45f;
-            cam.diveTo(MapCamera.centreFor(from.x, Ui.CX, z), MapCamera.centreForY(from.y, Ui.CY, z), z, CaveFx.outDuration(how),
-                Interpolation.exp5In);
+            cam.diveTo(MapCamera.centreFor(from.x, Ui.CX, z), MapCamera.centreForY(from.y, Ui.CY, z), z,
+                CaveFx.outDuration(how), Interpolation.exp5In);
         }
         CaveData.Level next = data.levels.get(id);
         // an English screen shows no Chinese (Kelvin 2026-10-20: 如果语言选择是英语就不要出现中文)
@@ -365,7 +361,8 @@ public class MapScreen extends KkScreen<Main>
     /** The level a rise goes up to now, or null when nothing rises (see {@link #rise()}). */
     private String riseTarget() {
         if (fx.busy() || diving() || world.isHub() || (card.isOpen() && !world.isGrid())) return null;
-        String parent = !chapterMode() && world.level.storyParent != null ? world.level.storyParent : world.level.parent;
+        String parent = !chapterMode() && world.level.storyParent != null ? world.level.storyParent
+            : world.level.parent;
         return parent != null && data.levels.containsKey(parent) ? parent : null;
     }
 
@@ -514,7 +511,8 @@ public class MapScreen extends KkScreen<Main>
         boolean welcome = fromWelcome;
         fromWelcome = false;
         if (welcome || !shownOnce) {
-            String id = !welcome && profile != null && profile.mapLevel != null && data.levels.containsKey(profile.mapLevel)
+            String id = !welcome && profile != null && profile.mapLevel != null
+                && data.levels.containsKey(profile.mapLevel)
                 ? profile.mapLevel : HUB;
             if (!id.equals(world.level.id)) applyLevel(build(id));
             refreshProfile(true);
@@ -689,7 +687,8 @@ public class MapScreen extends KkScreen<Main>
             return;
         }
         float zx = (w.maxX - w.minX) / Math.max(1f, Ui.worldW()), zy = (w.maxY - w.minY) / Math.max(1f, Ui.worldH());
-        float zMax = w.level.overviewZoom > 0f ? w.level.overviewZoom : MathUtils.clamp(Math.max(zx, zy), w.isGrid() ? 1.6f : 1.15f, 3.2f);
+        float zMax = w.level.overviewZoom > 0f ? w.level.overviewZoom
+            : MathUtils.clamp(Math.max(zx, zy), w.isGrid() ? 1.6f : 1.15f, 3.2f);
         cam.setLevel(w.minX, w.maxX, w.minY, w.maxY, zMax);
         cam.zoomLocked = w.isHub(); // the hub takes no pinch or wheel zoom (Kelvin 2026-10-16)
     }
@@ -718,8 +717,8 @@ public class MapScreen extends KkScreen<Main>
 
     private void restoreCamera(boolean fresh) {
         Profile p = profile;
-        if (!fresh && !world.isHub() && p != null && p.mapCamSaved && world.level.id.equals(p.mapLevel) && !Float.isNaN(p.mapCamX)
-            && !Float.isNaN(p.mapCamY)) {
+        if (!fresh && !world.isHub() && p != null && p.mapCamSaved && world.level.id.equals(p.mapLevel)
+            && !Float.isNaN(p.mapCamX) && !Float.isNaN(p.mapCamY)) {
             if (world.isGrid()) grid.scrollTo(Ui.CY - p.mapCamY);
             else cam.snap(p.mapCamX, p.mapCamY, p.mapZoom > 0f ? p.mapZoom : 1f);
             return;
@@ -918,7 +917,8 @@ public class MapScreen extends KkScreen<Main>
         MapNode n = storyNode;
         storyNode = null;
         Profile p = profile;
-        if (p != null && n != null && n.spot != null && n.spot.story != null && p.setFlag(MapWorld.storyFlag(n.spot.story))) {
+        if (p != null && n != null && n.spot != null && n.spot.story != null
+            && p.setFlag(MapWorld.storyFlag(n.spot.story))) {
             game.profiles().markDirty();
         }
     }
@@ -951,7 +951,8 @@ public class MapScreen extends KkScreen<Main>
     /** DESCEND released: starts the Descent (§3.12, X2c). */
     @Override
     public void descend(MapNode node, Difficulty d, boolean auto, float fx, float fy) {
-        if (diving() || node == null || this.fx.busy() || (node.locked && !node.launch) || node.glitch || node.forSale) {
+        if (diving() || node == null || this.fx.busy() || (node.locked && !node.launch) || node.glitch
+            || node.forSale) {
             return;
         }
         if (!node.launch && (node.song == null || !node.song.has(d))) {
@@ -1021,11 +1022,13 @@ public class MapScreen extends KkScreen<Main>
             if (tl != null && !n.launch && n.song != null) {
                 String ct = n.song.constantBase(diveDiff);
                 tl.setCoverArt(thumbs.region(renderer.slotOf(n)), ThumbAtlas.cellSizeFor(2f * TransitionLayer.ART_R),
-                    n.song.title(), n.song.artist(), Theme.DIFFICULTY_NAMES[diveDiff.ordinal()] + (ct != null ? " " + ct : ""),
+                    n.song.title(), n.song.artist(),
+                    Theme.DIFFICULTY_NAMES[diveDiff.ordinal()] + (ct != null ? " " + ct : ""),
                     Theme.difficultyAccent(diveDiff.ordinal()), n.song.charter(diveDiff), n.song.illustrator());
                 if (ct != null) tl.setCoverDiffMark(n.song.constantMark(diveDiff));
             }
-            boolean ok = n.launch ? game.startTutorial() : game.startGameplay(n.song, diveDiff, diveAuto, diveFx, diveFy);
+            boolean ok = n.launch ? game.startTutorial()
+                : game.startGameplay(n.song, diveDiff, diveAuto, diveFx, diveFy);
             if (!ok) {
                 if (tl != null) tl.setCoverArt(null, 0f, null, null, null, null);
                 abortDive();
@@ -1066,7 +1069,10 @@ public class MapScreen extends KkScreen<Main>
         selectNode(world.nodes[j], true);
     }
 
-    /** True when a tap on song hole {@code n} opens its card (unlocked or on ALL SONGS, not garbled, with a chart for the lens). */
+    /**
+     * True when a tap on song hole {@code n} opens its card (unlocked or on ALL SONGS, not garbled, with a chart for
+     * the lens).
+     */
     private boolean opens(MapNode n) {
         return (!n.locked || world.isGrid()) && !n.glitch && !n.missing(lens);
     }
@@ -1432,7 +1438,8 @@ public class MapScreen extends KkScreen<Main>
                 return true;
             case Input.Keys.TAB: {
                 if (world.nodes.length == 0) return true;
-                boolean back = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) || Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT);
+                boolean back = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT)
+                    || Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT);
                 int i = selected != null && selected.isSong() ? selected.order : (back ? 0 : -1);
                 for (int step = 0; step < world.nodes.length; step++) {
                     i = (i + (back ? -1 : 1) + world.nodes.length) % world.nodes.length;
@@ -1535,9 +1542,11 @@ public class MapScreen extends KkScreen<Main>
         float far = MapRenderer.OFFSCREEN;
         if (card.amount() > 0.01f) {
             if (sheet) {
-                renderer.addOccluder(Ui.left() - far, Ui.bottom() - far, Ui.worldW() + 2f * far, card.top() - Ui.bottom() + far);
+                renderer.addOccluder(Ui.left() - far, Ui.bottom() - far, Ui.worldW() + 2f * far,
+                    card.top() - Ui.bottom() + far);
             } else {
-                renderer.addOccluder(card.left(), Ui.bottom() - far, Ui.right() - card.left() + far, Ui.worldH() + 2f * far);
+                renderer.addOccluder(card.left(), Ui.bottom() - far, Ui.right() - card.left() + far,
+                    Ui.worldH() + 2f * far);
             }
         }
         if (sortPanel.amount() > 0.01f) {
@@ -1601,7 +1610,7 @@ public class MapScreen extends KkScreen<Main>
      */
     @Override
     protected void draw(float delta) {
-        update(fixedDelta > 0f ? fixedDelta : delta);
+        update(delta);
         renderer.frame();
         batch.begin();
         game.backdrop().render(batch, viewport, delta);
@@ -1652,8 +1661,8 @@ public class MapScreen extends KkScreen<Main>
 
     /**
      * Debug: cumulative batch flushes after backdrop, world, screen atlas (map, HUD, card),
-     * jacket + avatar, text phases and the whole frame including overlays (read by test
-     * harnesses; written every frame).
+     * jacket + avatar, text phases and the whole frame including overlays (read by the
+     * tests; written every frame).
      */
     final int[] phaseCalls = new int[7];
 }

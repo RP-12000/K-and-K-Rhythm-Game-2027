@@ -83,8 +83,8 @@ import java.util.zip.GZIPOutputStream;
  * queued write is on disk. {@link #dispose()} flushes and stops the writer.
  */
 public final class ProfileStore {
-    /** Maximum number of local profiles. */
-    public static final int MAX_PROFILES = 8;
+    /** Maximum number of local profiles (8 until Kelvin 2026-10-21 asked for 12). */
+    public static final int MAX_PROFILES = 12;
     /** Maximum name length in code points. */
     public static final int MAX_NAME_CODEPOINTS = 16;
     /** Prefix of profile export codes. */
@@ -334,9 +334,13 @@ public final class ProfileStore {
                 backupBeforeSchemaMigration(e.id);
                 log("Profile " + e.id + ": moved to shells and depth");
             }
-            if (p.schemaVersion < Profile.SCHEMA_VERSION) {
+            if (p.schemaVersion < 4) {
                 // 14:10 / 15:22: depth without the score factor, depth history restarted (Profile.migrateToSchema4)
                 log("Profile " + e.id + ": depth formula of 2026-10-17 15:22");
+            }
+            if (p.schemaVersion < Profile.SCHEMA_VERSION) {
+                // 2026-10-20 22:37: the VISUAL HIT POINT default 0, the old 20 moved to it (Profile.migrateToSchema5)
+                log("Profile " + e.id + ": schema " + Profile.SCHEMA_VERSION);
                 dirtyProfiles.add(p.id);
             }
             p.sanitize();
@@ -1103,7 +1107,9 @@ public final class ProfileStore {
      *                         {@link ImportException.Reason#LIMIT_REACHED}
      */
     public Profile importCode(String code) throws ImportException {
-        if (!canCreate()) throw new ImportException(ImportException.Reason.LIMIT_REACHED, "Profile limit reached", null);
+        if (!canCreate()) {
+            throw new ImportException(ImportException.Reason.LIMIT_REACHED, "Profile limit reached", null);
+        }
         if (code == null) throw new ImportException(ImportException.Reason.INVALID_CODE, "Empty code", null);
         StringBuilder sb = new StringBuilder(code.length());
         for (int i = 0; i < code.length(); i++) {
@@ -1128,7 +1134,9 @@ public final class ProfileStore {
 
     /** Imports a profile from an exported JSON file (desktop export folder). */
     public Profile importFile(FileHandle file) throws ImportException {
-        if (!canCreate()) throw new ImportException(ImportException.Reason.LIMIT_REACHED, "Profile limit reached", null);
+        if (!canCreate()) {
+            throw new ImportException(ImportException.Reason.LIMIT_REACHED, "Profile limit reached", null);
+        }
         Profile p;
         byte[] raw;
         try {
@@ -1295,11 +1303,6 @@ public final class ProfileStore {
         quietTimer = 0f;
     }
 
-    /** @return true when unsaved changes exist. */
-    public boolean isDirty() {
-        return anyDirty;
-    }
-
     /**
      * Saves after {@link #AUTOSAVE_QUIET_SECONDS} without new changes (or at most
      * {@link #AUTOSAVE_MAX_SECONDS} after the first). Cheap when nothing is dirty; never call
@@ -1327,15 +1330,9 @@ public final class ProfileStore {
         autosaveSuspended = suspended;
     }
 
-    /** True while {@link #update}'s autosave is suspended. */
-    public boolean isAutosaveSuspended() {
-        return autosaveSuspended;
-    }
-
     /**
      * Saves every dirty file without blocking: serialises now, writes on the writer thread (see
-     * the class doc). Afterwards {@link #isDirty()} is false until the next change or a failed
-     * write.
+     * the class doc). Afterwards nothing is dirty until the next change or a failed write.
      */
     public void save() {
         drainFailedWrites();

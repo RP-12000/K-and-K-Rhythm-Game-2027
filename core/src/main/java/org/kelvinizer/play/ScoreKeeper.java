@@ -137,12 +137,6 @@ public final class ScoreKeeper {
         if (histogram[bin] < Short.MAX_VALUE) histogram[bin]++;
     }
 
-    /** Breaks the current combo and the resonance chain without recording a judgement. */
-    public void breakCombo() {
-        combo = 0;
-        chain = 0;
-    }
-
     /**
      * Records a touched mine: the combo drops to 0 and {@link #minesTouched()} grows; the
      * resonance chain, score, accuracy and judgement counts are unchanged (ARCHITECTURE §13.2,
@@ -276,14 +270,9 @@ public final class ScoreKeeper {
         return offsetCount == 0 ? 0f : (float) (offsetSum / offsetCount);
     }
 
-    /** @return number of non-LOST hits that contributed to {@link #meanOffsetMs()}. */
-    public int offsetSamples() {
-        return offsetCount;
-    }
-
     /**
-     * @return true when the combo was never broken so far (nothing LOST, no mine touched, no
-     *         {@link #breakCombo()}); the run may be unfinished
+     * @return true when the combo was never broken so far (nothing LOST and no mine touched); the
+     *         run may be unfinished
      */
     public boolean isFullComboSoFar() {
         return counts[Judgement.LOST.ordinal()] == 0 && minesTouched == 0 && combo == judgedCount();

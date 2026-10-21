@@ -106,7 +106,7 @@ public final class DiverActionsDialog extends Modal {
             Theme.INK1, alpha);
         fonts.draw(b, Fonts.Role.UI, 20f, meta, tx, top - 96f, Align.left, Theme.INK2, alpha);
         if (!delete.isEnabled()) {
-            fonts.draw(b, Fonts.Role.UI_REGULAR, 16f, "THE LAST DIVER CANNOT BE DELETED", x + w * 0.5f,
+            fonts.draw(b, Fonts.Role.UI_REGULAR, 16f, "THE LAST PLAYER CANNOT BE DELETED", x + w * 0.5f,
                 delete.y() - 6f, Align.center | Align.top, Theme.INK3, alpha);
         }
     }
@@ -228,7 +228,7 @@ public final class DiverActionsDialog extends Modal {
 
         @Override
         protected void drawContent(Batch b, float alpha) {
-            drawTitle(b, "DELETE DIVER?", alpha);
+            drawTitle(b, "DELETE PLAYER?", alpha);
             float cx = x + cardShakeX;
             float top = y + h - 110f;
             avatar.draw(b, cx + 48f + 56f, top - 60f, 112f, alpha);
@@ -249,9 +249,9 @@ public final class DiverActionsDialog extends Modal {
             String doomed = id;
             close();
             if (host.deleteDiver(doomed)) {
-                game.toasts().show("DIVER DELETED", Theme.LOST);
+                game.toasts().show("PLAYER DELETED", Theme.LOST);
             } else {
-                game.toasts().show("THE LAST DIVER CANNOT BE DELETED", Theme.LOST);
+                game.toasts().show("THE LAST PLAYER CANNOT BE DELETED", Theme.LOST);
             }
         }
     }

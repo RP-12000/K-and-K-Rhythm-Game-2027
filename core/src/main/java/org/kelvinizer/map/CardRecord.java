@@ -51,7 +51,10 @@ final class CardRecord {
     final StringBuilder playsText = new StringBuilder(32);
     /** The same without the label ({@code 12 · LOCAL #1 / 3}; the side card draws PLAYS apart). */
     final StringBuilder playsValue = new StringBuilder(32);
-    /** Micro-goal: kind, the prefix ({@code NEXT}, {@code MAX}, {@code MAXED}) and the rest ({@code -2,500 m AT 97,350,000}). */
+    /**
+     * Micro-goal: kind, the prefix ({@code NEXT}, {@code MAX}, {@code MAXED}) and the rest
+     * ({@code -2,500 m AT 97,350,000}).
+     */
     int goal = GOAL_NONE;
     String goalPrefix = "";
     final StringBuilder goalRest = new StringBuilder(32);

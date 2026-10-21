@@ -9,13 +9,12 @@
     {"id": "song4", "song": "Song 4", "x": -470, "y": -130, "r": 112},
     {"id": "stD", "type": "story", "story": "story04", "x": -220, "y": 120},
     {"id": "song6", "song": "Song 6", "x": 30, "y": -140, "r": 112},
-    {"id": "ics4u", "song": "ICS4U", "x": 280, "y": 120, "r": 112, "requires": ["song6"]},
     {"id": "c3", "type": "shaft", "sealed": true, "x": 720, "y": -20, "r": 162,
      "label": "03 MIDNIGHT", "labelZh": "午夜层", "sub": "UNCHARTED", "subZh": "未测绘 · 敬请期待", "color": "#4B5BD6"}
   ],
   "links": [
-    ["rise", "song4", "main"], ["song4", "song6", "main"], ["song4", "stD", "main"], ["song6", "ics4u", "main"],
-    ["stD", "ics4u", "main"], ["ics4u", "c3", "main"]
+    ["rise", "song4", "main"], ["song4", "song6", "main"], ["song4", "stD", "main"], ["song6", "c3", "main"],
+    ["stD", "c3", "main"]
   ],
   "signs": [
     {"x": 720, "y": -20, "label": "03 MIDNIGHT", "labelZh": "午夜层", "sub": "主线", "color": "#4B5BD6"}

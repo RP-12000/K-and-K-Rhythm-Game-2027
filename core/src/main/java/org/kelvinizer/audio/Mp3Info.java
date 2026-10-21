@@ -6,11 +6,13 @@ import com.badlogic.gdx.files.FileHandle;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Arrays;
 
 /**
  * 只读 MP3 的文件头（第一帧、Xing/Info 头和 LAME 标签），不解码音频，得到时长和解码后开头多出来的延迟。
  * 电脑上 libGDX 的 MP3 解码会把 Info 帧当成一帧静音放出来，也不去掉编码器和解码器的延迟，所以音乐比原来的 WAV 晚；
- * 歌曲时钟用这里算出的延迟把它补回来。
+ * 歌曲时钟用这里算出的延迟把它补回来。安卓按文件头里的粗目录跳转会跳偏，{@link #seekableCopy} 给恒定码率的文件
+ * 做一份去掉目录标记的副本，让安卓按码率准确跳转。
  *
  * <p>Reads an MP3's header only (first frame, Xing / Info / VBRI header, LAME tag; no audio is
  * decoded) for its duration and for the delay a decoder adds before the first real sample.
@@ -31,6 +33,10 @@ public final class Mp3Info {
     public static final int DECODER_DELAY = 529;
     /** Encoder delay assumed when the file has no LAME tag (LAME and ffmpeg default). */
     public static final int DEFAULT_ENCODER_DELAY = 576;
+    /** Bit of the Xing / Info flags word that says a table of contents follows. */
+    private static final int TOC_FLAG = 4;
+    /** Local folder of the copies made by {@link #seekableCopy}. */
+    private static final String COPY_DIR = "cache/music/";
 
     private static final int[] RATES_V1 = {44100, 48000, 32000}, RATES_V2 = {22050, 24000, 16000},
         RATES_V25 = {11025, 12000, 8000};
@@ -45,9 +51,11 @@ public final class Mp3Info {
     public final boolean infoFrame;
     /** Length of the original audio (ms). */
     public final float durationMs;
+    /** File offset of the flags word of a constant-bitrate ("Info") header with a table of contents, else −1. */
+    final long tocFlagsAt;
 
     private Mp3Info(int sampleRate, int samplesPerFrame, int frames, int encoderDelay, int encoderPadding,
-                    boolean infoFrame, float durationMs) {
+                    boolean infoFrame, float durationMs, long tocFlagsAt) {
         this.sampleRate = sampleRate;
         this.samplesPerFrame = samplesPerFrame;
         this.frames = frames;
@@ -55,6 +63,7 @@ public final class Mp3Info {
         this.encoderPadding = encoderPadding;
         this.infoFrame = infoFrame;
         this.durationMs = durationMs;
+        this.tocFlagsAt = tocFlagsAt;
     }
 
     /** @return true for a {@code .mp3} file. */
@@ -83,6 +92,43 @@ public final class Mp3Info {
         return i != null ? i.durationMs : 0f;
     }
 
+    /**
+     * Android seeks an MP3 that has a table of contents (Xing / Info header) by that table, in steps of 1/256 of the
+     * file: the music lands up to about a second away from the time the player then reports, and the song clock
+     * follows that report (Kelvin 2026-10-21: after a pause the music was still off). A constant-bitrate file ("Info")
+     * seeks exactly by its bitrate once the table's flag is cleared; the header keeps its frame count and LAME tag.
+     *
+     * @return a copy of {@code f} with that flag cleared in local storage (written once, then reused while its bytes
+     *         match), or {@code f} itself when it has no such table or the copy cannot be made
+     */
+    public static FileHandle seekableCopy(FileHandle f) {
+        Mp3Info i = isMp3(f) ? read(f) : null;
+        if (i == null || i.tocFlagsAt < 0) return f;
+        try {
+            byte[] b = f.readBytes();
+            int at = (int) i.tocFlagsAt + 3; // low byte of the big-endian flags word
+            if (at >= b.length) return f;
+            b[at] &= ~TOC_FLAG;
+            FileHandle copy = Gdx.files.local(COPY_DIR + copyName(f));
+            if (copy.length() != b.length || !Arrays.equals(copy.readBytes(), b)) copy.writeBytes(b, false);
+            return copy;
+        } catch (RuntimeException e) {
+            if (Gdx.app != null) Gdx.app.error("Mp3Info", "No seekable copy of " + f.path() + ": " + e);
+            return f;
+        }
+    }
+
+    /** The copy's file name: the ASCII letters and digits of the song's name, then a hash of its whole path. */
+    private static String copyName(FileHandle f) {
+        String name = f.nameWithoutExtension();
+        StringBuilder sb = new StringBuilder();
+        for (int k = 0; k < name.length() && sb.length() < 40; k++) {
+            char c = name.charAt(k);
+            sb.append(c < 128 && Character.isLetterOrDigit(c) ? c : '_');
+        }
+        return sb.append('-').append(Integer.toHexString(f.path().hashCode())).append(".mp3").toString();
+    }
+
     /** @return the header info of {@code f}, or null when it is not a readable MP3. Never throws. */
     public static Mp3Info read(FileHandle f) {
         InputStream in = null;
@@ -93,7 +139,8 @@ public final class Mp3Info {
             long skipped = 0;
             byte[] buf;
             if (head[0] == 'I' && head[1] == 'D' && head[2] == '3') {
-                long tag = ((head[6] & 0x7F) << 21) | ((head[7] & 0x7F) << 14) | ((head[8] & 0x7F) << 7) | (head[9] & 0x7F);
+                long tag = ((head[6] & 0x7F) << 21) | ((head[7] & 0x7F) << 14) | ((head[8] & 0x7F) << 7)
+                    | (head[9] & 0x7F);
                 if ((head[5] & 0x10) != 0) tag += 10; // footer
                 skipFully(in, tag);
                 skipped = 10 + tag;
@@ -119,7 +166,10 @@ public final class Mp3Info {
         }
     }
 
-    /** Parses the first frame found in {@code b[0..n)}; {@code base} is the file offset of b[0]. Package-private for tests. */
+    /**
+     * Parses the first frame found in {@code b[0..n)}; {@code base} is the file offset of b[0]. Package-private for
+     * tests.
+     */
     static Mp3Info parse(byte[] b, int n, long base, long fileLength) {
         for (int i = 0; i + 4 <= n; i++) {
             if ((b[i] & 0xFF) != 0xFF || (b[i + 1] & 0xE0) != 0xE0) continue;
@@ -137,10 +187,12 @@ public final class Mp3Info {
 
             int frames = 0, delay = DEFAULT_ENCODER_DELAY, padding = 0;
             boolean info = false;
+            long tocAt = -1;
             int x = i + 4 + (v1 ? (mono ? 17 : 32) : (mono ? 9 : 17));
             if (x + 8 <= n && (tag(b, x, "Xing") || tag(b, x, "Info"))) {
                 info = true;
                 int flags = int32(b, x + 4), p = x + 8;
+                if ((flags & TOC_FLAG) != 0 && tag(b, x, "Info")) tocAt = base + x + 4;
                 if ((flags & 1) != 0 && p + 4 <= n) {
                     frames = int32(b, p);
                     p += 4;
@@ -167,7 +219,7 @@ public final class Mp3Info {
                 long audioBytes = fileLength - base - i - (info ? frameLen : 0);
                 dur = kbps > 0 ? audioBytes * 8f / kbps : 0f;
             }
-            return new Mp3Info(rate, spf, frames, delay, padding, info, dur);
+            return new Mp3Info(rate, spf, frames, delay, padding, info, dur, tocAt);
         }
         return null;
     }

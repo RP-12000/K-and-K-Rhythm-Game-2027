@@ -28,10 +28,10 @@ import org.kelvinizer.ui.Theme;
  * makes its stroke closest to the wanted width (levels are 1.35× apart, so the stroke stays within
  * about ± 16 % of it; below the smallest level's radius the line thins with the ring).
  *
- * <p><b>Mock-up match.</b> The approved mock-up ({@code preview/reference-look/v4_ripples.mp4})
- * draws every ring twice, a blurred glow copy and then the sharp line, so its rings read brighter
- * than one quad at the design α. The strokes and the α factors here ({@link #RES_GLOW},
- * {@link #ECHO_GLOW}, {@link #HOLD_GLOW}, capped at 1) were set so that the recorded game matches
+ * <p><b>Mock-up match.</b> The approved mock-up clip of the ripples (v4) draws every ring twice,
+ * a blurred glow copy and then the sharp line, so its rings read brighter than one quad at the
+ * design α. The strokes and the α factors here ({@link #RES_GLOW}, {@link #ECHO_GLOW},
+ * {@link #HOLD_GLOW}, capped at 1) were set so that the recorded game matches
  * that clip, measured on the same column of both at 1280×720 (line width at half maximum, and
  * starting α from the peak over the local background): RESONANCE 3.6 px and α .81, ECHO 2.4 px
  * and .60, held-STREAM rings 2.7 px. Factors of 1 give the plain design α.
@@ -116,8 +116,8 @@ final class WaterRings {
     }
 
     /**
-     * Binds the {@link Draw#RING_WATER_LODS} {@code ring_water} levels directly (harness tests draw
-     * into a recording batch without GL).
+     * Binds the {@link Draw#RING_WATER_LODS} {@code ring_water} levels directly (tests draw into a
+     * recording batch without GL).
      */
     void setRegions(TextureRegion[] ringWater) {
         for (int i = 0; i < Draw.RING_WATER_LODS; i++) water[i] = ringWater[i];
@@ -327,10 +327,5 @@ final class WaterRings {
     /** Index of the ring in its RESONANCE set (tests). */
     int indexOf(int slot) {
         return ringIndex[slot];
-    }
-
-    /** True when the ring in {@code slot} is violet (tests). */
-    boolean echoOf(int slot) {
-        return echoColour[slot];
     }
 }

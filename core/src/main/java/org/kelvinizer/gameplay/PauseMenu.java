@@ -18,7 +18,7 @@ import space.earlygrey.shapedrawer.ShapeDrawer;
  * 暂停菜单（方案 B）：没有面板，场地变暗，三个大按钮横排——左「重开」、中「继续」（最大、青色实心）、右「退出」。
  * 每个按钮图标在上，名字在下：英文模式只写英文名，中文模式只写中文名；四角的 HUD 照常亮着。
  *
- * <p>Pause menu, variant B (owner 2026-10-12 00:58 「然后用方案B」 and 23:35 「暂停菜单东西太多了。
+ * <p>Pause menu, variant B (Kelvin 2026-10-12 00:58 「然后用方案B」 and 23:35 「暂停菜单东西太多了。
  * 简洁一点」; mocks P2 / P4 / P5): no panel, the field dims behind a {@code scrim @ .70}
  * (DESIGN §5.12) and three big buttons sit in a row at the centre: RETRY 重开 (left), RESUME 继续
  * (centre, largest, filled cyan like a primary button) and QUIT 退出 (right). Each button has an
@@ -26,7 +26,7 @@ import space.earlygrey.shapedrawer.ShapeDrawer;
  * 中文, never both (Kelvin 2026-10-18 17:22 「绿框框起来的语言还是分开吧」; until then the English
  * label had a Chinese sublabel (18) under it).
  * The corner HUD stays lit: the screen draws it after the scrim. Offsets and volumes live in
- * Settings; the note legend moved to {@link NoteGuide}.
+ * Settings.
  *
  * <p><b>Size.</b> Laid out in world units at the HUD scale {@code k = uiScale} (DESIGN §0.3), shrunk
  * only if the row would leave the safe area; every hit rect is far above the §0 minimum target
@@ -239,19 +239,9 @@ final class PauseMenu {
         if (!resume.touchUp(x, y, pointer) && !retry.touchUp(x, y, pointer)) quit.touchUp(x, y, pointer);
     }
 
-    /** RESUME (the harness taps it; BACK while paused is handled by the screen). */
+    /** RESUME (the tests tap it; BACK while paused is handled by the screen). */
     Pressable resumeButton() {
         return resume;
-    }
-
-    /** RETRY. */
-    Pressable retryButton() {
-        return retry;
-    }
-
-    /** QUIT. */
-    Pressable quitButton() {
-        return quit;
     }
 
     // ------------------------------------------------------------------ button

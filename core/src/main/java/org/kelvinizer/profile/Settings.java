@@ -28,8 +28,6 @@ public class Settings {
     /** {@link #earlyLate}: RESONANCE switch only, tag RESONANCE outside ±33 ms (Kelvin 10-12 22:04). */
     public static final int EARLY_LATE_RESONANCE = 3;
 
-    /** {@link #strayTouches}: the old automatic mode (dots for the first five dives); reads as off since 2026-10-18. */
-    public static final int STRAY_AUTO = 0;
     /** {@link #strayTouches}: SHOW TOUCHES on (a ring under every finger in a game since 2026-10-18 19:52). */
     public static final int STRAY_ON = 1;
     /** {@link #strayTouches}: SHOW TOUCHES off. */
@@ -37,7 +35,7 @@ public class Settings {
 
     /** {@link #pauseMode}: hold the pause control for 0.35 s. */
     public static final int PAUSE_HOLD = 0;
-    /** {@link #pauseMode}: double-tap the pause control within 300 ms (default, owner 2026-10-12). */
+    /** {@link #pauseMode}: double-tap the pause control within 300 ms (default, Kelvin 2026-10-12). */
     public static final int PAUSE_DOUBLE_TAP = 1;
     /** {@link #pauseMode}: single tap. */
     public static final int PAUSE_SINGLE_TAP = 2;
@@ -102,13 +100,14 @@ public class Settings {
     public float backgroundDim = 0.35f;
     /** Note size scale 0.8..1.3. */
     public float noteSizeScale = 1.0f;
-    /** {@link #hitPointPx}: range and default (half a size-1.0 key: its edge on the line at the judgement time). */
-    public static final float HIT_POINT_MIN = -100f, HIT_POINT_MAX = 100f, HIT_POINT_DEFAULT = 20f;
+    /** {@link #hitPointPx}: range and default (the line through the key's middle at the judgement time). */
+    public static final float HIT_POINT_MIN = -100f, HIT_POINT_MAX = 100f, HIT_POINT_DEFAULT = 0f;
     /**
      * VISUAL HIT POINT 目押校准 (Kelvin 2026-10-20 03:20), {@link #HIT_POINT_MIN}..{@link #HIT_POINT_MAX} px: how far a
      * TAP or HOLD key's midline is from its judgement line at the judgement time, measured at note size 1.0 (a larger
-     * key scales it). {@link #HIT_POINT_DEFAULT} 20 is half the key, its edge on the line as before; 0 puts the line
-     * through the key's middle. Every note is drawn that much nearer to (or further past) its line.
+     * key scales it). {@link #HIT_POINT_DEFAULT} 0 puts the line through the key's middle (Kelvin 2026-10-20 22:37:
+     * 「默认值为0而不是20」); 20, the default before, is half the key: its edge on the line. Every note is drawn that
+     * much nearer to (or further past) its line.
      */
     public float hitPointPx = HIT_POINT_DEFAULT;
     /** Show the ±108 judgement zone hint. */
@@ -125,7 +124,10 @@ public class Settings {
      * marked only touches that hit no zone (stray-touch dots, until 2026-10-18 19:52).
      */
     public int strayTouches = STRAY_OFF;
-    /** How notes that share their beat are marked: {@link #SYNC_HINT_HIGHLIGHT} (default), {@link #SYNC_HINT_PEARLS}, {@link #SYNC_HINT_OFF}. */
+    /**
+     * How notes that share their beat are marked: {@link #SYNC_HINT_HIGHLIGHT} (default), {@link #SYNC_HINT_PEARLS},
+     * {@link #SYNC_HINT_OFF}.
+     */
     public int syncHint = SYNC_HINT_HIGHLIGHT;
 
     // GAMEPLAY

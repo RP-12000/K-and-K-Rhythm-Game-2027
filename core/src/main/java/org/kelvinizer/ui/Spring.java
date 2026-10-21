@@ -136,9 +136,4 @@ public final class Spring {
     public float target() {
         return target;
     }
-
-    /** True when both displacement and velocity are below {@code eps}. */
-    public boolean isSettled(float eps) {
-        return Math.abs(value - target) < eps && Math.abs(velocity) < eps;
-    }
 }

@@ -12,10 +12,10 @@ import org.kelvinizer.ui.Theme;
 import org.kelvinizer.ui.Ui;
 
 /**
- * 新建潜水员（{@code + NEW DIVER}）的弹出卡片，内容与首次设置的「WHO'S DIVING?」相同：头像、配色和名字。
- * CREATE 保存新潜水员（最多 8 个）并立即切换过去；CANCEL 或点卡片外面关闭。
+ * 新建潜水员（{@code + NEW PLAYER}）的弹出卡片，内容与首次设置的「WHO'S DIVING?」相同：头像、配色和名字。
+ * CREATE 保存新潜水员（最多 12 个）并立即切换过去；CANCEL 或点卡片外面关闭。
  *
- * <p>{@code + NEW DIVER} (DESIGN §8.3): the §10.1 "who's diving?" card as a sheet. CREATE stores
+ * <p>{@code + NEW PLAYER} (DESIGN §8.3): the §10.1 "who's diving?" card as a sheet. CREATE stores
  * the diver (at most {@link ProfileStore#MAX_PROFILES}) and makes it active through
  * {@link ShellScreen#switchDiver}; CANCEL or a tap outside closes it.
  */
@@ -63,7 +63,6 @@ public final class CreateDiverSheet extends Modal {
         float availW = Ui.safeRight() - Ui.safeLeft() - 48f;
         float availH = Ui.safeTop() - Ui.safeBottom() - 48f;
         float natW = DiverForm.naturalWidth() + 2f * PAD;
-        float natH = 110f + DiverForm.naturalHeight() + Button.standardHeight() + 40f;
         formScale = Math.min(1f, Math.min(availW / natW, (availH - 110f - Button.standardHeight() - 40f)
             / DiverForm.naturalHeight()));
         formScale = Math.max(0.6f, formScale);
@@ -87,10 +86,9 @@ public final class CreateDiverSheet extends Modal {
 
     @Override
     protected void drawContent(Batch b, float alpha) {
-        drawTitle(b, Lang.t("NEW DIVER", "新建玩家"), alpha);
+        drawTitle(b, Lang.t("NEW PLAYER", "新建玩家"), alpha);
         ProfileStore store = game.profiles();
-        String full = store.canCreate() ? "" : Lang.t("8 / 8 DIVERS · THIS DEVICE IS FULL",
-            "8 / 8 位玩家 · 这台设备已经存满了");
+        String full = store.canCreate() ? "" : ShellFormat.deviceFull();
         fonts.draw(b, Fonts.Role.UI_LABEL, 18f, full, x + w - 40f, y + h - 40f, Align.right | Align.top, Theme.LOST,
             alpha);
         form.draw(b, alpha);
@@ -102,11 +100,11 @@ public final class CreateDiverSheet extends Modal {
         Profile p = store.create(form.name(), form.avatar().copy());
         if (p == null) {
             create.shake();
-            game.toasts().show(Lang.t("8 DIVERS MAX", "最多 8 位玩家"), Theme.LOST);
+            game.toasts().show(ShellFormat.diversMax(), Theme.LOST);
             return;
         }
         close();
         host.switchDiver(p.id);
-        game.toasts().show(Lang.t("NEW DIVER · ", "新玩家 · ") + p.name, Theme.GROUND_SIG);
+        game.toasts().show(Lang.t("NEW PLAYER · ", "新玩家 · ") + p.name, Theme.GROUND_SIG);
     }
 }

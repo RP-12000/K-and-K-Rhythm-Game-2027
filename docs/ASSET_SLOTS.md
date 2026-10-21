@@ -1,6 +1,6 @@
 # K&K 资源槽位（ASSET_SLOTS）
 
-本文说明可以往 `assets/` 里放哪些文件（音效、音乐、图片、字体、粒子效果、歌曲、章节），放在哪里，以及缺少时游戏怎么处理。内容以分支 `integ` 的代码为准（主要在 `audio/AudioService`、`library/SongLibrary`、`ui/Fonts`、`fx/HitFx`）。谱面文件本身的格式见 `docs/CHART_FORMAT.md`。
+本文说明可以往 `assets/` 里放哪些文件（音效、音乐、图片、字体、粒子效果、歌曲、章节），放在哪里，以及缺少时游戏怎么处理。内容以当前代码为准（主要在 `audio/AudioService`、`library/SongLibrary`、`ui/Fonts`、`fx/HitFx`）。谱面文件本身的格式见 `docs/CHART_FORMAT.md`。
 
 总则：
 

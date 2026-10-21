@@ -26,13 +26,13 @@ import org.kelvinizer.ui.Ui;
  * to the pre-roll's own clock while the song clock waits (NUMBER 132, scale 1.2 → 1 over the
  * first third of its second, G2 on appear, fading over 11/12 of it, a {@code ring_thin}
  * contracting from r 600 over the whole second), then {@link #BUFFER_SEC} of nothing before the
- * song clock starts (owner 2026-10-12 16:06); the same visuals at 0.6 s steps for a resume; and
- * the end banner (owner 2026-10-17: not right after the last note but {@code Params.END_BANNER_DELAY_MS} after the
+ * song clock starts (Kelvin 2026-10-12 16:06); the same visuals at 0.6 s steps for a resume; and
+ * the end banner (Kelvin 2026-10-17: not right after the last note but {@code Params.END_BANNER_DELAY_MS} after the
  * run's end, the later of the last note end and the music end; {@code ALL RESONANCE} / {@code FULL COMBO} /
  * {@code CLEAR} / {@code AUTOPLAY COMPLETE}, RUBIK {@value #BANNER_CAP} with a scale punch, a G3 tear in, G1
  * shimmer and short G2 bursts while it stays, G2 out; the result follows when it has gone). FULL COMBO and ALL
  * RESONANCE also fire the full-screen ping and a bio burst ({@link #drawBurst}). The intro card
- * is gone (owner 16:06: nothing but the countdown); the song and difficulty stay in the corner HUD.
+ * is gone (Kelvin 16:06: nothing but the countdown); the song and difficulty stay in the corner HUD.
  */
 final class RunOverlay {
     /** Length of each start countdown step (s, DESIGN §5.11). */
@@ -43,10 +43,10 @@ final class RunOverlay {
     static final float BUFFER_SEC = 0.3f;
     /** The whole pre-roll: 3 × {@link #COUNT_SEC} + {@link #BUFFER_SEC} (s of wall time before the song clock runs). */
     static final float PREROLL_SEC = 3f * COUNT_SEC + BUFFER_SEC;
-    /** The end banner's wait after the run's end (ms, owner 2026-10-17: 1 s after the music / chart end). */
+    /** The end banner's wait after the run's end (ms, Kelvin 2026-10-17: 1 s after the music / chart end). */
     private static final float BANNER_DELAY_MS = Params.END_BANNER_DELAY_MS;
     private static final float BANNER_SEC = Params.END_BANNER_MS / 1000f;
-    /** End banner cap (owner 2026-10-17: bigger than the old 56); narrowed to fit the world width. */
+    /** End banner cap (Kelvin 2026-10-17: bigger than the old 56); narrowed to fit the world width. */
     static final float BANNER_CAP = 104f;
     /** The banner's entry punch: scale 1.25 → 1 over this many seconds. */
     private static final float BANNER_PUNCH_SEC = 0.35f;
@@ -191,7 +191,7 @@ final class RunOverlay {
             float w = fonts.width(Fonts.Role.RUBIK, BANNER_CAP, Fonts.GlyphSet.WORDS, bannerText);
             float room = 0.86f * Ui.worldW();
             bannerFit = w > room ? room / w : 1f;
-            // owner 2026-10-17 「带上点glitch特效」: a screen tear on entry, then shimmer and short bursts
+            // Kelvin 2026-10-17 「带上点glitch特效」: a screen tear on entry, then shimmer and short bursts
             bannerState.ambient(GlitchText.Level.G1).idleBursts(BANNER_IDLE_SEC);
             bannerState.trigger(GlitchText.Level.G3, now, 0.40f);
             if ((bannerKind == 1 || bannerKind == 2) && sonar != null) {
@@ -298,10 +298,5 @@ final class RunOverlay {
             b.draw(dot, x - core * 0.5f, y - core * 0.5f, core, core);
         }
         b.setColor(Color.WHITE);
-    }
-
-    /** @return true once the end banner has appeared this run. */
-    boolean bannerShown() {
-        return bannerShownAt >= 0f;
     }
 }

@@ -1,5 +1,6 @@
 package org.kelvinizer.screens.shell;
 
+import org.kelvinizer.profile.ProfileStore;
 import org.kelvinizer.ui.Fonts;
 import org.kelvinizer.ui.Lang;
 
@@ -30,6 +31,17 @@ public final class ShellFormat {
         return Lang.t("SPEAKER", "扬声器");
     }
 
+    /** {@code 12 / 12 PLAYERS · THIS DEVICE IS FULL}: why the NEW PLAYER sheet and IMPORT dialog cannot add one. */
+    public static String deviceFull() {
+        return Lang.t(ProfileStore.MAX_PROFILES + " / " + ProfileStore.MAX_PROFILES + " PLAYERS · THIS DEVICE IS FULL",
+            ProfileStore.MAX_PROFILES + " / " + ProfileStore.MAX_PROFILES + " 位玩家 · 这台设备已经存满了");
+    }
+
+    /** {@code 12 PLAYERS MAX}: the toast when a diver cannot be added. */
+    public static String diversMax() {
+        return Lang.t(ProfileStore.MAX_PROFILES + " PLAYERS MAX", "最多 " + ProfileStore.MAX_PROFILES + " 位玩家");
+    }
+
     /** Appends a depth with grouping, its minus sign (below the surface, 2026-10-17) and the unit: {@code -2,560 m}. */
     public static StringBuilder appendDepth(StringBuilder sb, long meters) {
         Fonts.appendGrouped(sb, -Math.max(0L, meters));
@@ -42,16 +54,12 @@ public final class ShellFormat {
         return sb.append(Lang.t(" SHELLS", " 贝壳"));
     }
 
-    /** Appends a diver's one-line summary: {@code 1,510 SHELLS · -2,560 m} (they replace LV and the rank, 2026-10-17). */
+    /**
+     * Appends a diver's one-line summary: {@code 1,510 SHELLS · -2,560 m} (they replace LV and the rank, 2026-10-17).
+     */
     public static StringBuilder appendDiverMeta(StringBuilder sb, org.kelvinizer.profile.Profile p) {
         appendShells(sb, p.shells).append(" · ");
         return appendDepth(sb, p.depthMeters());
-    }
-
-    /** Appends an accuracy 0..1 as a truncated percentage: {@code 99.12%}. */
-    public static StringBuilder appendAccuracy(StringBuilder sb, float accuracy01) {
-        Fonts.appendTruncated(sb, Math.max(0f, accuracy01) * 100.0, 2);
-        return sb.append('%');
     }
 
     /** Appends a duration as {@code H:MM} (play time). */

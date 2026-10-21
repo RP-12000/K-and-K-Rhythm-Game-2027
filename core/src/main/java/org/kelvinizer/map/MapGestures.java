@@ -75,11 +75,6 @@ final class MapGestures {
         return state != IDLE;
     }
 
-    /** True while the gesture is a pan or pinch (the camera follows the fingers). */
-    boolean panning() {
-        return state == PAN || state == PINCH;
-    }
-
     /** True if {@code pointer} belongs to the map gesture. */
     boolean owns(int pointer) {
         return pointer >= 0 && (ptr[0] == pointer || ptr[1] == pointer);

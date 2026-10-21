@@ -1,0 +1,30 @@
+{
+  "formatVersion": 4,
+  "iterations": 1,
+  "title": "Devouring Loop",
+  "artist": "幸运之星",
+  "illustrator": "幸运之星",
+  "charter": "开尔奈兹",
+  "level": "Surface",
+  "chartConstant": 3.5,
+  "bpm": 185,
+  "offsetMs": 190,
+  "lanes": [
+    { "id": -4, "width": 240, "opacity": 1, "widthEvents": [], "opacityEvents": [] },
+    { "id": -3, "width": 240, "opacity": 1, "widthEvents": [], "opacityEvents": [] },
+    { "id": -2, "width": 240, "opacity": 1, "widthEvents": [], "opacityEvents": [] },
+    { "id": -1, "width": 240, "opacity": 1, "widthEvents": [], "opacityEvents": [] },
+    { "id": 1, "width": 240, "opacity": 1, "widthEvents": [], "opacityEvents": [] },
+    { "id": 2, "width": 240, "opacity": 1, "widthEvents": [], "opacityEvents": [] },
+    { "id": 3, "width": 240, "opacity": 1, "widthEvents": [], "opacityEvents": [] },
+    { "id": 4, "width": 240, "opacity": 1, "widthEvents": [], "opacityEvents": [] }
+  ],
+  "notes": [
+
+  ],
+  "LineEvents": {
+    "upperJudgementLine": 1080, "lowerJudgementLine": 120,
+    "upperEvents": [],
+    "lowerEvents": []
+  }
+}

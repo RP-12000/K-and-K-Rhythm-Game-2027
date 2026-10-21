@@ -22,13 +22,13 @@ import java.util.List;
  *       (separators, ticks, glows), never its notes.</li>
  * </ul>
  *
- * <p>An <b>inserted</b> lane (owner 2026-10-15, chart key {@code insert}) has width 0 before its
+ * <p>An <b>inserted</b> lane (Kelvin 2026-10-15, chart key {@code insert}) has width 0 before its
  * insertion starts, follows the insertion event (initial → final, eased) while it runs and is a
  * normal lane after it, with {@code width} = the event's final value. Only an inserted lane may
  * have id 0 (inserted between −1 and 1). With unlimited lanes {@link LaneLayout} squeezes the
  * other lanes to make room on the screen.
  *
- * <p>A <b>deleted</b> lane (owner 2026-10-17, chart key {@code delete}) is normal until its deletion
+ * <p>A <b>deleted</b> lane (Kelvin 2026-10-17, chart key {@code delete}) is normal until its deletion
  * starts, follows the deletion event (initial → final, eased; by default from its width at the start
  * down to 0) while it runs and has width 0 after it. With unlimited lanes {@link LaneLayout} widens
  * the other lanes to take back its room. A lane may be both inserted and deleted; once the deletion
@@ -90,7 +90,7 @@ public final class Lane {
     }
 
     /**
-     * A lane that may be inserted during the song (owner 2026-10-15).
+     * A lane that may be inserted during the song (Kelvin 2026-10-15).
      *
      * @param id            lane id; 0 only for an inserted lane
      * @param width         base width weight (an inserted lane's width once its insertion is over;
@@ -108,7 +108,7 @@ public final class Lane {
     }
 
     /**
-     * A lane that may be inserted and / or deleted during the song (owner 2026-10-15, 2026-10-17).
+     * A lane that may be inserted and / or deleted during the song (Kelvin 2026-10-15, 2026-10-17).
      *
      * @param id            lane id; 0 only for an inserted lane
      * @param width         base width weight (see the six-argument constructor)

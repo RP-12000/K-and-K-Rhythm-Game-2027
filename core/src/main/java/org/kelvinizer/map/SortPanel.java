@@ -256,7 +256,8 @@ final class SortPanel {
         float a = k;
         float rad = MapStyle.CARD_RADIUS * ks;
         c1.set(Theme.SHADOW);
-        draw.sprite(draw.softDot(), x + w * 0.5f, top - h * 0.5f - 16f * ks, w + 140f * ks, h + 140f * ks, c1, 0.5f * a);
+        draw.sprite(draw.softDot(), x + w * 0.5f, top - h * 0.5f - 16f * ks,
+            w + 140f * ks, h + 140f * ks, c1, 0.5f * a);
         draw.roundRect(x, top - h, w, h, rad, Theme.ABYSS_BLACK, MapStyle.UNDERLAY * a);
         draw.roundRect(x, top - h, w, h, rad, Theme.PANEL, a);
         draw.roundRectStroke(x, top - h, w, h, rad, 2f, Theme.STROKE, a);

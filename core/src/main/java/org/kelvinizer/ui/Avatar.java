@@ -38,21 +38,12 @@ import space.earlygrey.shapedrawer.ShapeDrawer;
 public final class Avatar implements Disposable {
     /** Option counts. */
     public static final int SHAPES = 5, PATTERNS = 8, PALETTES = 10, GLYPHS = 3, FRAMES = 4;
-    /** Shape names (index = option). */
-    public static final String[] SHAPE_NAMES = {"CIRCLE", "HEXAGON", "SQUIRCLE", "DIAMOND", "SHIELD"};
-    /** Pattern names. */
-    public static final String[] PATTERN_NAMES = {"RINGS", "SPOKES", "WAVES", "DOTS", "SPIRAL", "GRID", "SPLIT-K",
-        "CONSTELLATION"};
-    /** Glyph names. */
-    public static final String[] GLYPH_NAMES = {"NONE", "INITIAL", "K"};
-    /** Frame names. */
-    public static final String[] FRAME_NAMES = {"NONE", "SONAR", "DOUBLE", "IRIDESCENT"};
     /** Cache texture size. */
     public static final int SIZE = 256;
     /**
      * Number of cached sigils (256² RGBA + mips ≈ 340 KB each, allocated lazily). This is also the
      * most distinct sigils one frame can show without re-rendering: the largest planned screen
-     * (DIVERS grid of 8 profiles plus the avatar editor's option previews) needs about 20.
+     * (PLAYER grid of 12 profiles plus the avatar editor's option previews) needs about 24.
      */
     public static final int MAX_ENTRIES = 32;
 
@@ -91,16 +82,6 @@ public final class Avatar implements Disposable {
         public Spec set(Spec o) {
             return set(o.seed, o.shape, o.pattern, o.palette, o.glyph, o.frame, o.initial);
         }
-
-        /** Derives every option from {@code seed} (new divers, REROLL). */
-        public Spec randomize(long newSeed) {
-            seed = newSeed;
-            int h = (int) (newSeed ^ (newSeed >>> 32));
-            shape = (int) (Anim.hash01(h, 11) * SHAPES) % SHAPES;
-            pattern = (int) (Anim.hash01(h, 23) * PATTERNS) % PATTERNS;
-            palette = (int) (Anim.hash01(h, 37) * PALETTES) % PALETTES;
-            return this;
-        }
     }
 
     private static final class Entry {
@@ -123,7 +104,6 @@ public final class Avatar implements Disposable {
     private int generation;
     private long useTick;
     private boolean warnedFull;
-    private int renders;
     private final Matrix4 proj = new Matrix4(), savedProj = new Matrix4();
     /** The caller's batch transform, set aside for the off-screen pass (see {@link #render}). */
     private final Matrix4 savedTransform = new Matrix4(), identity = new Matrix4();
@@ -167,11 +147,6 @@ public final class Avatar implements Disposable {
     /** Current generation. */
     public int generation() {
         return generation;
-    }
-
-    /** Number of off-screen sigil renders so far (diagnostics: cache misses and stale entries). */
-    public int renderCount() {
-        return renders;
     }
 
     @Override
@@ -219,7 +194,8 @@ public final class Avatar implements Disposable {
                     draw.arc(cx, cy, rr, st, seg * 0.55f, Math.max(1.5f, 4f * k), a, 0.85f * alpha);
                 }
                 float blip = time * 1.3f;
-                draw.glowDot(cx + MathUtils.cos(blip) * rr, cy + MathUtils.sin(blip) * rr, 26f * k + 8f, a, 0.8f * alpha);
+                draw.glowDot(cx + MathUtils.cos(blip) * rr, cy + MathUtils.sin(blip) * rr,
+                    26f * k + 8f, a, 0.8f * alpha);
                 break;
             }
             case 2:
@@ -325,7 +301,6 @@ public final class Avatar implements Disposable {
 
     // ------------------------------------------------------------------ off-screen pass
     private void render(Entry e, Spec s) {
-        renders++;
         SpriteBatch b = draw.batch();
         if (scratch == null) {
             scratch = new FrameBuffer(Pixmap.Format.RGBA8888, SIZE * 2, SIZE * 2, false);

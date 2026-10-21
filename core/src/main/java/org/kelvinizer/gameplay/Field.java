@@ -7,7 +7,7 @@ import org.kelvinizer.ui.Ui;
  * 游玩场地的拉伸：谱面坐标按 1920 × 1200 的参考画面写成（2026-10-19 起；以前是 1920 × 1080），在 a × b 的屏幕上以屏幕中心为原点，
  * 横向乘 a/1920、纵向乘 b/1200，判定线、轨道、音符下落的距离和判定区都跟着拉伸；音符厚度、文字、波纹和四角的 HUD 不拉伸。
  *
- * <p>The playfield stretch (owner 2026-10-12 16:09 / 16:17: 「横向上所有坐标拉伸（a/1920）……纵向上所有坐标拉伸
+ * <p>The playfield stretch (Kelvin 2026-10-12 16:09 / 16:17: 「横向上所有坐标拉伸（a/1920）……纵向上所有坐标拉伸
  * （b/1080）……拉伸是相对于中轴线（屏幕中心）」; 「实际音符下落的时候也是按照这种比例拉伸」). Chart geometry is
  * authored in the reference 1920 × 1200 frame since 2026-10-19 (Kelvin 03:51: 「坐标系我们现在修改为1920*1200，核心思路不变」;
  * before that 1920 × 1080, read through {@code ChartMapper}'s conversion), so a 16 : 10 screen shows it unstretched.

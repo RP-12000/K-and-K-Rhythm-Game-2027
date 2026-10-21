@@ -69,7 +69,7 @@ public final class ProfileHeader {
         avatar = new AvatarView(game);
         avatarTap = widgets.add(new Tappable(draw));
         nameTap = widgets.add(new Tappable(draw));
-        nameField = widgets.add(new TextField(draw, fonts, Lang.of("TAP TO NAME YOUR DIVER", "点这里给玩家起名")));
+        nameField = widgets.add(new TextField(draw, fonts, Lang.of("TAP TO NAME YOUR PLAYER", "点这里给玩家起名")));
         nameField.setMode(TextField.Mode.KEYBOARD).setMaxLength(ProfileStore.MAX_NAME_CODEPOINTS);
         nameField.setTextStyle(Fonts.Role.UI_BOLD, 30f);
         nameField.setVisible(false);
@@ -273,12 +273,15 @@ public final class ProfileHeader {
         drawDepth(b, cx - (dw + 12f * k + uw) * 0.5f, y, k, a);
     }
 
-    /** The depth number (NUMBER 56) from {@code left} with its unit {@code m} (UI 28, the {@code m} of the NUMBER face is missing). */
+    /**
+     * The depth number (NUMBER 56) from {@code left} with its unit {@code m} (UI 28, the {@code m} of the NUMBER face
+     * is missing).
+     */
     private void drawDepth(Batch b, float left, float y, float k, float a) {
-        float dw = fonts.drawFixed(b, Fonts.Role.NUMBER, 56f * k, depth, left, y, Align.left | Fonts.VCENTER, Theme.INK1,
-            a);
-        fonts.draw(b, Fonts.Role.UI, 28f * k, "m", left + dw + 12f * k, y - 8f * k, Align.left | Fonts.VCENTER, Theme.INK2,
-            a);
+        float dw = fonts.drawFixed(b, Fonts.Role.NUMBER, 56f * k, depth, left, y, Align.left | Fonts.VCENTER,
+            Theme.INK1, a);
+        fonts.draw(b, Fonts.Role.UI, 28f * k, "m", left + dw + 12f * k, y - 8f * k, Align.left | Fonts.VCENTER,
+            Theme.INK2, a);
     }
 
     /** Width of the shell and its count. */
@@ -289,8 +292,8 @@ public final class ProfileHeader {
     /** The shell and the count (gold) from {@code left}. */
     private void drawShells(Batch b, float left, float y, float k, float a) {
         draw.shell(left + 13f * k, y, 26f * k, Theme.GOLD, SHELL_RIB, a);
-        fonts.drawFixed(b, Fonts.Role.NUMBER, 26f * k, shells, left + 30f * k, y, Align.left | Fonts.VCENTER, Theme.GOLD,
-            a);
+        fonts.drawFixed(b, Fonts.Role.NUMBER, 26f * k, shells, left + 30f * k, y, Align.left | Fonts.VCENTER,
+            Theme.GOLD, a);
     }
 
     private void drawTall(Batch b, float a) {

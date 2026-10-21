@@ -4,6 +4,7 @@ import org.kelvinizer.profile.Profile;
 import org.kelvinizer.profile.Depth;
 import org.kelvinizer.profile.ProfileStore;
 import org.kelvinizer.ui.Avatar;
+import org.kelvinizer.ui.Fonts;
 
 import java.util.List;
 
@@ -27,6 +28,8 @@ public final class DiverList {
         public String name = "";
         /** {@code 1,510 SHELLS · 2,560 m}. */
         public final StringBuilder meta = new StringBuilder(48);
+        /** {@code 1,510 · -2,560 m}: the meta without the shells word, after a shell glyph on a narrow PLAYER card. */
+        public final StringBuilder metaShort = new StringBuilder(32);
         /** Relative last-dive label. */
         public String lastDive = "";
         /** {@code LAST ACTIVITY: OCT 18 · 02:49}. */
@@ -79,6 +82,9 @@ public final class DiverList {
         e.active = p.id != null && p.id.equals(activeId);
         e.meta.setLength(0);
         ShellFormat.appendDiverMeta(e.meta, p);
+        e.metaShort.setLength(0);
+        Fonts.appendGrouped(e.metaShort, Math.max(0L, p.shells)).append(" · ");
+        ShellFormat.appendDepth(e.metaShort, p.depthMeters());
         e.lastDive = ShellFormat.lastDive(p.lastPlayedAt, now);
         e.lastActivity = ShellFormat.lastActivity(p.lastPlayedAt, now);
         AvatarView.toSpec(p.avatar, e.name, e.spec);

@@ -221,16 +221,6 @@ public final class Ui {
         return screenW / (float) screenH;
     }
 
-    /** Logical screen width in pixels at the last resize. */
-    public static int screenWidth() {
-        return screenW;
-    }
-
-    /** Logical screen height in pixels at the last resize. */
-    public static int screenHeight() {
-        return screenH;
-    }
-
     /** Layout class: WIDE at aspect ≥ 1.6, else TALL. */
     public static Layout layout() {
         return aspect() >= WIDE_ASPECT - 0.002f ? Layout.WIDE : Layout.TALL;
@@ -239,14 +229,6 @@ public final class Ui {
     /** True for the TALL layout class (aspect &lt; 1.6, tablets). */
     public static boolean isTablet() {
         return layout() == Layout.TALL;
-    }
-
-    /**
-     * True for elongated phones (aspect &gt; 1.9, e.g. 20:9). Note: this is ARCHITECTURE's
-     * {@code isTall()}, not DESIGN's TALL layout class — use {@link #layout()} for that.
-     */
-    public static boolean isTall() {
-        return aspect() > 1.9f;
     }
 
     // ------------------------------------------------------------------ density / scale

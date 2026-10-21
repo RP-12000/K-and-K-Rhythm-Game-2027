@@ -2,22 +2,18 @@
   "id": "singles", "kind": "route",
   "title": "SINGLES", "titleZh": "单曲", "route": "ROUTE", "routeZh": "航线",
   "parent": "hub", "start": "rise", "depth": 30, "collect": true, "price": 300,
-  "titleAt": [30, -318], "sub": "@progress", "subZh": "单曲航线",
-  "pools": [[30, 0, 820, 0.30], [-470, -120, 420, 0.22], [530, -120, 420, 0.22],
-            [-970, -120, 380, 0.18], [1030, -120, 380, 0.18]],
+  "titleAt": [0, 30], "sub": "@progress", "subZh": "单曲航线",
+  "pools": [[0, 0, 820, 0.30], [-560, 0, 380, 0.18], [560, 0, 380, 0.18]],
   "spots": [
     {"id": "rise", "type": "rise", "x": 0, "y": 0, "label": "ROUTES", "labelZh": "航线"},
-    {"id": "song1", "song": "Song 1", "x": -470, "y": -120},
-    {"id": "song2", "song": "Song 2", "x": -220, "y": 110},
-    {"id": "song3", "song": "Song 3", "x": 30, "y": -120},
-    {"id": "song4", "song": "Song 4", "x": 280, "y": 110},
-    {"id": "song5", "song": "Song 5", "x": 530, "y": -120},
-    {"id": "song6", "song": "Song 6", "x": 780, "y": 110},
-    {"id": "marsh", "song": "marsh mally", "x": 1030, "y": -120},
-    {"id": "ics4u", "song": "ICS4U", "x": -970, "y": -120}
+    {"id": "aleph0", "song": "Aleph-0", "x": -300, "y": -300},
+    {"id": "confusion", "song": "Confusion", "x": 560, "y": 0},
+    {"id": "devouring", "song": "Devouring Loop", "x": 300, "y": -300},
+    {"id": "mysoul", "song": "My Soul", "x": 300, "y": 300},
+    {"id": "dash", "song": "Dash from my eyes", "x": -300, "y": 300},
+    {"id": "altale", "song": "Altale", "x": -560, "y": 0}
   ],
   "links": [
-    ["ics4u", "song1"], ["song1", "song2"], ["song2", "song3"], ["song3", "song4"], ["song4", "song5"],
-    ["song5", "song6"], ["song6", "marsh"]
+    ["aleph0", "devouring"], ["devouring", "confusion"], ["confusion", "mysoul"], ["mysoul", "dash"], ["dash", "altale"], ["altale", "aleph0"]
   ]
 }

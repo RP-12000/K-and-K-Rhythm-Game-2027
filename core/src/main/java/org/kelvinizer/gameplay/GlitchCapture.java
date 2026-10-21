@@ -16,8 +16,7 @@ import com.badlogic.gdx.utils.NumberUtils;
  *
  * <p>Recording {@link Batch} for a glitching note (CHART_FORMAT §6.9, Kelvin 2026-10-14). The
  * {@link NoteRenderer} points its batch here while it draws a note whose glitch segment is active,
- * then {@link #emit} replays the recorded quads into the real batch with the look of the approved
- * preview ({@code previews/glitch}):
+ * then {@link #emit} replays the recorded quads into the real batch with the approved look:
  * <ul>
  *   <li><b>slice</b>: the note's height is cut into horizontal strips 2.. units tall; each strip
  *       moves sideways by ±3..(4 + 40·intensity·slice) units with chance
@@ -309,7 +308,8 @@ final class GlitchCapture implements Batch {
             if (tint) {
                 c = Color.toFloatBits(tr, tg, tb, a);
             } else {
-                c = Color.toFloatBits((abgr & 0xff) / 255f, ((abgr >>> 8) & 0xff) / 255f, ((abgr >>> 16) & 0xff) / 255f, a);
+                c = Color.toFloatBits((abgr & 0xff) / 255f, ((abgr >>> 8) & 0xff) / 255f,
+                    ((abgr >>> 16) & 0xff) / 255f, a);
             }
         }
         out[s + 2] = c;
@@ -409,7 +409,8 @@ final class GlitchCapture implements Batch {
     }
 
     @Override
-    public void draw(Texture texture, float x, float y, float width, float height, float u, float v, float u2, float v2) {
+    public void draw(Texture texture, float x, float y, float width, float height, float u, float v,
+                     float u2, float v2) {
         rect(texture, x, y, width, height, u, v, u2, v2);
     }
 

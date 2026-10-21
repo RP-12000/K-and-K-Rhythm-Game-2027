@@ -13,7 +13,7 @@ import java.util.List;
  *
  * <p>Pure decisions for afterimage trails (ARCHITECTURE §17, DESIGN §17): which copies exist, how
  * bright they are, and how the frame budget thins them. No GL, no allocation, no state; the
- * {@link TrailRenderer} asks it every frame and the harness tests it directly.
+ * {@link TrailRenderer} asks it every frame and the tests check it directly.
  *
  * <p>Vocabulary: copy {@code k} (1 = nearest … n = farthest) of a note at the frame beat
  * {@code beat} shows the note at its <em>moment</em> {@code s = beat − k/density}. The note's
@@ -87,7 +87,9 @@ public final class TrailPlan {
         }
     }
 
-    /** @return true when the note shows no copy at all in this outcome (level copies of a vanished note, level TIDE). */
+    /**
+     * @return true when the note shows no copy at all in this outcome (level copies of a vanished note, level TIDE).
+     */
     public static boolean noCopies(Note n, int outcome) {
         return noCopies(n, n.trail(), outcome);
     }
@@ -336,7 +338,10 @@ public final class TrailPlan {
         // a first guess from the ratio, then walk to the smallest stride that fits
         int g = Math.max(2, Math.min(NoteTrail.MAX_TRAIL_COPIES, (int) Math.ceil(total / (double) budget)));
         while (g > 2 && quadsAt(count, first, last, copies, qualityStride, quadsPerCopy, g - 1) <= budget) g--;
-        while (g < NoteTrail.MAX_TRAIL_COPIES && quadsAt(count, first, last, copies, qualityStride, quadsPerCopy, g) > budget) g++;
+        while (g < NoteTrail.MAX_TRAIL_COPIES
+            && quadsAt(count, first, last, copies, qualityStride, quadsPerCopy, g) > budget) {
+            g++;
+        }
         return g;
     }
 }

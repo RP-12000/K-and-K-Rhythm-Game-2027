@@ -417,7 +417,9 @@ final class FieldRenderer {
                 if (!lay.active(i)) continue;
                 float k = tickK(introT, Math.abs(i - mid));
                 float op = boundaryOpacity(lay, i);
-                if (k > 0f && op > 0.01f) draw.rect(lay.left(i) - 1f, y - 10f * k, 2f, 20f * k, Theme.INK1, TICK_A * op);
+                if (k > 0f && op > 0.01f) {
+                    draw.rect(lay.left(i) - 1f, y - 10f * k, 2f, 20f * k, Theme.INK1, TICK_A * op);
+                }
                 if (i == lay.count() - 1 || !lay.active(i + 1)) {
                     float k2 = tickK(introT, Math.abs(i + 1 - mid));
                     float o2 = lay.opacity(i);

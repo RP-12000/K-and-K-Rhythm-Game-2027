@@ -5,8 +5,8 @@ package org.kelvinizer.ui;
  * 歌名末尾到达右边时停 2 秒，然后继续滚，末尾滚出去后空 160 接上歌名开头，开头经过左边时不停，一直滚到末尾再停 2 秒，如此循环。
  *
  * <p>The scroll of a title too long for its window: the song card past 30 characters, the result screen past 50
- * (Kelvin 2026-10-19 07:01 「滚动到最后以后停顿2秒，然后空一段距离再接着播放，循环播放」; the other timings are the
- * design thread's round 5). The title rests 1 s at the start, scrolls left at 80 units/s until its end reaches the
+ * (Kelvin 2026-10-19 07:01 「滚动到最后以后停顿2秒，然后空一段距离再接着播放，循环播放」; the other timings are from
+ * design round 5). The title rests 1 s at the start, scrolls left at 80 units/s until its end reaches the
  * window's right edge, rests there 2 s, then keeps scrolling: its end leaves, a 160-unit gap follows and the next
  * copy comes in, passing the left edge without a stop, until its end reaches the right edge again. A title that fits
  * but must scroll by its length rests with its start at the left edge instead. Windows fade over up to {@link #FADE}

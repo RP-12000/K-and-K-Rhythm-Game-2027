@@ -1,0 +1,77 @@
+{
+ "formatVersion": 4,
+ "iterations": 0,
+ "title": "Altale",
+ "artist": "Sakuzyo",
+ "illustrator": "レオル",
+ "charter": "Unknown",
+ "level": "Deep",
+ "chartConstant": 13.8,
+ "bpm": 180,
+ "offsetMs": 300,
+ "lanes": [
+  {
+   "id": -4,
+   "width": 240,
+   "opacity": 1,
+   "widthEvents": [],
+   "opacityEvents": []
+  },
+  {
+   "id": -3,
+   "width": 240,
+   "opacity": 1,
+   "widthEvents": [],
+   "opacityEvents": []
+  },
+  {
+   "id": -2,
+   "width": 240,
+   "opacity": 1,
+   "widthEvents": [],
+   "opacityEvents": []
+  },
+  {
+   "id": -1,
+   "width": 240,
+   "opacity": 1,
+   "widthEvents": [],
+   "opacityEvents": []
+  },
+  {
+   "id": 1,
+   "width": 240,
+   "opacity": 1,
+   "widthEvents": [],
+   "opacityEvents": []
+  },
+  {
+   "id": 2,
+   "width": 240,
+   "opacity": 1,
+   "widthEvents": [],
+   "opacityEvents": []
+  },
+  {
+   "id": 3,
+   "width": 240,
+   "opacity": 1,
+   "widthEvents": [],
+   "opacityEvents": []
+  },
+  {
+   "id": 4,
+   "width": 240,
+   "opacity": 1,
+   "widthEvents": [],
+   "opacityEvents": []
+  }
+ ],
+ "LineEvents": {
+  "upperJudgementLine": 1080,
+  "lowerJudgementLine": 120,
+  "upperEvents": [],
+  "lowerEvents": []
+ },
+ "notes": []
+}

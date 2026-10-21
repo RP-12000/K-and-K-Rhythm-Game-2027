@@ -19,7 +19,7 @@ public final class Params {
      * Build version shown on Welcome and in Settings → ABOUT. Keep it equal to
      * {@code projectVersion} in gradle.properties and {@code versionName} in android/build.gradle.
      */
-    public static final String VERSION = "1.0.0";
+    public static final String VERSION = "0.1.0-beta.1";
 
     /** Width of the reference frame of the playfield and the charts. */
     public static final float REF_W = 1920f;
@@ -37,13 +37,13 @@ public final class Params {
     /** PERFECT window half width (1000/30 ≈ 33.33 ms): a RESONANCE inside it adds 1 bonus point. */
     public static final float PERFECT_MS = Judgement.PERFECT_MS;
     /**
-     * Mine touch window half width: the RESONANCE window, 1000/15 ≈ 66.67 ms (owner 2026-10-13
+     * Mine touch window half width: the RESONANCE window, 1000/15 ≈ 66.67 ms (Kelvin 2026-10-13
      * 21:55: 「普通水雷生效范围为+-66ms」; was 100 ms from 2026-10-12). A MINE is dangerous over
      * [T − 66.67, T + 66.67].
      */
     public static final float MINE_WINDOW_MS = TIER1_MS;
     /**
-     * How long before its judgement a LANE MINE starts blocking: 0 ms (owner 2026-10-13 21:55:
+     * How long before its judgement a LANE MINE starts blocking: 0 ms (Kelvin 2026-10-13 21:55:
      * 「轨道水雷只在碰到判定线后才生效」; was {@link #MINE_WINDOW_MS}). A LANE MINE blocks over
      * [T, end).
      */

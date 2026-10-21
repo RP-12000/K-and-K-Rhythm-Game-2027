@@ -1,0 +1,77 @@
+{
+ "formatVersion": 4,
+ "iterations": 0,
+ "title": "Confusion",
+ "artist": "Tectogen_海渊",
+ "illustrator": "Unknown",
+ "charter": "Unknown",
+ "level": "Deep",
+ "chartConstant": 14.8,
+ "bpm": 197,
+ "offsetMs": 0,
+ "lanes": [
+  {
+   "id": -4,
+   "width": 240,
+   "opacity": 1,
+   "widthEvents": [],
+   "opacityEvents": []
+  },
+  {
+   "id": -3,
+   "width": 240,
+   "opacity": 1,
+   "widthEvents": [],
+   "opacityEvents": []
+  },
+  {
+   "id": -2,
+   "width": 240,
+   "opacity": 1,
+   "widthEvents": [],
+   "opacityEvents": []
+  },
+  {
+   "id": -1,
+   "width": 240,
+   "opacity": 1,
+   "widthEvents": [],
+   "opacityEvents": []
+  },
+  {
+   "id": 1,
+   "width": 240,
+   "opacity": 1,
+   "widthEvents": [],
+   "opacityEvents": []
+  },
+  {
+   "id": 2,
+   "width": 240,
+   "opacity": 1,
+   "widthEvents": [],
+   "opacityEvents": []
+  },
+  {
+   "id": 3,
+   "width": 240,
+   "opacity": 1,
+   "widthEvents": [],
+   "opacityEvents": []
+  },
+  {
+   "id": 4,
+   "width": 240,
+   "opacity": 1,
+   "widthEvents": [],
+   "opacityEvents": []
+  }
+ ],
+ "LineEvents": {
+  "upperJudgementLine": 1080,
+  "lowerJudgementLine": 120,
+  "upperEvents": [],
+  "lowerEvents": []
+ },
+ "notes": []
+}

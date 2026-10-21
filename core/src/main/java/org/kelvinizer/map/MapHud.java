@@ -35,7 +35,7 @@ import org.kelvinizer.ui.Ui;
  * entrance), and once MAIN's chapters are all open a story / chapter mode toggle left of
  * Settings. Kelvin 2026-10-20 03:26 enlarged the frame and the capsule to the green boxes of their
  * picture (「现在特别小的名字和低的depth就在角落缩成一团了」), and since 03:38 the capsule only shows the
- * count (「贝壳就不要再包括通往存档的跳转了」). At 14:10 the frame gave way to the design thread's plan 5 (Kelvin 13:22
+ * count (「贝壳就不要再包括通往存档的跳转了」). At 14:10 the frame gave way to mock-up plan 5 (Kelvin 13:22
  * 「个人profile的那个稍微高了一点，以及观感不佳试着重新设计一下」): no panel, the block 100 high from the top of Settings.
  * At 15:10 the capsule shrank and the depth grew (「我感觉贝壳有点太大了，喧宾夺主了，我觉得深度才应该有那么大」); at 15:36
  * the name got plan 6's band and the capsule moved beside the depth tag (「把贝壳移动到depth旁边」).
@@ -101,14 +101,14 @@ final class MapHud {
     private String name = "";
     private final StringBuilder shellText = new StringBuilder(16), depthText = new StringBuilder(20);
     private static final Color SHELL_RIB = Theme.mix(Theme.GOLD, Theme.ABYSS_BLACK, 0.55f, new Color());
-    private static final String NO_DIVER = "NO DIVER";
+    private static final String NO_DIVER = "NO PLAYER";
     /** Longest name before it shrinks (× k). */
     private static final float NAME_MAX = 560f;
     /**
-     * The player block (× k; Kelvin 2026-10-20 14:10, the design thread's plan 5, laid out on 16:10 from the block's
-     * top left at (36, 36)): how far in from the screen's left margin it starts, the avatar disc's radius, its white ring's
-     * radius and width and the avatar drawn in it; the name's left edge, baseline under the top and cap; the depth
-     * tag's left tip, height (its bottom is the block's), tip depth and inner padding and the number's cap, on a
+     * The player block (× k; Kelvin 2026-10-20 14:10, mock-up plan 5, laid out on 16:10 from the block's
+     * top left at (36, 36)): how far in from the screen's left margin it starts, the avatar disc's radius, its white
+     * ring's radius and width and the avatar drawn in it; the name's left edge, baseline under the top and cap; the
+     * depth tag's left tip, height (its bottom is the block's), tip depth and inner padding and the number's cap, on a
      * baseline {@link #DEPTH_BASE} under the top (a tracked DEPTH label stood before the number until 17:34). Since
      * Kelvin 2026-10-20 15:36 (「用最下面一版的深度大小」, after 15:10 「我觉得深度才应该有那么大」) the depth leads: the tag
      * 62 high with a number cap of 40 (42 and 24 before), the name's cap 24 (31) so the block stays 100 high. Since
@@ -134,16 +134,19 @@ final class MapHud {
     private static final float BLOCK_K = 0.75f;
     /** {@link #k} times {@link #BLOCK_K}: the scale of the player block and the shell capsule this frame. */
     private float bk = BLOCK_K;
-    /** Plan 5's colours: the avatar disc, the shadows (under the disc and the tag, under the name), the tag's fill and edge. */
+    /**
+     * Plan 5's colours: the avatar disc, the shadows (under the disc and the tag, under the name), the tag's fill and
+     * edge.
+     */
     private static final Color AV_DISC = Theme.rgb(0x05091C, 1f), SHADE = Theme.rgb(0x000012, 1f),
         NAME_SHADE = Theme.rgb(0x000014, 1f), TAG_FILL = Theme.rgb(0x080D26, 1f), TAG_EDGE = Theme.rgb(0x38B6FF, 1f);
     /** The name's soft shadow: four faint copies about 2 under it (× k). */
     private static final float[] SHADE_DX = {-1.5f, 1.5f, -1f, 1f}, SHADE_DY = {-1.5f, -1.5f, -3f, -3f};
     /**
-     * The name's band (× k; Kelvin 2026-10-20 15:36 「之前的号方案的那种光带加在名字上吧」, the band of the design thread's
-     * plans 3 and 6): its top and bottom under the column's top, how far it runs past the name, and its alpha; navy from
-     * the avatar's centre, fading out to the right from 0.6 of the name. Since Kelvin 2026-10-20 16:37 it moves up 8 with
-     * the name (0 to 36 before), and since 16:39 (「那个banner稍微深一点」) its alpha is 0.95 (0.84).
+     * The name's band (× k; Kelvin 2026-10-20 15:36 「之前的号方案的那种光带加在名字上吧」, the band of mock-up
+     * plans 3 and 6): its top and bottom under the column's top, how far it runs past the name, and its alpha; navy
+     * from the avatar's centre, fading out to the right from 0.6 of the name. Since Kelvin 2026-10-20 16:37 it moves up
+     * 8 with the name (0 to 36 before), and since 16:39 (「那个banner稍微深一点」) its alpha is 0.95 (0.84).
      */
     private static final float BAND_TOP = -8f, BAND_BOTTOM = 28f, BAND_RUN = 140f, BAND_A = 0.95f;
     private static final Color BAND_CLEAR = Theme.rgb(0x080D26, 0f);
@@ -375,7 +378,8 @@ final class MapHud {
             r.addOccluder(shells.x() - m, shells.y() - m, shells.width() + 2f * m, shells.height() + 2f * m);
         }
         float fl = mode.isVisible() ? mode.x() : settings.x();
-        r.addOccluder(fl - m, settings.y() - m, settings.x() + settings.width() - fl + 2f * m, settings.height() + 2f * m);
+        r.addOccluder(fl - m, settings.y() - m, settings.x() + settings.width() - fl + 2f * m,
+            settings.height() + 2f * m);
         if (lensAlpha > 0.05f) {
             float lx = lens[0].x() - m;
             r.addOccluder(lx, lens[0].y() - m, lens[3].x() + lens[3].width() - lx + m, lens[0].height() + 2f * m);
@@ -460,7 +464,10 @@ final class MapHud {
         return Math.max(0f, Math.min(NAME_MAX * k, nameRoom));
     }
 
-    /** Player block width (map labels fade under it): the avatar, and the name or the depth tag, whichever reaches further. */
+    /**
+     * Player block width (map labels fade under it): the avatar, and the name or the depth tag, whichever reaches
+     * further.
+     */
     private float blockW() {
         if (!hasProfile) return NAME_X * bk + r.uiWidth(NO_DIVER, bcap(NAME_CAP));
         float name = Math.min(nameU * bcap(NAME_CAP), nameMaxW());
@@ -577,7 +584,7 @@ final class MapHud {
 
     // =================================================================== controls
     /**
-     * The player block (§3.9; the design thread's plan 5, Kelvin 2026-10-20 14:10, after the frames of 2026-10-19 06:28
+     * The player block (§3.9; mock-up plan 5, Kelvin 2026-10-20 14:10, after the frames of 2026-10-19 06:28
      * and 2026-10-20 03:26): no panel; the avatar in a disc ({@link #AV_R}) with a white ring, the name (UI_BOLD
      * {@link #NAME_CAP}) right of it and under the name a tag pointed at both ends holding the depth, {@code -2,698 m}
      * (NUMBER {@link #DEPTH_CAP}; a DEPTH label before it until Kelvin 2026-10-20 17:34), all at {@link #BLOCK_K} since
@@ -802,7 +809,9 @@ final class MapHud {
             if (lit) draw.roundRect(bx, by, bw, bh, rad, Theme.GROUND_SIG, 0.16f * alpha);
             draw.roundRectStroke(bx, by, bw, bh, rad, 2f, lit ? Theme.GROUND_SIG : Theme.SURFACE_TOP,
                 (lit ? 0.9f : 0.45f) * alpha);
-            if (press > 0f || hover > 0f) draw.roundRect(bx, by, bw, bh, rad, Theme.INK1, (0.08f * press + 0.05f * hover) * alpha);
+            if (press > 0f || hover > 0f) {
+                draw.roundRect(bx, by, bw, bh, rad, Theme.INK1, (0.08f * press + 0.05f * hover) * alpha);
+            }
             Icons.draw(draw.shapes(), Icons.Icon.SORT, bx + 40f * k, centerY(), 40f * k,
                 lit ? Theme.GROUND_SIG : Theme.SURFACE_TOP, alpha);
             if (gridSort != MapWorld.SORT_DEFAULT || filterActive) {
@@ -839,8 +848,11 @@ final class MapHud {
         public void draw(Batch b, float alpha) {
             if (!visible || alpha <= 0.01f) return;
             plate(this, 22f * k, alpha);
-            if (press > 0f || hover > 0f) draw.roundRect(x, y, w, h, 22f * k, Theme.INK1, (0.08f * press + 0.05f * hover) * alpha);
-            Icons.draw(draw.shapes(), Icons.Icon.CHEVRON_RIGHT, x + w - 34f * k, centerY(), 30f * k, Theme.INK1, 0.8f * alpha);
+            if (press > 0f || hover > 0f) {
+                draw.roundRect(x, y, w, h, 22f * k, Theme.INK1, (0.08f * press + 0.05f * hover) * alpha);
+            }
+            Icons.draw(draw.shapes(), Icons.Icon.CHEVRON_RIGHT, x + w - 34f * k, centerY(), 30f * k,
+                Theme.INK1, 0.8f * alpha);
         }
 
         void drawText(Batch b, float alpha) {
@@ -851,8 +863,10 @@ final class MapHud {
                     alpha);
                 return;
             }
-            r.uiFit(b, ALL_TEXT, MapUi.cap(22f, k), tx, centerY() + 14f * k, Align.left | Fonts.VCENTER, tw, Theme.INK1, alpha);
-            r.uiFit(b, ALL_ZH, MapUi.cap(16f, k), tx, centerY() - 20f * k, Align.left | Fonts.VCENTER, tw, Theme.INK2, alpha);
+            r.uiFit(b, ALL_TEXT, MapUi.cap(22f, k), tx, centerY() + 14f * k, Align.left | Fonts.VCENTER, tw,
+                Theme.INK1, alpha);
+            r.uiFit(b, ALL_ZH, MapUi.cap(16f, k), tx, centerY() - 20f * k, Align.left | Fonts.VCENTER, tw,
+                Theme.INK2, alpha);
         }
     }
 
@@ -871,15 +885,17 @@ final class MapHud {
             if (!visible || alpha <= 0.01f) return;
             float rad = h * 0.5f;
             plate(this, rad, alpha);
-            if (press > 0f || hover > 0f) draw.roundRect(x, y, w, h, rad, Theme.INK1, (0.08f * press + 0.05f * hover) * alpha);
+            if (press > 0f || hover > 0f) {
+                draw.roundRect(x, y, w, h, rad, Theme.INK1, (0.08f * press + 0.05f * hover) * alpha);
+            }
             float cx = x + 36f * k, cy = centerY();
             Color c = Theme.GROUND_SIG;
             if (chapterMode) {
                 float t = 11f * k, g = 4f * k;
                 for (int i = 0; i < 2; i++) {
                     for (int j = 0; j < 2; j++) {
-                        draw.roundRectStroke(cx - t - g * 0.5f + i * (t + g), cy - t - g * 0.5f + j * (t + g), t, t, 2f * k, 2f, c,
-                            alpha);
+                        draw.roundRectStroke(cx - t - g * 0.5f + i * (t + g), cy - t - g * 0.5f + j * (t + g), t, t,
+                            2f * k, 2f, c, alpha);
                     }
                 }
             } else {

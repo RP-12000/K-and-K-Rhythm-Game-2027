@@ -22,10 +22,11 @@ import java.util.Map;
 public class Profile {
     /**
      * Current schema version of profile files: 2 since the shells and depth of 2026-10-17, 3 since
-     * that day's depth formula of 14:10, 4 since its correction at 15:22. Older files are migrated
-     * once on load ({@link #migrateToSchema2()}, then {@link #migrateToSchema4()}).
+     * that day's depth formula of 14:10, 4 since its correction at 15:22, 5 since the VISUAL HIT POINT default 0 of
+     * 2026-10-20. Older files are migrated once on load ({@link #migrateToSchema2()}, {@link #migrateToSchema4()},
+     * then {@link #migrateToSchema5()}).
      */
-    public static final int SCHEMA_VERSION = 4;
+    public static final int SCHEMA_VERSION = 5;
     /**
      * Current score scale (ARCHITECTURE §18): 2 = the 100,000,000 scale of scoring v2. A file
      * without the field (or with 1) holds 10,000,000-scale scores and is migrated once on load.
@@ -187,11 +188,6 @@ public class Profile {
     public Profile() {
     }
 
-    /** @return the avatar seed. */
-    public int avatarSeed() {
-        return avatar != null ? avatar.seed : 0;
-    }
-
     /** @return the cached player depth in whole metres, as displayed. */
     public int depthMeters() {
         return Depth.meters(depth);
@@ -215,7 +211,9 @@ public class Profile {
      *                                  would make every later save of the profile fail)
      */
     ChartRecord recordOrCreate(String songId, Difficulty d) {
-        if (songId == null || d == null) throw new IllegalArgumentException("chart record needs a song id and difficulty");
+        if (songId == null || d == null) {
+            throw new IllegalArgumentException("chart record needs a song id and difficulty");
+        }
         if (records == null) records = new LinkedHashMap<>();
         Map<String, ChartRecord> bySong = records.get(songId);
         if (bySong == null) {
@@ -228,33 +226,6 @@ public class Profile {
             bySong.put(d.name(), r);
         }
         return r;
-    }
-
-    /** @return number of charts with at least one recorded play. */
-    public int playedChartCount() {
-        int n = 0;
-        for (Map<String, ChartRecord> bySong : records.values()) {
-            for (ChartRecord r : bySong.values()) if (r.plays > 0) n++;
-        }
-        return n;
-    }
-
-    /** @return number of charts with a FULL COMBO. */
-    public int fullComboChartCount() {
-        int n = 0;
-        for (Map<String, ChartRecord> bySong : records.values()) {
-            for (ChartRecord r : bySong.values()) if (r.fullCombo) n++;
-        }
-        return n;
-    }
-
-    /** @return number of charts with ALL RESONANCE. */
-    public int allResonanceChartCount() {
-        int n = 0;
-        for (Map<String, ChartRecord> bySong : records.values()) {
-            for (ChartRecord r : bySong.values()) if (r.allResonance) n++;
-        }
-        return n;
     }
 
     /** @return true when the one-shot UI flag is set. */
@@ -354,10 +325,25 @@ public class Profile {
         return true;
     }
 
+    /**
+     * Moves a schema 4 or older profile to the VISUAL HIT POINT default of 2026-10-20 22:37, once: the old default 20
+     * (a key's edge on the line) becomes the new default 0 (the line through its middle); any other value was chosen
+     * and stays.
+     *
+     * @return true when the profile changed (save it)
+     */
+    public boolean migrateToSchema5() {
+        if (schemaVersion >= 5) return false;
+        if (settings != null && settings.hitPointPx == 20f) settings.hitPointPx = Settings.HIT_POINT_DEFAULT;
+        schemaVersion = 5;
+        return true;
+    }
+
     /** Repairs nulls and ranges after loading untrusted JSON (runs the schema migrations first). */
     void sanitize() {
         migrateToSchema2();
         migrateToSchema4();
+        migrateToSchema5();
         if (avatar == null) avatar = new AvatarSpec();
         avatar.sanitize();
         if (settings == null) settings = new Settings();

@@ -18,7 +18,7 @@ import org.kelvinizer.ui.Ui;
  * 1:1 drag, fling with exponential friction, rubber-band overscroll (half resistance) and a
  * critically damped spring back (the {@code camera} preset, ω 12). A press inside the area is
  * passed through to the content until the finger moves beyond {@link Ui#slop()}; then
- * {@link #isDragging()} turns true and the owner cancels its pressed rows.
+ * {@link #touchDragged} returns true and the owner cancels its pressed rows.
  *
  * <p>The fling velocity is measured over time, not per event: the drag samples of the last
  * {@value #FLING_WINDOW_MS} ms (input event timestamps) give a least-squares slope, so a flick
@@ -114,11 +114,6 @@ public final class ScrollArea {
     /** True when the content is taller than the area. */
     public boolean canScroll() {
         return contentH > h + 0.5f;
-    }
-
-    /** True once the tracked finger moved beyond slop (presses inside must cancel). */
-    public boolean isDragging() {
-        return dragging;
     }
 
     /** True when (px, py) is inside the visible rect. */
@@ -231,7 +226,9 @@ public final class ScrollArea {
         return true;
     }
 
-    /** Scrolls so that the band from {@code fromTop} to {@code toTop} (measured down from the content top) is visible. */
+    /**
+     * Scrolls so that the band from {@code fromTop} to {@code toTop} (measured down from the content top) is visible.
+     */
     public void reveal(float fromTop, float toTop) {
         if (fromTop < offset) offset = fromTop;
         else if (toTop > offset + h) offset = toTop - h;

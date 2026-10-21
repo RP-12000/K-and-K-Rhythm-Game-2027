@@ -22,7 +22,7 @@ import org.kelvinizer.ui.Ui;
  * overshoot) and leaves faster on a critically damped spring (DESIGN §1.5: exits are faster).
  *
  * <p>While active it takes every touch: its widgets first, then its own content hooks; a tap
- * that starts and ends outside the card dismisses it (unless {@link #dismissable} is false), as
+ * that starts and ends outside the card dismisses it, as
  * does BACK / ESC. Subclasses place the card and their widgets in {@link #layout(float)} every
  * frame (the slide offset is passed in, so hit rects follow the animation) and draw their content
  * in {@link #drawContent(Batch, float)}. The host {@link ShellScreen} owns one active modal at a
@@ -50,8 +50,6 @@ public abstract class Modal {
     protected float x, y, w, h;
     /** Seconds since the modal opened. */
     protected float time;
-    /** Whether a tap outside or BACK closes the modal. */
-    protected boolean dismissable = true;
     /** Extra horizontal offset of the card (e.g. the delete-hold shake). */
     protected float cardShakeX;
 
@@ -241,7 +239,7 @@ public abstract class Modal {
         if (!w) touchUpContent(px, py, ptr);
         if (ptr == outsidePointer) {
             outsidePointer = -1;
-            if (dismissable && !insideCard(px, py)) close();
+            if (!insideCard(px, py)) close();
         }
         return true;
     }
@@ -267,9 +265,9 @@ public abstract class Modal {
         return true;
     }
 
-    /** BACK / ESC: closes when dismissable. */
+    /** BACK / ESC: closes the modal. */
     public void onBack() {
-        if (dismissable) close();
+        close();
     }
 
     /** True when (px, py) is inside the card at rest. */
@@ -341,8 +339,8 @@ public abstract class Modal {
 
     /** Standard title of a card: UI_BOLD 28 caps at the card's top-left padding. */
     protected void drawTitle(Batch b, CharSequence title, float alpha) {
-        fonts.draw(b, Fonts.Role.UI_BOLD, 28f, title, x + cardShakeX + 40f, y + h - 40f, com.badlogic.gdx.utils.Align.left
-            | com.badlogic.gdx.utils.Align.top, Theme.INK1, alpha);
+        fonts.draw(b, Fonts.Role.UI_BOLD, 28f, title, x + cardShakeX + 40f, y + h - 40f,
+            com.badlogic.gdx.utils.Align.left | com.badlogic.gdx.utils.Align.top, Theme.INK1, alpha);
     }
 
     /** Eased entrance of an element that appears {@code delay} seconds after opening (stagger). */

@@ -129,11 +129,6 @@ public final class AvatarView {
         return flipT >= 0f || reelT >= 0f ? pending : spec;
     }
 
-    /** True while a flip or reroll plays. */
-    public boolean isAnimating() {
-        return flipT >= 0f || reelT >= 0f;
-    }
-
     /** Advances the animations. */
     public void update(float dt) {
         time += dt;

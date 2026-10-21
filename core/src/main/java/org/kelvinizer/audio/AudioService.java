@@ -139,11 +139,6 @@ public final class AudioService implements Disposable {
         menu.duckTo(level, seconds);
     }
 
-    /** @return true when the menu loop is alive and not fading out. */
-    public boolean isMenuPlaying() {
-        return menu.music != null && !menu.disposeWhenSilent;
-    }
-
     // ------------------------------------------------------------------ PREVIEW
 
     /**
@@ -249,14 +244,6 @@ public final class AudioService implements Disposable {
             case RESULT: result.fadeOutAndDispose(fadeSeconds); break;
             default: break;
         }
-    }
-
-    /** Fades every music slot out (the calibration file stops at once). */
-    public void stopAll(float fadeSeconds) {
-        menu.fadeOutAndDispose(fadeSeconds);
-        stopPreview(fadeSeconds);
-        result.fadeOutAndDispose(fadeSeconds);
-        stopFile();
     }
 
     // ------------------------------------------------------------------ FILE (calibration)
@@ -382,22 +369,6 @@ public final class AudioService implements Disposable {
         result.apply(music);
         if (preview.music == null) previewSong = null;
         if (fileClock != null && fileClock.hasMusic()) fileClock.update();
-    }
-
-    /**
-     * @return the volume currently applied to a music slot's {@link Music} (0..1, after the
-     *         music volume, fades, ducks and loop-edge dips), or 0 when the slot is silent or
-     *         empty. HIT returns 0. Allocation-free; for meters and tests.
-     */
-    public float slotVolume(Slot slot) {
-        Channel c;
-        switch (slot) {
-            case MENU: c = menu; break;
-            case PREVIEW: c = preview; break;
-            case RESULT: c = result; break;
-            default: return 0f;
-        }
-        return c.music != null && !c.paused ? Math.max(0f, c.lastApplied) : 0f;
     }
 
     /** Pauses every slot (app backgrounded). */

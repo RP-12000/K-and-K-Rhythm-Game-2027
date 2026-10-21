@@ -1,6 +1,5 @@
 package org.kelvinizer.screens.result;
 
-import org.kelvinizer.library.ChapterMeta;
 import org.kelvinizer.library.ConstantLabel;
 import org.kelvinizer.library.Difficulty;
 import org.kelvinizer.library.SongMeta;
@@ -83,12 +82,12 @@ public final class ResultModel {
     public Difficulty difficulty = Difficulty.SURFACE;
     /** Title and artist as shown. */
     public String title = "", artist = "";
-    /** Difficulty chip text, e.g. {@code DEEP  15} for 15.9 (the constant's whole number; {@link #chipMark} follows). */
+    /**
+     * Difficulty chip text, e.g. {@code DEEP  15} for 15.9 (the constant's whole number; {@link #chipMark} follows).
+     */
     public String chipText = "";
     /** Superscript after {@link #chipText}: the chart constant's mark ({@code ConstantLabel}). */
     public String chipMark = "";
-    /** Layer numeral of the song's chapter ("02"), or empty. */
-    public String layerNumeral = "";
 
     // ------------------------------------------------------------------ score
     /** Final score. */
@@ -141,8 +140,6 @@ public final class ResultModel {
     public int minesTotal, minesTouched;
     /** Best combo. */
     public int maxCombo;
-    /** Accuracy 0..1. */
-    public float accuracy;
     /** Early / late counts. */
     public int early, late;
     /** Mean offset of non-LOST hits (ms, + = late). */
@@ -155,10 +152,6 @@ public final class ResultModel {
     public int earlyResonance, lateResonance;
     /** Grouped count texts of {@link #earlyResonance} / {@link #lateResonance}. */
     public String earlyResonanceText = "", lateResonanceText = "";
-    /** Accuracy in hundredths of a percent, truncated (9,912 = 99.12 %). */
-    public int accuracyHundredths;
-    /** Final accuracy text, truncated to 2 decimals ({@code 99.12%}). */
-    public String accuracyText = "";
     /** Mines text ({@code 2 / 14}). */
     public String minesText = "";
 
@@ -209,12 +202,10 @@ public final class ResultModel {
      * @param r       the run
      * @param o       its record outcome (never null from Main)
      * @param song    the song (null allowed)
-     * @param chapter the song's chapter (null allowed)
      * @param p       the active diver (null allowed)
      * @param device  device settings (audio offset for the hint; null allowed)
      */
-    public void set(PlayResult r, RecordOutcome o, SongMeta song, ChapterMeta chapter, Profile p,
-                    DeviceSettings device) {
+    public void set(PlayResult r, RecordOutcome o, SongMeta song, Profile p, DeviceSettings device) {
         this.song = song;
         tutorial = r.tutorial() || o.tutorial();
         autoplay = r.autoplay() || (!o.recorded() && !tutorial);
@@ -226,7 +217,6 @@ public final class ResultModel {
         artist = r.artist() != null ? r.artist() : (song != null ? song.artist() : "");
         chipText = Theme.difficultyName(difficulty) + "  " + ConstantLabel.base(r.constantText());
         chipMark = ConstantLabel.mark(r.constantText());
-        layerNumeral = chapter != null ? chapter.numeral() : "";
         // the result screen is English in both languages (Kelvin 2026-10-18 16:45 「结算界面的英文也全部保留」),
         // except the shell breakdown and the offset sheet below (17:22); no DIVE LOG header line since 17:22
 
@@ -270,7 +260,6 @@ public final class ResultModel {
         minesTotal = r.minesTotal();
         minesTouched = r.minesTouched();
         maxCombo = r.maxCombo();
-        accuracy = r.accuracy();
         early = r.early();
         late = r.late();
         meanOffset = r.meanOffsetMs();
@@ -280,10 +269,6 @@ public final class ResultModel {
         lateResonance = r.lateResonance();
         earlyResonanceText = group(earlyResonance);
         lateResonanceText = group(lateResonance);
-        accuracyHundredths = (int) Math.floor(accuracy * 10000.0 + 0.01);
-        StringBuilder acc = new StringBuilder(12);
-        appendPercent(acc, accuracyHundredths);
-        accuracyText = acc.toString();
         notesText = group(totalNotes);
         long chainPart = r.totalNotes() > 0 ? Judgement.chainScore(maxChain, totalNotes) : 0L;
         // the accuracy part is the rest of the base, so the two parts add up to it exactly
@@ -393,15 +378,6 @@ public final class ResultModel {
             scoreLockIndex[cell] = j;
             cell++;
         }
-    }
-
-    /** Appends {@code hundredths} as a percentage with two decimals ({@code 99.12%}); no allocation. */
-    public static StringBuilder appendPercent(StringBuilder sb, int hundredths) {
-        int v = Math.max(0, hundredths);
-        org.kelvinizer.ui.Fonts.appendInt(sb, v / 100);
-        int f = v % 100;
-        sb.append('.').append((char) ('0' + f / 10)).append((char) ('0' + f % 10)).append('%');
-        return sb;
     }
 
     private void addDepthRow(String label, String value) {

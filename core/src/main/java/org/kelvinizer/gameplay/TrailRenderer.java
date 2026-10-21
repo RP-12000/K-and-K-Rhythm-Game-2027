@@ -17,9 +17,9 @@ import org.kelvinizer.ui.Theme;
  * note in the normal blend of block B, <b>before</b> the live notes, farthest copy first, with
  * the {@link NoteRenderer} paint methods (same sprites and colours as the live note, no glow, no
  * glitch, no sync pearl, no tide sweep, no FX). Mine copies turn with the angle of their moment
- * (owner 2026-10-12 03:03); a LANE MINE is copied like a STREAM (DESIGN §20.2): its column (fill,
+ * (Kelvin 2026-10-12 03:03); a LANE MINE is copied like a STREAM (DESIGN §20.2): its column (fill,
  * rims, tail cap; the stripes and studs are live-only) and its head cap; a TIDE drop copy has
- * the T4 shape (owner 2026-10-12 04:36), its wave at the moment's song time.
+ * the T4 shape (Kelvin 2026-10-12 04:36), its wave at the moment's song time.
  *
  * <p>Geometry of copy k at moment {@code s = beat − k/density}:
  * <ul>
@@ -258,11 +258,6 @@ final class TrailRenderer {
         lowQuality = quality != HitFx.QUALITY_HIGH;
     }
 
-    /** @return number of trail slots in the chart (one per visible segment of a trailed note). */
-    int trailedNotes() {
-        return trailedCount;
-    }
-
     // ================================================================== per-frame plan
 
     /**
@@ -398,7 +393,8 @@ final class TrailRenderer {
         int outcome = TrailPlan.outcomeOf(e.noteState(i));
         if (outcome == TrailPlan.LIVE) return false;
         if (TrailPlan.noCopies(n, t, outcome)) return true;
-        float hi = Math.min(t.to(), TrailPlan.upperExclusive(n, outcome, outcome == TrailPlan.HIT ? hitBeat(e, i) : Float.NaN));
+        float hi = Math.min(t.to(),
+            TrailPlan.upperExclusive(n, outcome, outcome == TrailPlan.HIT ? hitBeat(e, i) : Float.NaN));
         if (outcome == TrailPlan.MISSED) {
             float at = e.noteResolvedMs(i);
             if (!Float.isNaN(at)) {
@@ -659,40 +655,6 @@ final class TrailRenderer {
         return q;
     }
 
-    // ================================================================== static demo (tutorial captions)
-
-    /**
-     * Draws a static afterimage illustration (for a caption or a legend; not tied to the chart):
-     * {@code t}'s copies of a DROP of a lane {@code laneWidth} wide, copy k offset by
-     * {@code (k·dx, k·dy)} from the note, farthest first, then the live note on top. Uses the
-     * notes' sprites and the readability cap; call inside a normal-blend atlas pass.
-     *
-     * @param x         leading-edge centre x of the live note
-     * @param y         leading-edge centre y of the live note
-     * @param laneWidth lane width the note is sized for (240 = a default lane)
-     * @param upper     sky colour and orientation instead of ground
-     * @param t         the trail to illustrate (for example {@code length 0.75, density 12})
-     * @param dx        x offset per copy (0 for a straight fall, ±20 for a level smear)
-     * @param dy        y offset per copy (away from the line: + for ground, − for sky)
-     * @param alpha     overall opacity (caption fade)
-     * @return quads submitted
-     */
-    int drawDemo(float x, float y, float laneWidth, boolean upper, NoteTrail t, float dx, float dy, float alpha) {
-        Color base = upper ? Theme.SKY_SIG : Theme.GROUND_SIG;
-        float w = painter.headWidth(laneWidth);
-        float h = painter.noteHeight();
-        float rot = upper ? 180f : 0f;
-        int q = 0;
-        for (int k = t.copies(); k >= 1; k--) {
-            float a = TrailPlan.copyAlpha(t, k, 1, alpha, alpha);
-            if (a <= NoteRenderer.MIN_ALPHA) continue;
-            q += painter.paintLaneNote(x + k * dx, y + k * dy, w, h, rot, base, a, 1f, 0f, 0f, 0f, 0f, 0f, false);
-        }
-        q += painter.paintLaneNote(x, y, w, h, rot, base, alpha, 1f, 0f, 0f, 0f, 0f, 0f, false);
-        painter.batch().setColor(Color.WHITE);
-        return q;
-    }
-
     // ================================================================== diagnostics
 
     /** @return quads the last {@link #prepare} planned (after thinning). */
@@ -728,10 +690,5 @@ final class TrailRenderer {
     /** @return trailed notes considered in the last frame. */
     int candidates() {
         return cands;
-    }
-
-    /** @return candidates whose trails fit the budget in the last frame. */
-    int drawnTrails() {
-        return cutoff;
     }
 }

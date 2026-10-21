@@ -6,8 +6,7 @@ package org.kelvinizer.elements;
  * <p>The four note types of chart format v2 (ARCHITECTURE §13.2).
  *
  * <p>The JSON names ({@link #json}) are fixed and read case-insensitively. The display names
- * live only here; the NOTE GUIDE (音符图鉴) panel ({@code NoteGuide}, off the Settings pages since
- * 2026-10-18 05:14) reads them, so renaming a note type is a single edit.
+ * live only here (the Charter shows them as well), so renaming a note type is a single edit.
  */
 public enum NoteType {
     /** Single tap in a lane: DROP / 水滴. */

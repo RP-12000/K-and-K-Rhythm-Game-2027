@@ -16,7 +16,7 @@ import com.badlogic.gdx.graphics.Color;
  *   <li>{@link #LOST}: missed (late beyond the window, broken hold), weight 0</li>
  * </ul>
  *
- * <p><b>Score (ARCHITECTURE §18, the owner's formula).</b> With {@code t} judged notes,
+ * <p><b>Score (ARCHITECTURE §18, Kelvin's formula).</b> With {@code t} judged notes,
  * {@code r}/{@code e} RESONANCE/ECHO counts, {@code m_r} the longest run of consecutive
  * RESONANCE (the resonance chain) and {@code r_p} the PERFECT count:
  * {@code score = 100,000,000 · (r + 0.55·e)/t + 10,000 · m_r/t + r_p}, computed exactly by
@@ -66,10 +66,6 @@ public enum Judgement {
     public static final int EARLY_RGBA = 0x6FA8FFFF;
     /** Colour of the LATE timing label ({@code #FFB067}), RGBA8888. */
     public static final int LATE_RGBA = 0xFFB067FF;
-    /** Shared read-only EARLY colour. Never mutate. */
-    public static final Color EARLY_COLOR = new Color(EARLY_RGBA);
-    /** Shared read-only LATE colour. Never mutate. */
-    public static final Color LATE_COLOR = new Color(LATE_RGBA);
 
     private static final Judgement[] VALUES = values();
 
@@ -94,11 +90,6 @@ public enum Judgement {
     /** @return the shared, read-only display colour of this judgement. Never mutate it. */
     public Color color() {
         return color;
-    }
-
-    /** @return true for RESONANCE and ECHO (the note was hit). */
-    public boolean isHit() {
-        return this != LOST;
     }
 
     /**

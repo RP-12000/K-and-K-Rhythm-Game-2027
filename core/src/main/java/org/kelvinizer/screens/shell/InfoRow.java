@@ -1,6 +1,5 @@
 package org.kelvinizer.screens.shell;
 
-import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.Batch;
 import com.badlogic.gdx.utils.Align;
 import org.kelvinizer.Main;
@@ -40,7 +39,6 @@ public class InfoRow extends SettingRow {
     private final boolean header;
     private boolean brand;
     private CharSequence value;
-    private Color valueColor = Theme.INK2;
 
     private InfoRow(Main game, CharSequence label, CharSequence desc, boolean header) {
         super(game, label, desc, false);
@@ -67,12 +65,6 @@ public class InfoRow extends SettingRow {
         r.value = value;
         r.brand = true;
         return r;
-    }
-
-    /** Colour of the right-hand value (default {@code ink2}). */
-    public InfoRow setValueColor(Color c) {
-        valueColor = c;
-        return this;
     }
 
     @Override
@@ -115,14 +107,14 @@ public class InfoRow extends SettingRow {
                 Theme.INK1, alpha);
             if (value != null) {
                 fonts.drawFit(b, Fonts.Role.UI, Math.max(Ui.minEssentialCap(), cap * BRAND_VALUE_CAP / BRAND_CAP),
-                    value, x + w, cy, Align.right | Fonts.VCENTER, w * 0.45f, 0.75f, valueColor, alpha);
+                    value, x + w, cy, Align.right | Fonts.VCENTER, w * 0.45f, 0.75f, Theme.INK2, alpha);
             }
             return;
         }
         float valueW = 0f;
         if (value != null) {
             valueW = fonts.drawFit(b, Fonts.Role.UI, 20f * k, value, x + w, y + h * 0.5f, Align.right | Fonts.VCENTER,
-                w * 0.45f, 0.75f, valueColor, alpha) + 32f * k;
+                w * 0.45f, 0.75f, Theme.INK2, alpha) + 32f * k;
         }
         float maxW = w - valueW;
         if (desc != null) {

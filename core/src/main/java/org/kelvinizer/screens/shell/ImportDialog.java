@@ -18,11 +18,11 @@ import java.util.Comparator;
 
 /**
  * 导入潜水员的对话框：PASTE CODE 从剪贴板读取 {@code KK1:} 备份码，桌面版还列出导出文件夹里最新的三个文件供选择。
- * 导入的潜水员重名时改名为 {@code NAME (2)}；已有 8 个时按钮不可用并说明原因，无效的码直接在框内报错。
+ * 导入的潜水员重名时改名为 {@code NAME (2)}；已有 12 个时按钮不可用并说明原因，无效的码直接在框内报错。
  *
  * <p>IMPORT (DESIGN §8.4, P1): PASTE CODE reads a {@code KK1:} code from the clipboard; on desktop
  * the newest files of the export folder are offered too. The imported diver gets a new id, a
- * name collision becomes {@code NAME (2)}, and the eight-diver cap is enforced (the buttons are
+ * name collision becomes {@code NAME (2)}, and the {@link ProfileStore#MAX_PROFILES} cap is enforced (the buttons are
  * disabled and the reason is shown). An invalid code shows the error inline.
  */
 public final class ImportDialog extends Modal {
@@ -69,8 +69,8 @@ public final class ImportDialog extends Modal {
     protected void onOpened() {
         ProfileStore store = game.profiles();
         boolean can = store.canCreate();
-        status = can ? Lang.t("COPY A DIVER CODE (KK1:…) ON ANY DEVICE, THEN PASTE IT HERE.",
-            "在任意设备上复制备份码（KK1:…），再粘贴到这里。") : Lang.t("8 / 8 DIVERS · THIS DEVICE IS FULL", "8 / 8 位玩家 · 这台设备已经存满了");
+        status = can ? Lang.t("COPY A PLAYER CODE (KK1:…) ON ANY DEVICE, THEN PASTE IT HERE.",
+            "在任意设备上复制备份码（KK1:…），再粘贴到这里。") : ShellFormat.deviceFull();
         statusColor = can ? Theme.INK2 : Theme.LOST;
         paste.setEnabled(can);
         FileHandle[] list = store.listExportFiles();
@@ -107,7 +107,7 @@ public final class ImportDialog extends Modal {
 
     @Override
     protected void drawContent(Batch b, float alpha) {
-        drawTitle(b, Lang.t("IMPORT DIVER", "导入玩家"), alpha);
+        drawTitle(b, Lang.t("IMPORT PLAYER", "导入玩家"), alpha);
         fonts.drawFit(b, Fonts.Role.UI, 20f, status, x + 40f, y + h - 112f, Align.left, w - 80f, 0.6f, statusColor,
             alpha);
         if (fileCount > 0) {
@@ -131,8 +131,8 @@ public final class ImportDialog extends Modal {
             done(game.profiles().importCode(code));
         } catch (ProfileStore.ImportException e) {
             fail(e.reason == ProfileStore.ImportException.Reason.LIMIT_REACHED
-                ? Lang.t("8 / 8 DIVERS · THIS DEVICE IS FULL", "8 / 8 位玩家 · 这台设备已经存满了")
-                : Lang.t("THAT IS NOT A VALID DIVER CODE", "这不是有效的备份码"));
+                ? ShellFormat.deviceFull()
+                : Lang.t("THAT IS NOT A VALID PLAYER CODE", "这不是有效的备份码"));
         }
     }
 
@@ -143,7 +143,7 @@ public final class ImportDialog extends Modal {
             done(game.profiles().importFile(f));
         } catch (ProfileStore.ImportException e) {
             fail(e.reason == ProfileStore.ImportException.Reason.LIMIT_REACHED
-                ? Lang.t("8 / 8 DIVERS · THIS DEVICE IS FULL", "8 / 8 位玩家 · 这台设备已经存满了")
+                ? ShellFormat.deviceFull()
                 : Lang.t("THAT FILE COULD NOT BE READ", "这个文件读不出来"));
         }
     }

@@ -13,7 +13,7 @@ import org.kelvinizer.elements.NoteType;
  *
  * <p>Where an afterimage copy sits (ARCHITECTURE §17), pure Java: no GL, no allocation after
  * {@link #begin}. {@link #place} fills the public fields for one copy; the renderer then sizes and
- * paints it, and the harness checks the numbers directly.
+ * paints it, and the tests check the numbers directly.
  *
  * <ul>
  *   <li>{@code path}: the note exactly as it was at the moment {@code s}: lane span and window of
@@ -47,11 +47,14 @@ public final class TrailGeometry {
     /** Lane width of the moment (TIDE: window width), before the note-size rule. */
     public float laneWidth;
     /**
-     * Rotation in degrees, +180 for sky notes (mines turn, owner 2026-10-12 03:03; TIDE and TIDE
+     * Rotation in degrees, +180 for sky notes (mines turn, Kelvin 2026-10-12 03:03; TIDE and TIDE
      * STREAM too since 2026-10-16, about their pivot).
      */
     public float rot;
-    /** Hold ribbon / TIDE STREAM band / LANE MINE column length in world units (0 for others), not yet clamped for drawing. */
+    /**
+     * Hold ribbon / TIDE STREAM band / LANE MINE column length in world units (0 for others), not yet clamped for
+     * drawing.
+     */
     public float tail;
     /** Distance from the line used for the copy (world units). */
     public float pos;
@@ -79,7 +82,7 @@ public final class TrailGeometry {
         staticLayout = lines.laneScaleEvents().isEmpty() && lines.cameraFrameEvents().isEmpty();
         Lane[] lanes = chart.lanes();
         for (int i = 0; i < lanes.length && staticLayout; i++) {
-            // inserted and deleted lanes (owner 2026-10-15, 2026-10-17) move the others too
+            // inserted and deleted lanes (Kelvin 2026-10-15, 2026-10-17) move the others too
             if (!lanes[i].widthEvents().isEmpty() || lanes[i].inserted() || lanes[i].deleted()) staticLayout = false;
         }
     }
