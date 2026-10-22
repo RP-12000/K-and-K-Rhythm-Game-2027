@@ -121,10 +121,6 @@ public final class Theme {
      * effects (rise/recede, line swell, stream light bands). Ground TIDE keeps {@link #TIDE}.
      */
     public static final Color SKY_TIDE = blend(SKY_SIG, TIDE, 0.3f);
-    /** Sky TIDE head fill at its trailing edge: the dim end of the pearl gradient (DESIGN §21.6). */
-    public static final Color SKY_TIDE_HEAD_DIM = rgb(0x808EA0, 1f);
-    /** Sky TIDE head fill at its leading edge: the bright end of the pearl gradient (DESIGN §21.6). */
-    public static final Color SKY_TIDE_HEAD_BRIGHT = rgb(0xECF4FC, 1f);
     /** Ground T4 TIDE wave fill, drawn at α .85 (Kelvin 2026-10-12 04:36, 「天键地键tide的改为T4」). */
     public static final Color TIDE_WAVE = rgb(0x1FBF98, 1f);
     /** Ground T4 TIDE wave crest line. */

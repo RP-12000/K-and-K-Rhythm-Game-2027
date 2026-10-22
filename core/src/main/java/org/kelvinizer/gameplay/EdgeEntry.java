@@ -71,15 +71,12 @@ public final class EdgeEntry {
     private static final float EDGE_EPS = 1e-3f;
     /** Half the side of a MINE stud, which sits across the body's long edges. */
     private static final float STUD_HALF = 3f;
-    /** Half the diagonal of a TIDE STREAM bar's ping diamond. */
-    private static final float DIAMOND_HALF = 5f;
     // body kinds, for what lies beyond the leading edge toward the line
     private static final byte K_LANE = 0;
     private static final byte K_MINE = 1;
     private static final byte K_LANE_MINE = 2;
     private static final byte K_T4_GROUND = 3;
     private static final byte K_T4_SKY = 4;
-    private static final byte K_TIDE_STREAM = 5;
 
     private Note[] notes = new Note[0];
     private int count;
@@ -196,7 +193,8 @@ public final class EdgeEntry {
             tailAt[i] = Math.max(0f, n.tailHeightAt(s));
             layout.update(s, LaneLayout.VIEW_LEFT, LaneLayout.VIEW_RIGHT);
             if (n.type() == NoteType.UNIVERSAL) {
-                kind[i] = n.isTideStream() ? K_TIDE_STREAM : n.isUpper() ? K_T4_SKY : K_T4_GROUND;
+                // a TIDE STREAM's head is its line's TIDE (2026-10-22), its band behind the leading edge
+                kind[i] = n.isUpper() ? K_T4_SKY : K_T4_GROUND;
                 laneW[i] = Math.max(0f, layout.windowRight() - layout.windowLeft() - 2f * NoteRenderer.TIDE_INSET);
             } else {
                 kind[i] = n.type() != NoteType.MINE ? K_LANE : n.isLaneMine() ? K_LANE_MINE : K_MINE;
@@ -271,8 +269,8 @@ public final class EdgeEntry {
      *         edge toward the line at note size {@code u}, as NoteRenderer paints it, glows left out:
      *         a lane note's turned head ({@code headWidth × NOTE_H u}) and ribbon, a mine's turned body
      *         ({@code MINE_BOX} of the lane × 32u) with the studs across its long edges, a LANE MINE's
-     *         column, the base line of a ground TIDE, the big beads of a sky TIDE; a TIDE STREAM's bar
-     *         and band lie behind its leading edge (world units: the lane width stretched by kx, the tail by ky)
+     *         column, the base line of a ground TIDE, the big beads of a sky TIDE (a TIDE STREAM's head
+     *         alike, its band behind its leading edge) (world units: the lane width stretched by kx, the tail by ky)
      */
     private float reachAt(int i, boolean up, float u) {
         float r = bodyAt(i, up, u);
@@ -326,12 +324,10 @@ public final class EdgeEntry {
             }
             case K_T4_GROUND:
                 return 0.5f * NoteShapes.WAVE_LINE * u;
-            case K_T4_SKY: {
+            default: { // K_T4_SKY
                 float big = Math.max(NoteShapes.T4_BEAD_BIG, NoteShapes.T4_BEAD_SMALL) * u;
                 return Math.max(0f, 0.5f * big / NoteRenderer.DISC_R - NoteShapes.T4_THREAD_BEHIND * u);
             }
-            default: // K_TIDE_STREAM: bar, white edge and band behind; the diamonds sit across the bar's middle
-                return Math.max(0f, DIAMOND_HALF - 9f * u);
         }
     }
 

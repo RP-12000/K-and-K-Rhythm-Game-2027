@@ -90,10 +90,10 @@ import java.util.regex.Pattern;
  *       default approach as its movement event ({@link Note#defaultApproachEvent}), the look it
  *       had before format v2 used motion as written (Kelvin 2026-10-13).</li>
  * </ol>
- * In both formats tap / hold / mine notes with the same (line, lane, judgement beat) are
- * de-duplicated (a hold beats a tap beats a mine; the longer hold, or the longer mine, wins;
- * otherwise the first is kept). Universal notes are never de-duplicated: stacked ones are
- * intentional.
+ * In both formats tap / hold notes with the same (line, lane, judgement beat) are
+ * de-duplicated (a hold beats a tap; the longer hold wins; otherwise the first is kept). Mines
+ * and universal notes are never de-duplicated: stacked ones are intentional (mines since
+ * Kelvin 2026-10-22, 「地雷的限制不用那么多」).
  *
  * <p><b>TIDE STREAM</b> (ARCHITECTURE §19): a {@code universal} note with a positive
  * {@code duration} (beats) is a TIDE STREAM; {@code height} is its band length, as for holds.
@@ -597,8 +597,9 @@ public final class ChartMapper {
     }
 
     /**
-     * Removes tap / hold / mine notes that share (line, lane id, judgement beat) with another
-     * one. Priority: hold (longer wins) over tap over mine; equal ones keep the first.
+     * Removes tap / hold notes that share (line, lane id, judgement beat) with another one.
+     * Priority: hold (longer wins) over tap; equal ones keep the first. Mines are never removed:
+     * stacked mines and a mine on a tap's or hold's spot all stay.
      */
     private static List<Note> dedupe(List<Note> notes, Chart.LoadReport report) {
         Map<String, Integer> winner = new HashMap<>();
@@ -607,7 +608,7 @@ public final class ChartMapper {
         StringBuilder key = new StringBuilder(32);
         for (int i = 0; i < notes.size(); i++) {
             Note a = notes.get(i);
-            if (!a.type().inLane()) continue;
+            if (!a.type().inLane() || a.type() == NoteType.MINE) continue;
             key.setLength(0);
             key.append(a.line().ordinal()).append(':').append(a.laneId()).append(':')
                 .append(Float.floatToIntBits(a.judgement()));
@@ -639,7 +640,7 @@ public final class ChartMapper {
         int ra = rank(a.type());
         int rb = rank(b.type());
         if (ra != rb) return ra > rb;
-        return (a.type() == NoteType.HOLD || a.type() == NoteType.MINE) && a.duration() > b.duration();
+        return a.type() == NoteType.HOLD && a.duration() > b.duration();
     }
 
     private static int rank(NoteType t) {

@@ -324,7 +324,7 @@ final class FieldRenderer {
      * at each line easing to .16 mid-field (quadratic) inside a 10 px soft glow at .05, times the
      * brighter of the two lanes' opacity.
      *
-     * @param zoneK  zone hint strength (0 = setting off; 1 = normal; larger in the tutorial pulse)
+     * @param zoneK  zone hint strength (0 = hidden; 1 = ZONE HINT 50 %, 2 at 100 %; larger in the tutorial pulse)
      * @param introK 0..1 field intro (zone hint and separator fade-in)
      */
     void drawUnder(GameEngine e, float zoneK, float introK) {

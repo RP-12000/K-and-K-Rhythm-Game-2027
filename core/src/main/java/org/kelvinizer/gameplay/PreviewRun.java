@@ -282,7 +282,7 @@ public final class PreviewRun {
         notes.setHitPoint(st.hitPointPx);
         notes.setSyncHint(st.syncHint);
         notes.prepare(engine, field, st.approachGlow);
-        field.drawUnder(engine, st.zoneHint ? 1f : 0f, 1f);
+        field.drawUnder(engine, st.zoneHintStrength(), 1f);
         hud.drawUnder(b, SETTLED, runTime, true);
         text.start(b);
         hud.setCentreCover(0f);

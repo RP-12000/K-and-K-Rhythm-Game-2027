@@ -30,8 +30,8 @@ import org.kelvinizer.elements.Note;
  *       that shares its beat with another note ({@link Note#sharesBeat()}) carries pearls: three gold
  *       ones side by side across the middle of a DROP or STREAM head, three smaller red ones across a
  *       MINE or LANE MINE head (16:07, 「不是1个珍珠而是3个珍珠并排」); a sky TIDE's pearls turn gold; a ground TIDE wave carries a
- *       row of gold pearls, large and small in turn like the sky thread's, halfway up the wave, and (a proposal)
- *       a TIDE STREAM head the same row along the middle of its bar.</li>
+ *       row of gold pearls, large and small in turn like the sky thread's, halfway up the wave (a TIDE STREAM
+ *       head, drawn as its line's TIDE, alike).</li>
  *   <li><b>LANE MINE column</b> (DESIGN §20.2): inset, hazard stripes drifting toward the line,
  *       studs, and the gap it leaves around the other judgement line (Kelvin 2026-10-12 02:58).</li>
  * </ul>
@@ -258,9 +258,8 @@ public final class NoteShapes {
     /** Diameter of the red MINE pearl as a share of the gold head pearl's. */
     public static final float MINE_PEARL_SHARE = 0.7f;
     /**
-     * Radius of the even (large) pearls of a row (ground TIDE wave, TIDE STREAM head) at note size 1:
-     * 14 units across, the largest that stays within the outer edges of the wave's base and crest
-     * lines where the band is thinnest and fits the 18-unit TIDE STREAM head bar.
+     * Radius of the even (large) pearls of a row (ground TIDE wave) at note size 1: 14 units across, the largest
+     * that stays within the outer edges of the wave's base and crest lines where the band is thinnest.
      */
     public static final float ROW_PEARL_BIG = 7f;
     /** Radius of the odd (small) pearls of a row at note size 1 (9 units across: the sky thread's 22 : 14 ratio). */
@@ -626,11 +625,6 @@ public final class NoteShapes {
      */
     public static int t4PearlQuads(int lanes, boolean sky) {
         return beadCount(lanes) * (sky ? PEARL_QUADS - 1 : ROW_PEARL_QUADS);
-    }
-
-    /** @return quads of the row of pearls on a TIDE STREAM head over {@code lanes} lanes (the proposal). */
-    public static int barPearlQuads(int lanes) {
-        return beadCount(lanes) * ROW_PEARL_QUADS;
     }
 
     // ================================================================== LANE MINE column

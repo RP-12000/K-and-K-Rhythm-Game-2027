@@ -29,8 +29,8 @@ import java.util.Locale;
  * no copy would exist.
  */
 public final class NoteTrail {
-    /** Most copies one trail can have. */
-    public static final int MAX_TRAIL_COPIES = 32;
+    /** Most copies one trail (one segment) can have; over the frame budget every trail thins evenly. */
+    public static final int MAX_TRAIL_COPIES = 256;
     /** Default {@code alpha} (opacity of the nearest copy relative to the note). */
     public static final float DEFAULT_ALPHA = 0.6f;
     /** Default {@code fade} exponent. */

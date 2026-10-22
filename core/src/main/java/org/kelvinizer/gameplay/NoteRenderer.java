@@ -51,10 +51,9 @@ import org.kelvinizer.ui.Ui;
  * {@code SYNC_PEARL_LUSTRE} lustre and a white highlight toward the upper left of the screen); three
  * red pearls 0.7× as big the same way across a MINE or LANE MINE head; gold pearls instead of white on a sky
  * TIDE's thread, with gold glows; a row of gold pearls, large and small in turn like the sky thread's,
- * halfway up a ground TIDE's wave, riding the crest; and, as a proposal, the same row along the middle
- * of a TIDE STREAM head's bar. A note's own glows leave its pearls out (an octagonal hole each), and so do
- * the TIDE wave and bar glows beneath a note drawn over them (a DROP, STREAM or MINE on a TIDE's beat),
- * so the pearls stay true gold and red.
+ * halfway up a ground TIDE's wave, riding the crest (a TIDE STREAM head alike). A note's own glows leave its
+ * pearls out (an octagonal hole each), and so does the TIDE wave glow beneath a note drawn over it (a DROP,
+ * STREAM or MINE on a TIDE's beat), so the pearls stay true gold and red.
  *
  * <p>Mines turn with {@code angleAt} like lane notes (Kelvin 2026-10-12 03:03). A LANE MINE (DESIGN §20.2) is
  * drawn in two layers: its body in {@link #drawBands} (beneath trails, lane notes and mines): an
@@ -68,8 +67,8 @@ import org.kelvinizer.ui.Ui;
  * <p>TIDE drops use the T4 look (Kelvin 2026-10-12 04:36): a string of pearls on the sky line, a rolling wave on
  * the ground line whose crest moves with song time (frozen on pause). TIDE heads draw first in the
  * note pass, so lane notes and mines read on top of them (a joint DROP stays visible on its TIDE's
- * wave or pearls). A TIDE STREAM keeps the TIDE bar of §5.15 as its head (sky heads in the
- * {@code skySig} pearl gradient, {@code tide} diamonds) with a band behind it (§19.1): window-wide
+ * wave or pearls). A TIDE STREAM's head is its line's TIDE drop (Kelvin 2026-10-22: the pearl string on the sky
+ * line, the wave on the ground line) with a band behind it (§19.1): window-wide
  * (sky inset by {@link NoteShapes#SKY_TIDE_STREAM_INSET}), fill α .14 at the head → .08 at the
  * tail, 2 px rails at α .6 and a 4 px tail cap at α .75 in the band's colour ({@code skyTide} on the
  * sky line, {@code tide} on the ground line), two faint ripple lines scrolling toward the line; in the
@@ -144,7 +143,7 @@ final class NoteRenderer {
     private static final float FADE_IN_MS = 150f;
     /** Longest hold tail drawn (world units): more than any visible world height plus the line offset. */
     static final float MAX_TAIL_DRAW = 4000f;
-    /** TIDE bar and band inset from the window ends. */
+    /** TIDE head and band inset from the window ends. */
     static final float TIDE_INSET = 12f;
     /** Fade of a missed note (ms, DESIGN §5.8). */
     private static final float MISS_FADE_MS = 200f;
@@ -160,12 +159,6 @@ final class NoteRenderer {
     private static final float CHIP_SPLIT = 12f;
     /** Radius of the {@code disc} sprite as a share of its size ({@code Draw.disc}). */
     static final float DISC_R = 0.484f;
-    private static final Color TIDE_LEAD = new Color(0x8CFFD9B3);  // tide @ .70
-    private static final Color TIDE_TRAIL = new Color(0x8CFFD94D); // tide @ .30
-    /** Sky TIDE STREAM head at its leading edge: pearl bright (DESIGN §21.6). */
-    private static final Color SKY_TIDE_LEAD = alpha(Theme.SKY_TIDE_HEAD_BRIGHT, 0.85f);
-    /** Sky TIDE STREAM head at its trailing edge: pearl dim. */
-    private static final Color SKY_TIDE_TRAIL = alpha(Theme.SKY_TIDE_HEAD_DIM, 0.60f);
     /** Most sky STREAM ribbons and sky TIDE STREAM bands collected per frame for the knock-outs. */
     private static final int MAX_SKY = 64;
 
@@ -193,7 +186,6 @@ final class NoteRenderer {
     private final TextureRegion dot;
     private final Color col = new Color();
     private final Color col2 = new Color();
-    private final float[] gradientQuad = new float[20];
     private final Color col3 = new Color();
     private final float[] bandQuad = new float[20];
     /** Rotated nine-slice and polygon quads. */
@@ -343,10 +335,6 @@ final class NoteRenderer {
         dot = draw.softDot();
         coreU = 0.5f * (core.getU() + core.getU2());
         coreV = 0.5f * (core.getV() + core.getV2());
-    }
-
-    private static Color alpha(Color c, float a) {
-        return new Color(c.r, c.g, c.b, a);
     }
 
     /**
@@ -506,26 +494,6 @@ final class NoteRenderer {
         return glitchQuads;
     }
 
-    /** {@code Draw.rect} through the note batch (so a glitching note records it). */
-    private void rect(float x, float y, float w, float h, Color c, float alpha) {
-        float old = batch.getPackedColor();
-        batch.setColor(c.r, c.g, c.b, c.a * alpha);
-        batch.draw(core, x, y, w, h);
-        batch.setPackedColor(old);
-    }
-
-    /** {@code Draw.rectGradientV} through the note batch: a vertical gradient from {@code bottom} to {@code top}. */
-    private void rectGradientV(float x, float y, float w, float h, Color bottom, Color top, float alpha) {
-        float cb = Color.toFloatBits(bottom.r, bottom.g, bottom.b, bottom.a * alpha);
-        float ct = Color.toFloatBits(top.r, top.g, top.b, top.a * alpha);
-        float[] q = gradientQuad;
-        q[0] = x; q[1] = y; q[2] = cb; q[3] = coreU; q[4] = coreV;
-        q[5] = x; q[6] = y + h; q[7] = ct; q[8] = coreU; q[9] = coreV;
-        q[10] = x + w; q[11] = y + h; q[12] = ct; q[13] = coreU; q[14] = coreV;
-        q[15] = x + w; q[16] = y; q[17] = cb; q[18] = coreU; q[19] = coreV;
-        batch.draw(core.getTexture(), q, 0, 20);
-    }
-
     /**
      * Advances the culling window and feeds the approach glows of the next 250 ms (DESIGN §5.7
      * approach glow, §5.15 mine warning and TIDE approach) when {@code approach} is on.
@@ -617,12 +585,11 @@ final class NoteRenderer {
                     float tail = stream ? tailDraw(n, lb) : 0f;
                     if (stream && st != GameEngine.STATE_PENDING && tail <= 0f && beat > n.endBeat()) continue;
                     bandBody = stream && tail > 0f;
-                    nq = (bar ? (stream ? tideQuads(lanes) : NoteShapes.t4Quads(pattern, up)) : 0)
-                        + (bar && NoteShapes.showsPearl(n, st)
-                            ? (stream ? NoteShapes.barPearlQuads(pattern) : NoteShapes.t4PearlQuads(pattern, up)) : 0)
+                    nq = (bar ? NoteShapes.t4Quads(pattern, up) : 0)
+                        + (bar && NoteShapes.showsPearl(n, st) ? NoteShapes.t4PearlQuads(pattern, up) : 0)
                         + (bandBody ? BAND_QUADS : 0);
                     if (nq == 0) continue;
-                    far = Math.max(tideReach(stream), tail);
+                    far = Math.max(tideReach(), tail);
                     near = FLAT_CULL;
                     break;
                 }
@@ -704,20 +671,20 @@ final class NoteRenderer {
         return MINE_H * noteSize;
     }
 
-    /** @return TIDE bar thickness for the current size setting. */
+    /** @return thickness of a TIDE's notional bar (its pivot's origin sits halfway up it) at the size setting. */
     float tideHeight() {
         return 18f * noteSize;
     }
 
-    /** @return how far a TIDE head reaches behind its leading edge: the bar, or the T4 shape of a drop. */
-    float tideReach(boolean stream) {
-        return stream ? tideHeight() : NoteShapes.T4_REACH * noteSize;
+    /** @return how far a TIDE head (the T4 shape of a drop or TIDE STREAM) reaches behind its leading edge. */
+    float tideReach() {
+        return NoteShapes.T4_REACH * noteSize;
     }
 
     /**
-     * @return true when TIDE note i draws a bar in state {@code st}: a pending group (same line
-     *         and beat) draws one bar (its first member); a TIDE STREAM that runs or broke draws
-     *         its own (pinned) bar; a missed drop group keeps its one bar
+     * @return true when TIDE note i draws a head in state {@code st}: a pending group (same line
+     *         and beat) draws one head (its first member); a TIDE STREAM that runs or broke draws
+     *         its own (pinned) head; a missed drop group keeps its one head
      */
     private boolean tideBar(int i, Note n, byte st) {
         if (st == GameEngine.STATE_PENDING) return tideHead(i, n);
@@ -756,7 +723,7 @@ final class NoteRenderer {
         fadeBeat = beat;
         int frame = (int) (now * 60f);
         collectSkyRibbons(e, beat);
-        // TIDE heads first (T4 drops, TIDE STREAM bars): lane notes and mines read on top of them
+        // TIDE heads first (T4 drops and TIDE STREAM heads): lane notes and mines read on top of them
         for (int i = end - 1; i >= start; i--) {
             Note n = notes[i];
             if (n.type() != NoteType.UNIVERSAL || entry.drawFrom(i) > beat) continue;
@@ -989,7 +956,7 @@ final class NoteRenderer {
         float gcy = y + cos * h * 0.5f;
         if (sync && syncHalo()) syncFrame(gcx, gcy, w, h, rot, n.isUpper(), a);
         float pr = NoteShapes.headPearlRadius(NoteShapes.pearlRadius(noteSize), w);
-        // the glow of a TIDE beneath (a joint DROP or STREAM sits on its wave or bar) leaves the pearls out
+        // the glow of a TIDE beneath (a joint DROP or STREAM sits on its wave) leaves the pearls out
         if (pearl) rowCoverHoles(gcx, gcy, pr);
         if (heldNow) {
             int k = glows;
@@ -1629,49 +1596,9 @@ final class NoteRenderer {
 
     // ================================================================== TIDE
 
-    /** @return upper bound of the quads of one {@link #paintTide} over {@code lanes} lanes. */
-    static int tideQuads(int lanes) {
-        return 3 + lanes;
-    }
-
     /**
-     * Paints a TIDE STREAM head bar (DESIGN §5.15, §21.6) across {@code [x0, x1]} with its leading
-     * edge at {@code y}: gradient fill (ground {@code tide}, sky the {@code skySig} pearl
-     * gradient) and white leading edge, or the missed grey; ping diamonds in {@code tide} at the
-     * lane boundaries of {@code lay} (not when missed). No glow.
-     *
-     * @param jx horizontal jitter of the missed look (0 for none)
-     * @return quads submitted
-     */
-    int paintTide(float x0, float x1, float y, float th, boolean up, boolean lost, float jx,
-                  float alpha, LaneLayout lay) {
-        float y0 = up ? y - th : y;
-        if (lost) {
-            rect(x0 + jx, y0, x1 - x0, th, Theme.MISSED, 0.5f * alpha);
-        } else if (up) {
-            rectGradientV(x0, y0, x1 - x0, th, SKY_TIDE_TRAIL, SKY_TIDE_LEAD, alpha);
-        } else {
-            rectGradientV(x0, y0, x1 - x0, th, TIDE_LEAD, TIDE_TRAIL, alpha);
-        }
-        rect(x0 + jx, up ? y - 3f : y, x1 - x0, 3f, Theme.WHITE, (lost ? 0.4f : 1f) * alpha);
-        int quads = 2;
-        if (!lost) {
-            float cy = y0 + th * 0.5f;
-            Color tc = Theme.TIDE;
-            for (int k = 0; k < lay.count(); k++) {
-                if (!lay.active(k)) continue;
-                quads += diamond(tideX(lay.left(k)), cy, x0, x1, tc,
-                    0.9f * alpha * Math.max(lay.opacity(k), k > 0 ? lay.opacity(k - 1) : 0f));
-                if (k == lay.count() - 1 || !lay.active(k + 1)) {
-                    quads += diamond(tideX(lay.right(k)), cy, x0, x1, tc, 0.9f * alpha * lay.opacity(k));
-                }
-            }
-        }
-        return quads;
-    }
-
-    /**
-     * Paints a TIDE drop in the T4 look (Kelvin 2026-10-12 04:36; {@link NoteShapes}) across {@code [x0, x1]}
+     * Paints a TIDE drop or TIDE STREAM head in the T4 look (Kelvin 2026-10-12 04:36; {@link NoteShapes}) across
+     * {@code [x0, x1]}
      * with its leading edge at {@code y}. Sky: a 2u {@code skySig} thread at α .45 7u behind the
      * leading edge and {@code 3 × lanes} pearls on it, radius 11u / 7u alternating. Ground: a
      * {@code TIDE_WAVE} band (α .85) from the leading edge back to a crest at
@@ -1990,11 +1917,10 @@ final class NoteRenderer {
         boolean up = n.isUpper();
         float lineY = e.lineY(n.line());
         float y = up ? lineY - pos : lineY + pos;
-        float th = tideHeight();
         float lb = entry.look(i, beat);
         float deg = n.angleAt(lb);
         // a turned TIDE crosses the screen slanted: no cull (it is rare, and drawn only while on its way)
-        if (!NoteShapes.turned(deg) && offScreen(up, y, tideReach(stream), FLAT_CULL)) return;
+        if (!NoteShapes.turned(deg) && offScreen(up, y, tideReach(), FLAT_CULL)) return;
         float x0 = lay.windowLeft() + TIDE_INSET;
         float x1 = lay.windowRight() - TIDE_INSET;
         if (x1 <= x0) return;
@@ -2019,50 +1945,12 @@ final class NoteRenderer {
             x1 = tideHi(x0, x1);
             x0 = a;
         }
-        if (!stream) {
-            int g = glows;
-            paintTideT4(x0, x1, y, up, grey, jx, alpha, lay, NoteShapes.songSeconds(e), !lost && high, pearls,
-                sync && syncHalo());
-            // the ground wave's glow leaves out the pearls of the notes drawn over it (upright only)
-            if (!up && glows > g && greg[g] == G_V && !tideTurned) coverGlow(g);
-            return;
-        }
-        paintTide(x0, x1, y, th, up, lost, jx, alpha, lay);
-        float cy = (up ? y - th : y) + th * 0.5f;
-        int k = glows;
-        if (!lost && high) {
-            boolean held = st == GameEngine.STATE_HOLDING && e.isHoldHeld(i);
-            addGlow(G_V, (x0 + x1) * 0.5f, cy, x1 - x0, held ? 64f : 48f, 0f, up ? Theme.SKY_TIDE : Theme.TIDE,
-                (held ? 0.30f : 0.20f) * alpha);
-        }
-        if (glows > k && !tideTurned) coverGlow(k);
-        if (pearls) barPearls(lay, cy, alpha, glows > k ? (x0 + x1) * 0.5f : Float.NaN);
-        if (sync && syncHalo()) syncFrame((x0 + x1) * 0.5f, cy, x1 - x0, th, 0f, up, alpha);
-    }
-
-    /**
-     * PROPOSAL (Kelvin's words do not cover the TIDE STREAM head): a pending TIDE STREAM that
-     * shares its beat carries the ground wave's row of gold pearls, large and small in turn, along
-     * the middle ({@code cy}) of its head bar, {@link NoteShapes#beadCount} of them over the lane
-     * window, so the lane-boundary diamonds fall halfway between two pearls. With a glow centred at
-     * {@code (glowX, cy)} added last (not NaN) the glow leaves them out.
-     *
-     * @return quads submitted ({@link NoteShapes#barPearlQuads})
-     */
-    private int barPearls(LaneLayout lay, float cy, float alpha, float glowX) {
-        int n = NoteShapes.beadCount(lay.patternLanes());
-        float wl = tideLo(lay.windowLeft(), lay.windowRight());
-        float wr = tideHi(lay.windowLeft(), lay.windowRight());
-        float bs = beadStep(lay, wl, wr);
-        beadRange(lay, wl, wr, bs, n);
-        int q = 0;
-        for (int i = beadFirst; i <= beadLast; i++) {
-            float px = beadX(lay, i, n, wl, wr, bs);
-            float r = NoteShapes.rowPearlRadius(i, noteSize);
-            q += pearl(px, cy, r, NoteShapes.ROW_PEARL_RIM, Theme.SYNC_PEARL, Theme.SYNC_PEARL_RIM, null, alpha);
-            if (!Float.isNaN(glowX)) glowHole(px - glowX, 0f, r);
-        }
-        return q;
+        // a TIDE STREAM's head is its line's TIDE drop (Kelvin 2026-10-22), the band behind it drawn in drawBands
+        int g = glows;
+        paintTideT4(x0, x1, y, up, grey, jx, alpha, lay, NoteShapes.songSeconds(e), !lost && high, pearls,
+            sync && syncHalo());
+        // the ground wave's glow leaves out the pearls of the notes drawn over it (upright only)
+        if (!up && glows > g && greg[g] == G_V && !tideTurned) coverGlow(g);
     }
 
     /** First and last pearl index of the row {@link #beadRange} set last. */
@@ -2232,7 +2120,7 @@ final class NoteRenderer {
             holeX1 = sx1;
         }
         boolean held = st == GameEngine.STATE_HOLDING && e.isHoldHeld(i);
-        paintTideBand(x0, x1, y, tail, up, held ? BAND_HELD : 1f, grey, now, tideHeight(), alpha);
+        paintTideBand(x0, x1, y, tail, up, held ? BAND_HELD : 1f, grey, now, tideReach(), alpha);
         holes = 0;
     }
 
@@ -2250,7 +2138,7 @@ final class NoteRenderer {
      * @param mul    band opacity factor (1, {@link #BAND_HELD} while held)
      * @param grey   0..1 toward the missed grey (a broken or missed TIDE STREAM; no ripples)
      * @param ripple run seconds for the ripple phase, NaN for none (afterimage copies)
-     * @param head   bar thickness (the ripples start behind it)
+     * @param head   how far the head reaches ({@link #tideReach}; the ripples start behind it)
      * @return quads submitted (at most {@link #BAND_QUADS} − 1 without a knock-out)
      */
     int paintTideBand(float x0, float x1, float y, float len, boolean up, float mul, float grey, float ripple,
@@ -2376,14 +2264,6 @@ final class NoteRenderer {
         batch.draw(core.getTexture(), q, 0, 20);
     }
 
-    private int diamond(float x, float cy, float x0, float x1, Color c, float a) {
-        if (x < x0 || x > x1 || a <= 0.01f) return 0;
-        batch.setColor(c.r, c.g, c.b, c.a * a);
-        batch.draw(core, x - 5f, cy - 5f, 5f, 5f, 10f, 10f, 0.7071f, 0.7071f, 45f);
-        batch.setColor(Color.WHITE);
-        return 1;
-    }
-
     private void addGlow(byte region, float x, float y, float w, float h, float rot, Color c, float a) {
         if (glows >= GLOW_MAX || a <= 0.003f) return;
         if (tideTurned) { // drawn later, without the turned batch: turn it here
@@ -2438,7 +2318,7 @@ final class NoteRenderer {
 
     /**
      * Leaves the pearl of radius {@code r} at {@code (cx, cy)} out of every glow marked by {@link #coverGlow} (a
-     * TIDE's wave or bar, all drawn before the lane notes and mines) that holds it whole, so a DROP, STREAM or MINE
+     * TIDE's wave, all drawn before the lane notes and mines) that holds it whole, so a DROP, STREAM or MINE
      * drawn over a TIDE of its beat keeps its colour.
      */
     private void coverHoles(float cx, float cy, float r) {

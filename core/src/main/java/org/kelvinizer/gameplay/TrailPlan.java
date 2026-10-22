@@ -50,7 +50,7 @@ public final class TrailPlan {
     public static final int MAX_TRAIL_QUADS_HIGH = 2400;
     /** Trail quad budget per frame at particle quality Low and Off. */
     public static final int MAX_TRAIL_QUADS_LOW = 1200;
-    /** Most copies per note at quality Low / Off (DESIGN §17.1: every 2nd copy of a 32-copy trail). */
+    /** Most copies per note at quality Low / Off (DESIGN §17.1: every ⌈n/16⌉-th copy of a longer trail). */
     public static final int LOW_QUALITY_MAX_COPIES = 16;
     /** Sprites the shared atlas batch holds before it must flush ({@code ui/Draw}: {@code new SpriteBatch(4000)}). */
     public static final int BATCH_QUADS = 4000;
@@ -249,7 +249,7 @@ public final class TrailPlan {
         return k >= t.copies() ? t.copies() : (int) k;
     }
 
-    /** @return the quality stride: 1 at High; at Low / Off every 2nd copy of a trail longer than 16. */
+    /** @return the quality stride: 1 at High; at Low / Off ⌈n/16⌉ for n &gt; 16 copies (every 2nd of 32). */
     public static int qualityStride(int copies, boolean lowQuality) {
         if (!lowQuality || copies <= LOW_QUALITY_MAX_COPIES) return 1;
         return (copies + LOW_QUALITY_MAX_COPIES - 1) / LOW_QUALITY_MAX_COPIES;
@@ -328,20 +328,20 @@ public final class TrailPlan {
 
     /**
      * @return the smallest global stride {@code g} in {@code 1..}{@link NoteTrail#MAX_TRAIL_COPIES}
-     *         whose {@link #quadsAt} fits {@code budget}, or {@code MAX_TRAIL_COPIES} when even that
-     *         does not fit (each trail then keeps one copy and the renderer stops at the budget)
+     *         whose {@link #quadsAt} fits {@code budget}, or the most copies of any trail (at least
+     *         2) when even that does not fit (each trail then keeps one copy, a larger stride
+     *         changes nothing, and the renderer stops at the budget)
      */
     public static int budgetStride(int count, int[] first, int[] last, int[] copies, int[] qualityStride,
                                    int[] quadsPerCopy, int budget) {
         int total = quadsAt(count, first, last, copies, qualityStride, quadsPerCopy, 1);
         if (total <= budget) return 1;
+        int most = 2;
+        for (int i = 0; i < count; i++) most = Math.max(most, copies[i]);
         // a first guess from the ratio, then walk to the smallest stride that fits
-        int g = Math.max(2, Math.min(NoteTrail.MAX_TRAIL_COPIES, (int) Math.ceil(total / (double) budget)));
+        int g = Math.max(2, Math.min(most, (int) Math.ceil(total / (double) budget)));
         while (g > 2 && quadsAt(count, first, last, copies, qualityStride, quadsPerCopy, g - 1) <= budget) g--;
-        while (g < NoteTrail.MAX_TRAIL_COPIES
-            && quadsAt(count, first, last, copies, qualityStride, quadsPerCopy, g) > budget) {
-            g++;
-        }
+        while (g < most && quadsAt(count, first, last, copies, qualityStride, quadsPerCopy, g) > budget) g++;
         return g;
     }
 }

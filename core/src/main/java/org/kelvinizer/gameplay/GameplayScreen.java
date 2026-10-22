@@ -132,6 +132,8 @@ public class GameplayScreen extends KkScreen<Main> {
     private boolean strayDots;
     private boolean showTouches;
     private float lastBeatFloor = Float.NaN;
+    /** Frame of the last mine sound: stacked mines touched together play it once. */
+    private long mineSoundFrame = -1L;
     private float abyssT = -10f;
 
     // pause state (field names read by the screenshot tests)
@@ -564,10 +566,10 @@ public class GameplayScreen extends KkScreen<Main> {
         return false;
     }
 
-    /** The zone hint's strength for {@link FieldRenderer#drawUnder}: 1 with ZONE HINT on, up to α .25 in a pulse. */
+    /** The zone hint's strength for {@link FieldRenderer#drawUnder}: 1 at ZONE HINT 50 %, up to α .25 in a pulse. */
     private float zoneStrength() {
         float base = FieldRenderer.ZONE_HINT_A;
-        float a = settings.zoneHint ? base : 0f;
+        float a = base * settings.zoneHintStrength();
         float pulse = zoneHintPulse();
         if (pulse > 0f) a = Math.max(a, base + (0.25f - base) * pulse);
         return a / base;
@@ -673,7 +675,10 @@ public class GameplayScreen extends KkScreen<Main> {
                     hud.judgement(Judgement.LOST, 0f, ev.x, line, ly, runTime);
                     break;
                 case GameEvent.MINE:
-                    game.audio().playMine(); // optional Sounds/mine.* (DESIGN §5.15), silent when absent
+                    if (Gdx.graphics.getFrameId() != mineSoundFrame) {
+                        mineSoundFrame = Gdx.graphics.getFrameId();
+                        game.audio().playMine(); // optional Sounds/mine.* (DESIGN §5.15), silent when absent
+                    }
                     feedback.mineShock(ev.touchX, ly, runTime);
                     field.flash(line, ev.lane, true, runTime);
                     hud.mineBreak();

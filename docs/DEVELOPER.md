@@ -123,7 +123,7 @@
 | `FadeShader` | 包内。整体淡化：在 SpriteBatch 默认着色器上再乘一个透明度，夹在 `begin` 和 `end` 之间画的东西整体变淡（暂停后继续的倒数里谱面淡入用）。第一次用时编译，编不过就什么也不改。 |
 | `Field` | 场地拉伸：谱面按 1920 × 1200 写（按 1920 × 1080 写的旧谱面读取时换算，`ChartMapper.fromFrame1080`），游戏时参考画面的中心 (960, 600) 对准屏幕中心，x 乘 `kx = worldW / 1920`、y 乘 `ky = worldH / 1200`（16:10 屏幕正好是 1，16:9 是 0.9）。引擎拉伸判定线和轨道窗口，渲染把到线的距离和尾巴长度乘 `ky`，判定区是 ±480·`ky`（上下各约半屏；画面上的判定带是 ±120·`ky`，见 `Field.bandHalf`）。音符厚度、文字、波纹和四角 HUD 不拉伸。`GameplayScreen` 加载时和每帧按视口设置；默认 1（无头测试不受影响）。 |
 | `FeedbackLayer` | 包内。判定线附近的短暂反馈：“轨道上”显示的判定字（含碰到水雷的红色 LOST）、触摸接触环、ECHO 小箭头、水雷冲击环。 |
-| `FieldRenderer` | 包内。两条判定线和轨道区：线、刻度、全高的轨道分隔线、轨道发光、TIDE 命中时整条线的涌起（`swell`）、判定区提示（从线往外到 ±0.4 屏高的渐变，线上的不透明度 `ZONE_HINT_A` 0.07）。 |
+| `FieldRenderer` | 包内。两条判定线和轨道区：线、刻度、全高的轨道分隔线、轨道发光、TIDE 命中时整条线的涌起（`swell`）、判定区提示（从线往外到 ±0.4 屏高的渐变，线上的不透明度 `ZONE_HINT_A` 0.07，再乘设置里判定区提示的 `zoneHintStrength()`：50% 是 1，100% 是 2，0 不画）。 |
 | `GameEngine` | 一局的模型：歌曲时间、触摸和按键输入、判定（TIDE 组、联合判定、hold 和 TIDE STREAM 的按住规则）、水雷和 LANE MINE（和同轨 note 撞在一起时 note 优先）、计分、事件流、暂停和恢复（`startCountIn` 让暂停中的音乐在倒数时静音地先放起来）、自动播放。纯 Java，不碰 GL，加载后不分配内存。 |
 | `GameEvent` | 引擎事件流里的一条：HIT、HOLD_START、HOLD_END、LOST、MINE、EMPTY，加上标志（如 `FLAG_JOINT` 联合判定、`FLAG_LANE_MINE` 轨道水雷接触）。画面按它播放特效和文字。 |
 | `GameKeys` | 桌面键位：两排各 10 个键对应两条线的 ±1..±5 轨道，G/H、T/Y 对应插入的 0 号轨，空格只判定下线的 TIDE。 |
@@ -213,7 +213,7 @@
 | `FirstRunScreen` | 首次设置三步（`COMFORT` / `AUDIO` / `HIT`）：COMFORT（故障强度、减少动态 / 闪烁）、延迟校准（`CalibrationPanel` 放在 1400 × 700 的卡片里，「应用」进下一步）、目押校准（`HitPointPanel` 放在同一张卡片里，「应用」进教程）。没有头像和名字那一步：新玩家用默认名和建档时的随机头像（`ProfileStore` 建的）。没有标题栏和返回键，每一步的卡片放在屏幕正中（`cardY`）。 |
 | `ProfileScreen` | 玩家档案：左栏 `shell/ProfileHeader`（头像、名字、贝壳、深度），右栏 STATS / DST 10 / RECENT / PLAYER 四个标签页 |
 | `ResultScreen` | 结算画面：用 `screens/result` 的组件按时间线播放成绩；RETRY / CONTINUE、谱面延时提示和明细弹窗也在这里 |
-| `VisualsScreen` | 游戏界面（GAMEPLAY VISUALS）：设置 → 视觉 → 调整… 打开的独立画面，像校准画面一样，返回回到视觉页。中间是 `shell/LivePreview` 大预览（`gameplay/PreviewRun` 自己打一局），下面一条「判定字样」（ECHO、RESONANCE、LOST 按故障强度轮流闪）；左列「画面」（背景亮度、故障效果强度、减少闪烁、粒子质量），右列「音符与判定」（按键缩放、多押辅助、判定位置、FC/AR 指示、判定区提示）。设置行竖排（`SettingRow.setStacked`），两列用 `SettingsPage.setSpread` 排到底，放不下时缩小而不滚动；列宽、留白等数字在类开头的常量里 |
+| `VisualsScreen` | 游戏界面（GAMEPLAY VISUALS）：设置 → 视觉 → 调整… 打开的独立画面，像校准画面一样，返回回到视觉页。中间是 `shell/LivePreview` 大预览（`gameplay/PreviewRun` 自己打一局），下面一条「判定字样」（ECHO、RESONANCE、LOST 按故障强度轮流闪）；左列「画面」（背景亮度、故障效果强度、减少闪烁、粒子质量），右列「音符与判定」（按键缩放、多押辅助、判定位置、FC/AR 指示、判定区提示（0–100% 拖动条，默认 50%）。设置行竖排（`SettingRow.setStacked`），两列用 `SettingsPage.setSpread` 排到底，放不下时缩小而不滚动；列宽、留白等数字在类开头的常量里 |
 | `SettingsScreen` | 设置：AUDIO、VISUAL、GAMEPLAY、OTHER 四页（中文 音频、视觉、游玩、其他），每页的行在 `buildAudio` … `buildOther` 里建立。AUDIO：谱面延时（`SliderRow`，–10 / –1 / +1 / +10 微调，三行说明 `OFFSET_DESC`、`OFFSET_EARLY`、`OFFSET_LATE`，左边「校准…」打开 `CalibrationScreen`）、音频预设、音乐音量、打击音效音量、界面音效音量（`UI_NONE`，没有界面音效时一直灰着），各行用 `SettingsPage.setSpreadCentred` 平分高度。VISUAL：目押校准（排法同谱面延时，说明 `HIT_DESC`、`HIT_EDGE`、`HIT_MIDDLE`，「校准…」打开 `HitPointScreen`）、游戏界面（「调整…」打开 `VisualsScreen`）、减少动态、背景细节、背景亮度、界面缩放、额外边距、显示帧率。GAMEPLAY：过早 / 过晚提示（`ChipsRow`：RESONANCE、ECHO 可多选）、显示毫秒、偏差条、暂停方式、显示触控、震动，一页放得下不滚动。OTHER：语言、备份存档、重置记录（按住 2 秒后弹出 `shell/ResetDialog`，确认并输入玩家名以后才调用 `ProfileStore.resetRecords`）、新手教程、开源许可证（VIEW 打开 `buildLicenses` 的许可证页，数据在 `shell/Licenses`，带 VIEW 的条目用 `showLicense` 显示全文），最后一行是 `InfoRow.brand`（左边 K & K，右边版本号），它占满剩下的高度，所以 OTHER 不滚动。设置里去掉的几项由 `Settings.sanitize` 固定在默认值 |
 | `WelcomeScreen` | 欢迎画面：开场动画、K & K 标志、TAP ANYWHERE TO START、左下角的玩家切换。没有设置入口，设置从地图进 |
 

@@ -42,7 +42,8 @@ import org.kelvinizer.ui.Ui;
  *       stacked} rows. SCREEN: BACKGROUND BRIGHTNESS (the game's, shown as {@code 1 − backgroundDim}), GLITCH
  *       INTENSITY (detents 0 / 35 / 60 / 100 %), REDUCE FLASHING and the device's PARTICLE QUALITY. NOTES &amp;
  *       JUDGEMENTS: NOTE SCALE, MULTI-PRESS ASSIST, JUDGEMENT POSITION, FC / AR INDICATOR (the game's score colour)
- *       and ZONE HINT; APPROACH GLOW has no row since 16:19 and stays on. Each column is as wide
+ *       and ZONE HINT (a 0–100 % slider since 2026-10-22, 50 % the old switch's ON); APPROACH GLOW has no row since
+ *       16:19 and stays on. Each column is as wide
  *       as leaves the preview the screen's shape, within 380–500 × UI scale (460 at least in English, whose labels
  *       are longer); when the rows do not fit the height (large UI scale on a phone) they are laid out at a smaller
  *       scale instead of scrolling.</li>
@@ -255,19 +256,21 @@ public class VisualsScreen extends ShellScreen {
                     diverChanged();
                 }
             }));
-        p.add(new ToggleRow(game, Lang.of("ZONE HINT", "判定区提示"),
-            Lang.of("FAINT TINT ON EACH TOUCH ZONE", "给每个触控区淡淡着色"), false, new ToggleRow.Value() {
+        // a slider instead of the switch (Kelvin 2026-10-22 17:17: 「拖到0就是不显示。现在的开状态默认是50%」)
+        p.add(new SliderRow(game, Lang.of("ZONE HINT", "判定区提示"),
+            Lang.of("TINT ON EACH TOUCH ZONE · 0 % HIDES IT", "给每个触控区着色 · 拖到 0 不显示"), false, 0f, 1f, 0.01f,
+            100f, true, false, null, new SliderRow.Value() {
                 @Override
-                public boolean get() {
-                    return s().zoneHint;
+                public float get() {
+                    return s().zoneHintOpacity;
                 }
 
                 @Override
-                public void set(boolean on) {
-                    s().zoneHint = on;
-                    diverChanged();
+                public void set(float v, boolean finished) {
+                    s().zoneHintOpacity = v;
+                    if (finished) diverChanged();
                 }
-            }));
+            }).setDetents(0f, Settings.ZONE_HINT_DEFAULT, 1f));
         // SHOW TOUCHES moved to GAMEPLAY (Kelvin 2026-10-18 19:52): the preview plays itself, so it has nothing to show
     }
 

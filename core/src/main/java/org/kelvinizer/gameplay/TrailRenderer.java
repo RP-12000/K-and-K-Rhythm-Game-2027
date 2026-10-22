@@ -59,7 +59,7 @@ final class TrailRenderer {
     private static final float MINE_PASS_FADE_MS = 120f;
     /** Fade of a touched mine (ms). */
     private static final float MINE_TOUCH_FADE_MS = 160f;
-    /** TIDE bar inset from the window edges (as the live bar). */
+    /** TIDE head and band inset from the window edges (as the live TIDE). */
     private static final float TIDE_INSET = 12f;
     /** Hysteresis: a lower global stride is taken only when it needs less than this share of the budget. */
     private static final float STRIDE_RELAX = 0.85f;
@@ -229,9 +229,9 @@ final class TrailRenderer {
 
     /**
      * A note draws its trails when one of them has visible copies; of the TIDE drops of a group
-     * (same line and beat) only the first member with such a trail does, as only one bar is drawn
+     * (same line and beat) only the first member with such a trail does, as only one head is drawn
      * for the group. A TIDE STREAM has its own band, so it always draws its own trails (band, tail
-     * and bar).
+     * and head).
      */
     private boolean eligible(int i) {
         Note n = notes[i];
@@ -417,8 +417,8 @@ final class TrailRenderer {
             case HOLD: return NoteRenderer.HOLD_QUADS;
             case MINE: return n.isLaneMine() ? NoteRenderer.LANE_MINE_COPY_QUADS : NoteRenderer.MINE_QUADS;
             case UNIVERSAL:
-                return n.isTideStream() ? NoteRenderer.tideQuads(geo.laneCount()) + NoteRenderer.BAND_QUADS
-                    : NoteShapes.t4Quads(geo.patternLanes(), n.isUpper());
+                return NoteShapes.t4Quads(geo.patternLanes(), n.isUpper())
+                    + (n.isTideStream() ? NoteRenderer.BAND_QUADS : 0);
             default: return NoteRenderer.TAP_QUADS;
         }
     }
@@ -497,7 +497,7 @@ final class TrailRenderer {
                 break;
             }
             case UNIVERSAL: {
-                float far = Math.max(painter.tideReach(n.isTideStream()), Math.min(g.tail, NoteRenderer.MAX_TAIL_DRAW));
+                float far = Math.max(painter.tideReach(), Math.min(g.tail, NoteRenderer.MAX_TAIL_DRAW));
                 // as the live TIDE: a turned one crosses the screen slanted and is not culled
                 boolean turned = NoteShapes.turned(g.rot - (up ? 180f : 0f));
                 if (!turned && NoteRenderer.offScreen(up, g.y, far, NoteRenderer.FLAT_CULL)) return 0f;
@@ -607,10 +607,10 @@ final class TrailRenderer {
     }
 
     /**
-     * A TIDE copy (path only: a level copy would coincide with the live bar, see {@link TrailPlan}).
-     * A TIDE drop copy is its T4 shape (no glow), its wave at the moment's song time; a missed one
-     * greys and fades like a DROP copy. A TIDE STREAM copy is its band (no ripples, no knock-out),
-     * tail cap and bar of the moment; it greys like a hold when the stream was missed (its moments
+     * A TIDE copy (path only: a level copy would coincide with the live head, see {@link TrailPlan}).
+     * Its head is the T4 shape (no glow), its wave at the moment's song time; a missed drop copy
+     * greys and fades like a DROP copy. A TIDE STREAM copy adds its band (no ripples, no knock-out)
+     * and tail cap of the moment; it greys like a hold when the stream was missed (its moments
      * end at the judgement, so a copy is never of a held or broken stream).
      */
     private int copyTide(GameEngine e, int i, Note n, int k, int j, int stride, float s, float beat) {
@@ -641,16 +641,14 @@ final class TrailRenderer {
         t0 = painter.tideLo(bx0, bx1);
         bx1 = painter.tideHi(bx0, bx1);
         bx0 = t0;
-        int q;
-        if (!stream) {
-            float seconds = (float) (chart.beatToMs(s) / 1000.0);
-            q = painter.paintTideT4(x0, x1, g.y, up, grey, 0f, a, g.layout, seconds, false);
-        } else {
+        int q = 0;
+        if (stream) {
             float tail = Math.min(g.tail, NoteRenderer.MAX_TAIL_DRAW);
-            q = painter.paintTideBand(bx0, bx1, g.y, tail, up, 1f, grey, Float.NaN, painter.tideHeight(), a);
+            q += painter.paintTideBand(bx0, bx1, g.y, tail, up, 1f, grey, Float.NaN, painter.tideReach(), a);
             q += painter.paintTideCap(bx0, bx1, g.y, tail, up, grey, a);
-            q += painter.paintTide(x0, x1, g.y, painter.tideHeight(), up, lost, 0f, a, g.layout);
         }
+        float seconds = (float) (chart.beatToMs(s) / 1000.0);
+        q += painter.paintTideT4(x0, x1, g.y, up, grey, 0f, a, g.layout, seconds, false);
         if (turned) painter.tideTurnEnd();
         return q;
     }

@@ -110,7 +110,15 @@ public class Settings {
      * much nearer to (or further past) its line.
      */
     public float hitPointPx = HIT_POINT_DEFAULT;
-    /** Show the ±108 judgement zone hint. */
+    /** {@link #zoneHintOpacity} of the old ZONE HINT switch's ON, the default (Kelvin 2026-10-22 17:17). */
+    public static final float ZONE_HINT_DEFAULT = 0.5f;
+    /**
+     * ZONE HINT 判定区提示 0..1, a slider shown as 0–100 % since Kelvin 2026-10-22 17:17 (「判定区域提示改为可以选择透明度的
+     * 那种拖动条，拖到0就是不显示。现在的开状态默认是50%」): 0 hides the hint, {@link #ZONE_HINT_DEFAULT} draws it as the
+     * switch's ON did and 100 % twice as strong. Read it through {@link #zoneHintStrength}.
+     */
+    public float zoneHintOpacity = ZONE_HINT_DEFAULT;
+    /** The ZONE HINT switch until 2026-10-22, kept for old saves: one with it off loads at 0 % ({@link #sanitize}). */
     public boolean zoneHint = true;
     /** Approach glow on notes (always on since 2026-10-18 16:19: no row, its effect was too faint to choose). */
     public boolean approachGlow = true;
@@ -173,6 +181,11 @@ public class Settings {
         return j == Judgement.RESONANCE && earlyLateResonance() && !Judgement.isPerfect(dtMs);
     }
 
+    /** @return the zone hint's strength against the old switch's ON: 0 hidden, 1 at 50 %, 2 at 100 %. */
+    public float zoneHintStrength() {
+        return zoneHintOpacity / ZONE_HINT_DEFAULT;
+    }
+
     /** Clamps every value into its valid range (after loading untrusted JSON). */
     public void sanitize() {
         // no rows since Kelvin 2026-10-18 14:29: hit sounds on judgement only, song previews, menu music and the
@@ -190,6 +203,10 @@ public class Settings {
         noteSizeScale = clamp(noteSizeScale, 0.8f, 1.3f);
         hitPointPx = Float.isNaN(hitPointPx) ? HIT_POINT_DEFAULT : Math.round(clamp(hitPointPx, HIT_POINT_MIN,
             HIT_POINT_MAX));
+        // ZONE HINT was a switch until Kelvin 2026-10-22 17:17: a save with it off loads at 0 %, ON at the default
+        if (!zoneHint) zoneHintOpacity = 0f;
+        zoneHint = true;
+        zoneHintOpacity = Float.isNaN(zoneHintOpacity) ? ZONE_HINT_DEFAULT : clamp(zoneHintOpacity, 0f, 1f);
         strayTouches = clamp(strayTouches, 0, 2);
         syncHint = clamp(syncHint, 0, 2);
         pauseMode = clamp(pauseMode, 0, 2);
@@ -215,6 +232,7 @@ public class Settings {
         s.backgroundDim = backgroundDim;
         s.noteSizeScale = noteSizeScale;
         s.hitPointPx = hitPointPx;
+        s.zoneHintOpacity = zoneHintOpacity;
         s.zoneHint = zoneHint;
         s.approachGlow = approachGlow;
         s.fcArIndicator = fcArIndicator;
