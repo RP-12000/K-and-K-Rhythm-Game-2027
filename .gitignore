@@ -171,3 +171,17 @@ Thumbs.db
 /_incoming/
 /_old_*/
 /_backup_*/
+
+## Music is not in the repository (README §5 says where each file goes)
+/assets/Charts/*/*.mp3
+/assets/Charts/*/*.ogg
+/assets/Charts/*/*.wav
+/assets/Audio/*.mp3
+/assets/Audio/*.ogg
+/assets/Audio/*.wav
+/assets/Introduction/*.mp3
+/assets/Introduction/*.ogg
+/assets/Introduction/*.wav
+/assets/background.mp3
+/assets/background.ogg
+/assets/background.wav

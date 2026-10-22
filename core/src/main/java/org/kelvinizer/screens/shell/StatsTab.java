@@ -4,6 +4,7 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.Batch;
 import com.badlogic.gdx.utils.Align;
 import org.kelvinizer.Main;
+import org.kelvinizer.library.Difficulty;
 import org.kelvinizer.profile.Depth;
 import org.kelvinizer.profile.Profile;
 import org.kelvinizer.ui.Anim;
@@ -18,14 +19,15 @@ import java.util.Arrays;
 
 /**
  * 玩家档案的 STATS 标签页（Kelvin 2026-10-17 14:24 改版，14:41、14:47 和 15:25 再改）：第一排是四个难度开关，只写难度名
- * （SURFACE / SHALLOW / DEEP / ABYSS，可以同时点亮几个看合计，至少亮一个，只剩一个亮着时点它不会灭）；
+ * （SURFACE / SHALLOW / DEEP / ABYSS，打开时只亮地图上选中的难度，可以再点亮几个看合计，至少亮一个，只剩一个亮着时点它不会灭）；
  * 第二排是点亮的难度合计：通过（D 及以上）的谱面数和这些难度一共几张谱（13/31）、FULL COMBO 和 ALL RESONANCE 的谱面数；下面一直到屏幕底部是这些谱的
  * 最高分直方图，样子和结算画面的判定时间分布图一样（每 100 万分一格，上下对称，96M 及以上青色、以下紫色，
  * 扫线扫过时升起，μ 是平均分）。游玩次数和时长挪到了左栏，下潜曲线挪到了 TOP 10 页。
  *
  * <p>STATS (DESIGN §23.8; Kelvin 2026-10-17 14:24, 14:41, 14:47, 15:25). Row one: four difficulty
  * toggles showing only the name (in the difficulty colour, with a lit lamp when on); any combination
- * can be lit but at least one: tapping the last lit toggle only shakes it. All four start lit. Row
+ * can be lit but at least one: tapping the last lit toggle only shakes it. Each time the profile opens, only the
+ * map's selected difficulty is lit (Kelvin 2026-10-21 20:15; all four before). Row
  * two, summed over the lit difficulties with a stripe of their colours: CHARTS CLEARED (grade D or
  * better) out of their charts ({@code 13/31}; at 15:25 the toggles' {@code 6/9 PLAYED} gave way to it),
  * FULL COMBOS and ALL RESONANCE. Below, down to the bottom of the tab, BEST SCORES: the lit
@@ -54,9 +56,9 @@ public final class StatsTab extends ProfileTab {
     private static final String[] TICK_TEXT = {"60M", "70M", "80M", "90M", "96M", "100M"};
 
     private DiverStats stats;
-    /** Lit difficulties (by ordinal): all four at first, kept while the app runs. */
-    private final boolean[] lit = {true, true, true, true};
-    private int litCount = DiverStats.DIFFS;
+    /** Lit difficulties (by ordinal): the map's selected one each time the profile opens ({@link #lightOnly}). */
+    private final boolean[] lit = {true, false, false, false};
+    private int litCount = 1;
     /** Seconds since the last toggle (row two fades in, the trace sweeps again). */
     private float sinceSwitch = 10f;
     private final Tappable[] diffTaps = new Tappable[DiverStats.DIFFS];
@@ -85,6 +87,13 @@ public final class StatsTab extends ProfileTab {
             t.setVisible(false);
             diffTaps[d] = t;
         }
+    }
+
+    /** Lights only difficulty {@code d} (SURFACE when null): the profile opens on the map's selected one. */
+    public void lightOnly(Difficulty d) {
+        int o = d != null ? d.ordinal() : 0;
+        for (int i = 0; i < lit.length; i++) lit[i] = i == o;
+        litCount = 1;
     }
 
     /** Lights or darkens difficulty {@code d}; the last lit one stays lit and shakes. */

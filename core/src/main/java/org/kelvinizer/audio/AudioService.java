@@ -22,8 +22,9 @@ import org.kelvinizer.profile.Settings;
  * <ul>
  *   <li><b>MENU</b>: {@code background.(ogg|mp3|wav)} loop, 0.6 s fade-in, {@link #duckMenu},
  *       automatically silent while a preview plays.</li>
- *   <li><b>PREVIEW</b>: song music from {@code previewStartMs}, 0.6 s fade-in, 20 s window
- *       loop with 0.8 s edge fades; never more than one preview {@link Music} alive.</li>
+ *   <li><b>PREVIEW</b>: the song's preview window ({@code previewStartMs} to {@code previewEndMs}, by default
+ *       20 s from 30 % of the song) looped with a 0.6 s fade-in and 0.8 s edge fades; the window's parts before the
+ *       song's start and after its end are silent; never more than one preview {@link Music} alive.</li>
  *   <li><b>RESULT</b>: song {@code result.*} → {@code Audio/result.*} →
  *       {@code Introduction/Introduction.wav} (temporary) → silence; 1.2 s fade-in to
  *       musicVolume × 0.8; loops.</li>
@@ -42,8 +43,6 @@ public final class AudioService implements Disposable {
     public static final float MENU_FADE_IN = 0.6f;
     /** Preview fade-in (s). */
     public static final float PREVIEW_FADE_IN = 0.6f;
-    /** Preview window length (ms). */
-    public static final float PREVIEW_WINDOW_MS = 20_000f;
     /** Fade at the preview window edges (s). */
     public static final float PREVIEW_EDGE_FADE = 0.8f;
     /** Result music fade-in (s). */
@@ -68,6 +67,10 @@ public final class AudioService implements Disposable {
     private float previewWindowEndMs;
     private boolean previewLooping;
     private float previewElapsed;
+    /** Song time of the preview (ms): before 0 and past the music's end it runs on silently. */
+    private float previewClockMs;
+    /** True while the preview's music plays; false in the silent parts of the window. */
+    private boolean previewPlaying;
 
     private SongClock fileClock;
 
@@ -142,10 +145,11 @@ public final class AudioService implements Disposable {
     // ------------------------------------------------------------------ PREVIEW
 
     /**
-     * Plays a song preview from {@link SongMeta#previewStartMs()}, fading in over 0.6 s while
-     * the menu fades to 0. Replaying the current preview is a no-op. A previous preview is
-     * disposed at once, so at most one preview Music is alive (the caller fades it out
-     * during its 450 ms dwell with {@link #stopPreview(float)}).
+     * Plays a song preview from {@link SongMeta#previewStartMs()} to {@link SongMeta#previewEndMs()} and loops it,
+     * fading in over 0.6 s while the menu fades to 0. A start before 0 waits silently for the song's start, and an
+     * end past the music's end waits silently for the window's end, never wrapping to the song's start (Kelvin
+     * 2026-10-21). Replaying the current preview is a no-op. A previous preview is disposed at once, so at most one
+     * preview Music is alive (the caller fades it out during its 450 ms dwell with {@link #stopPreview(float)}).
      */
     public void playPreview(SongMeta song) {
         if (song == null || song.music() == null || !previewOn()) return;
@@ -156,21 +160,28 @@ public final class AudioService implements Disposable {
             previewSong = null;
             return;
         }
-        previewWindowStartMs = Math.max(0f, song.previewStartMs());
-        float end = previewWindowStartMs + PREVIEW_WINDOW_MS;
-        if (song.durationMs() > 0f) end = Math.min(end, song.durationMs() - 100f);
-        if (end <= previewWindowStartMs + 2000f) {
-            previewWindowStartMs = 0f;
-            end = song.durationMs() > 0f ? song.durationMs() - 100f : PREVIEW_WINDOW_MS;
-        }
-        previewWindowEndMs = end;
+        previewWindowStartMs = song.previewStartMs();
+        previewWindowEndMs = song.previewEndMs();
         previewLooping = false;
-        previewElapsed = 0f;
         preview.fade = 0f;
         preview.edge = 1f;
         preview.fadeTo(1f, PREVIEW_FADE_IN);
-        preview.play();
-        preview.seek(previewWindowStartMs);
+        startPreviewPass();
+    }
+
+    /** Starts one pass of the preview window: the music from the window's start, or silence until the song's start. */
+    private void startPreviewPass() {
+        previewClockMs = previewWindowStartMs;
+        previewElapsed = 0f;
+        float dur = previewSong != null ? previewSong.durationMs() : 0f;
+        previewPlaying = previewWindowStartMs >= 0f && (dur <= 0f || previewWindowStartMs < dur);
+        if (previewPlaying) {
+            // play() before setPosition(): desktop ignores seeks on a stopped stream.
+            preview.play();
+            preview.seek(previewWindowStartMs);
+        } else if (preview.music.isPlaying()) {
+            preview.music.stop();
+        }
     }
 
     /** Fades the preview out over {@code seconds} and disposes it (menu returns automatically). */
@@ -187,20 +198,29 @@ public final class AudioService implements Disposable {
     private void updatePreviewWindow(float delta) {
         if (preview.music == null || preview.paused) return;
         previewElapsed += delta;
-        float pos = preview.music.getPosition() * 1000f;
+        if (previewPlaying && previewElapsed > 1f && !preview.music.isPlaying()) previewPlaying = false;
+        if (previewPlaying) {
+            previewClockMs = preview.music.getPosition() * 1000f;
+        } else {
+            // the silent parts of the window: the clock runs on its own while the music waits at the song's start
+            float before = previewClockMs;
+            previewClockMs += delta * 1000f;
+            if (preview.music.isPlaying()) preview.music.stop();
+            if (before < 0f && previewClockMs >= 0f) {
+                preview.play();
+                previewPlaying = true;
+                previewElapsed = 0f;
+            }
+        }
         if (!previewLooping) {
-            boolean ended = previewElapsed > 1f && !preview.music.isPlaying();
-            if (pos >= previewWindowEndMs - PREVIEW_EDGE_FADE * 1000f || ended) {
+            if (previewClockMs >= previewWindowEndMs - PREVIEW_EDGE_FADE * 1000f) {
                 previewLooping = true;
                 preview.edgeTo(0f, PREVIEW_EDGE_FADE);
             }
         } else if (preview.edge <= 0f) {
-            // play() before setPosition(): desktop ignores seeks on a stopped stream.
-            if (!preview.music.isPlaying()) preview.music.play();
-            preview.music.setPosition(previewWindowStartMs / 1000f);
             preview.edgeTo(1f, PREVIEW_EDGE_FADE);
             previewLooping = false;
-            previewElapsed = 0f;
+            startPreviewPass();
         }
     }
 

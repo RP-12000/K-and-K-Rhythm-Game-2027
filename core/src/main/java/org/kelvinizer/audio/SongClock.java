@@ -47,17 +47,17 @@ import com.badlogic.gdx.utils.Disposable;
  *       2026-10-15). After a seek its position holds until the sound really starts. An MP3 with a
  *       table of contents plays from {@link Mp3Info#seekableCopy a copy without it}: Android seeks
  *       by that coarse table and landed up to a second away from the frozen time (2026-10-21).
- *       The gameplay countdown {@link #primeResume primes} the resume: the music starts
- *       {@link #resumeLeadMs its resume latency} before the count ends and the clock runs on at once
- *       when it does, not following the positions of the first second. A resume that was not primed
- *       holds the clock at the frozen time until the reported position moves (at most
- *       {@link #MAX_START_LEAD_MS}), so the chart does not run ahead while the player starts sounding
- *       again. After any resume the clock catches up with the music by running at most
- *       {@link #RESUME_SLEW} faster or slower, never by a jump (only an error beyond
- *       {@link #SETTLE_GROSS_MS} re-anchors): a phone can sound again sooner or later after a resume
- *       than at a song start, and the chart jumped about a second after the count (Kelvin
- *       2026-10-21 13:13). Each re-seeked resume measures that latency ({@link #resumeLatencyMs()},
- *       kept per device), and the next one is primed by it.</li>
+ *       On Android the gameplay countdown {@link #startCountIn runs the music in}: it plays muted from the
+ *       countdown's length before the frozen time while time stays frozen; the clock runs along with it
+ *       ({@link #countInMs()}) as at a song start and settles on its positions, so the run goes on from the frozen
+ *       time in step with the music, which sounds at full volume from there (Kelvin 2026-10-21 15:09: the countdown
+ *       as before, only the music already running unheard; starting it just its latency before the count's end
+ *       still left the chart to catch up, and once it had jumped, 13:13). A resume without a
+ *       count-in (desktop, where it is exact) holds the clock at the frozen time until the reported
+ *       position moves (at most {@link #MAX_START_LEAD_MS}), so the chart does not run ahead while the
+ *       player starts sounding again. After any resume the clock catches up with the music by running
+ *       at most {@link #RESUME_SLEW} faster or slower, never by a jump (only an error beyond
+ *       {@link #SETTLE_GROSS_MS} re-anchors).</li>
  *   <li>The audio position is only trusted while {@code music.isPlaying()}: without an audio
  *       device, or after the stream ended, time keeps running on nanoTime.</li>
  * </ul>
@@ -139,18 +139,14 @@ public final class SongClock implements Disposable {
     private boolean resumeHold;
     private long resumeNanos;
     private double resumeAudioMs;
-    /** {@link #primeResume()} started the music while time is still frozen; nanoTime of its play(), its lead. */
-    private boolean primed;
-    private long primedNanos;
-    private float primedLeadMs;
-    /** How long a re-seeked song takes to sound again (ms, 0 = not known yet); learned from every such resume. */
-    private float resumeLatencyMs;
     /** After a resume: corrections run the clock a little faster or slower ({@link #RESUME_SLEW}), never jump. */
     private boolean resumeSlew;
-    /** The resume being measured: the music restarted at this nanoTime from this song time. */
-    private boolean measuringResume;
-    private long resumePlayNanos;
-    private double resumeFromMs;
+    /**
+     * A {@link #startCountIn count-in} runs: the clock runs with the muted music while the frozen time
+     * {@link #countInEndMs} is what {@link #nowMs()} reports.
+     */
+    private boolean countIn;
+    private double countInEndMs;
 
     private float volume = 1f;
     private float fadeFrom;
@@ -285,40 +281,62 @@ public final class SongClock implements Disposable {
     }
 
     /**
-     * How long before a scheduled {@link #resume()} to call {@link #primeResume()} (ms) where a resume re-seeks the
-     * song (Android): the {@link #resumeLatencyMs() resume latency} once known, else the start latency in use; else 0
-     * (nothing to prime).
+     * Runs the music of a paused song in through the gameplay countdown (Kelvin 2026-10-21 15:09): it plays muted from
+     * {@code ms} before the frozen time while {@link #nowMs()} stays frozen. The clock runs along with it
+     * ({@link #countInMs()}) as at a song start and settles on its positions, so the {@link #resume()} due once it
+     * reaches the frozen time ({@link #countInLeftMs()}, {@code ms} after this call) goes on in step with it, at full
+     * volume. A {@link #pause()} before then stops the music again at the frozen time. Within {@code ms} of the song
+     * start the music starts from its beginning on the way; past its end, or without an audio device, the count runs
+     * on time.
+     *
+     * @return false when there is nothing to run in (desktop, where a resume is exact and an MP3 cannot seek back
+     *         quickly; looping or no music; still in the lead-in): resume plainly then
      */
-    public float resumeLeadMs() {
-        if (!musicStarted || music == null || music.isLooping() || !reseekOnResume()) return 0f;
-        return resumeLatencyMs > 0f ? resumeLatencyMs : lead();
+    public boolean startCountIn(float ms) {
+        if (running || music == null || !musicStarted || music.isLooping() || !reseekOnResume() || !(ms > 0f)) {
+            return false;
+        }
+        countIn = true;
+        running = true;
+        countInEndMs = anchorSongMs;
+        anchorSongMs -= ms;
+        anchorNanos = time.nanoTime();
+        resumeHold = false;
+        resumeSlew = false; // nobody hears the count-in's time: it may take the music at once
+        measuringStart = false;
+        pendingSeekMs = -1f;
+        music.setVolume(0f);
+        // the music starts its start latency ahead of the count's time, so it sounds where the clock is
+        float lead = lead();
+        double target = anchorSongMs + lead + audioDelayMs;
+        if (target < 0.0) {
+            // the song starts within the count: its lead-in runs again and update() starts the music from the
+            // beginning on the way, as at a song start
+            music.setPosition(0f);
+            musicStarted = false;
+            return true;
+        }
+        if (durationMs > 0f && target >= durationMs) return true;
+        music.setPosition((float) (target / 1000.0));
+        music.play();
+        if (!music.isPlaying()) return true;
+        // the positions of its first second are not followed (only a gross error), as at a song start
+        settleEndNanos = time.nanoTime() + (long) (SETTLE_MS * 1e6);
+        lastAudioMs = audioMs();
+        return true;
     }
 
     /**
-     * Sets how long a re-seeked song takes to sound again (ms; the device's stored measurement, 0 = not known):
-     * the countdown {@link #primeResume() primes} a resume this early. Every primed resume refines it.
+     * @return the song time a {@link #startCountIn count-in} has reached (ms): it runs along with its music up to the
+     *         frozen time and on; NaN without one
      */
-    public void setResumeLatencyMs(float ms) {
-        resumeLatencyMs = Float.isNaN(ms) ? 0f : Math.max(0f, Math.min(MAX_START_LEAD_MS, ms));
+    public double countInMs() {
+        return countIn ? anchorSongMs + (time.nanoTime() - anchorNanos) / 1e6 : Double.NaN;
     }
 
-    /** @return the resume latency in use (ms; 0 = not known): the stored one, refined by the resumes measured since */
-    public float resumeLatencyMs() {
-        return resumeLatencyMs;
-    }
-
-    /**
-     * Restarts the music of a paused song {@link #resumeLeadMs()} before a {@link #resume()} that is due then, while
-     * time stays frozen: the sound comes back as the clock runs on instead of the chart waiting for it. A
-     * {@link #pause()} before that resume stops the music again. No-op unless paused mid-song with a lead.
-     */
-    public void primeResume() {
-        if (running || primed) return;
-        primedLeadMs = resumeLeadMs();
-        if (primedLeadMs <= 0f) return;
-        restartMusic();
-        primed = music.isPlaying(); // no audio device: the resume takes the plain path
-        primedNanos = time.nanoTime();
+    /** @return how long until a count-in reaches the frozen time (ms; 0 or less once there), NaN without one */
+    public double countInLeftMs() {
+        return countInEndMs - countInMs();
     }
 
     /** @return the attached music, or null. */
@@ -331,10 +349,9 @@ public final class SongClock implements Disposable {
      * {@link #start()} to run.
      */
     public void prepare(float startMs) {
-        unprime();
+        countIn = false;
         endPreroll(false);
         measuringStart = false;
-        measuringResume = false;
         resumeSlew = false;
         running = false;
         musicStarted = false;
@@ -358,8 +375,17 @@ public final class SongClock implements Disposable {
         }
     }
 
-    /** Starts (or continues) running from the current time. */
+    /** Starts (or continues) running from the current time; ends a {@link #startCountIn count-in}. */
     public void start() {
+        if (countIn) {
+            // the count-in is due: time runs on from its own, which follows the music (short of the frozen time,
+            // nowMs() holds that until it gets there); whatever error is left is caught up gently. The music
+            // sounds at full volume at once (Kelvin 2026-10-21 15:09)
+            countIn = false;
+            resumeSlew = true;
+            if (music != null && preroll != 1) music.setVolume(volume);
+            return;
+        }
         if (running) return;
         running = true;
         anchorNanos = time.nanoTime();
@@ -372,34 +398,14 @@ public final class SongClock implements Disposable {
             // frozen value until real time passes it, so time never goes back).
             if (music != null) anchorSongMs = (pendingSeekMs > 0f ? pendingSeekMs : -audioDelayMs) - lead;
             startMusic();
-        } else if (primed) {
-            // the music was started its lead ago (primeResume): time runs on from the moment its sound is due, within a
-            // frame of now (or now, so the chart never stands still a frame); the positions it reports while settling
-            // are not followed (update())
-            primed = false;
-            anchorNanos = Math.min(anchorNanos, primedNanos + (long) (primedLeadMs * 1e6));
-            settleEndNanos = primedNanos + (long) (SETTLE_MS * 1e6);
-            lastAudioMs = audioMs();
-            resumed(primedNanos);
         } else if (musicStarted && music != null) {
             restartMusic();
             lastAudioMs = audioMs();
             resumeHold = music.isPlaying(); // no audio device: nothing to wait for
             resumeNanos = anchorNanos;
             resumeAudioMs = lastAudioMs;
-            resumed(anchorNanos);
+            resumeSlew = true;
         }
-    }
-
-    /**
-     * A paused song plays on (its music restarted at {@code playNanos}): the clock catches up with it gently, and a
-     * re-seeked one has its resume latency measured (the next resume is primed by it).
-     */
-    private void resumed(long playNanos) {
-        resumeSlew = true;
-        measuringResume = reseekOnResume() && !music.isLooping();
-        resumePlayNanos = playNanos;
-        resumeFromMs = anchorSongMs;
     }
 
     /**
@@ -414,16 +420,20 @@ public final class SongClock implements Disposable {
         music.play();
     }
 
-    /** Stops the music of a {@link #primeResume() primed} resume again (time was frozen all along). */
-    private void unprime() {
-        if (!primed) return;
-        primed = false;
-        if (music != null) music.pause();
-    }
-
-    /** Freezes time and pauses the music; while paused, drops a {@link #primeResume() primed} resume. */
+    /** Freezes time and pauses the music; a {@link #startCountIn count-in} stops again at the frozen time. */
     public void pause() {
-        unprime();
+        if (countIn) {
+            countIn = false;
+            running = false;
+            anchorSongMs = countInEndMs;
+            anchorNanos = time.nanoTime();
+            musicStarted = true; // its lead-in branch had the music start again on the way
+            resumeHold = false;
+            measuringStart = false;
+            music.pause();
+            if (preroll != 1) music.setVolume(volume);
+            return;
+        }
         if (!running) return;
         anchorSongMs = nowMs();
         anchorNanos = time.nanoTime();
@@ -431,7 +441,6 @@ public final class SongClock implements Disposable {
         resumeHold = false;
         endPreroll(false); // measured again if enough lead-in is left after the resume
         measuringStart = false;
-        measuringResume = false;
         if (music != null && musicStarted) music.pause();
     }
 
@@ -472,15 +481,15 @@ public final class SongClock implements Disposable {
         if (fading) updateFade(now);
         if (!running) {
             // Android auto-resumes music on app resume (also a pre-roll it paused); keep it paused
-            // while the clock is, unless a resume is primed.
-            if (!primed && music != null && music.isPlaying()) music.pause();
+            // while the clock is.
+            if (music != null && music.isPlaying()) music.pause();
             return;
         }
         double t = anchorSongMs + (now - anchorNanos) / 1e6;
         if (!musicStarted) {
             float lead = lead();
             if (t < -audioDelayMs - lead) {
-                if (music != null && preroll != 2) updatePreroll(now, t);
+                if (music != null && preroll != 2 && !countIn) updatePreroll(now, t);
             } else {
                 // The stream starts at position 0 now, so anchor song time 0 here: audio and clock
                 // agree from the first frame instead of the clock leading by up to one frame until
@@ -525,11 +534,6 @@ public final class SongClock implements Disposable {
             float lat = plausibleLatency((now - playNanos) / 1e6 - (audioMs - playAudioMs));
             if (!Float.isNaN(lat)) measuredStartMs = lat;
         }
-        if (measuringResume && (now - resumePlayNanos) / 1e6 >= SETTLE_MS) {
-            measuringResume = false;
-            float lat = plausibleLatency((now - resumePlayNanos) / 1e6 - (audioMs - resumeFromMs));
-            if (!Float.isNaN(lat)) resumeLatencyMs = resumeLatencyMs > 0f ? 0.5f * (resumeLatencyMs + lat) : lat;
-        }
         double err = audioMs - t;
         double sinceMs = Math.max(0.0, (now - anchorNanos) / 1e6);
         anchorSongMs = t;
@@ -558,7 +562,7 @@ public final class SongClock implements Disposable {
         musicStarted = true;
         if (music == null) return;
         endPreroll(true);
-        music.setVolume(volume);
+        if (!countIn) music.setVolume(volume);
         music.play();
         streamUsed = true;
         if (pendingSeekMs > 0f) {
@@ -635,6 +639,7 @@ public final class SongClock implements Disposable {
      *         while running unless {@link #setMonotonic(boolean)} disabled it
      */
     public double nowMs() {
+        if (countIn) return lastReturnedMs = countInEndMs;
         double raw = running ? anchorSongMs + (time.nanoTime() - anchorNanos) / 1e6 : anchorSongMs;
         if (monotonic && running) {
             if (raw < lastReturnedMs) raw = lastReturnedMs;
@@ -657,9 +662,10 @@ public final class SongClock implements Disposable {
     /**
      * Maps an input-event timestamp (System.nanoTime base, e.g.
      * {@code Gdx.input.getCurrentEventTime()}) to song time on the audio-anchored timeline.
-     * While paused this returns the frozen time.
+     * While paused (also during a count-in) this returns the frozen time.
      */
     public double timeAtNanos(long nanos) {
+        if (countIn) return countInEndMs;
         if (!running) return anchorSongMs;
         return anchorSongMs + (nanos - anchorNanos) / 1e6;
     }
@@ -677,9 +683,9 @@ public final class SongClock implements Disposable {
         return durationMs;
     }
 
-    /** @return true while time advances (lead-in or playing). */
+    /** @return true while time advances (lead-in or playing; not in a {@link #startCountIn count-in}). */
     public boolean isRunning() {
-        return running;
+        return running && !countIn;
     }
 
     /** @return true once the music has been started for this play-through (t reached 0). */
@@ -701,7 +707,7 @@ public final class SongClock implements Disposable {
     public void setVolume(float v) {
         volume = Math.max(0f, Math.min(1f, v));
         fading = false;
-        if (music != null && preroll != 1) music.setVolume(volume);
+        if (music != null && preroll != 1 && !countIn) music.setVolume(volume); // a count-in stays muted
     }
 
     /** @return the current music volume. */
@@ -734,7 +740,7 @@ public final class SongClock implements Disposable {
             fading = false;
         }
         volume = fadeFrom + (fadeTo - fadeFrom) * p;
-        if (music != null && preroll != 1) music.setVolume(volume);
+        if (music != null && preroll != 1 && !countIn) music.setVolume(volume);
     }
 
     private void disposeMusic() {
@@ -749,7 +755,7 @@ public final class SongClock implements Disposable {
         music = null;
         ownsMusic = false;
         preroll = 0;
-        primed = false;
+        countIn = false;
     }
 
     /** Stops and releases the music (if owned). The clock can be reused with {@link #load}. */

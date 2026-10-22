@@ -8,7 +8,7 @@
     {"id": "singles", "type": "route", "to": "singles", "art": "songs", "x": 430, "y": 560, "r": 170,
      "label": "SINGLES", "labelZh": "单曲", "sub": "@progress", "color": "#7FE7FF"},
     {"id": "main", "type": "route", "to": "main", "storyTo": "main_c1", "art": "shaft", "x": 960, "y": 520, "r": 230,
-     "label": "MAIN", "labelZh": "主线", "color": "#4FD8FF"},
+     "label": "MAIN", "labelZh": "主线", "sub": "@progress", "color": "#4FD8FF"},
     {"id": "collab", "type": "route", "art": "shaft", "sealed": true, "x": 1490, "y": 560, "r": 170,
      "label": "COLLAB", "labelZh": "联动", "sub": "COMING SOON", "subZh": "敬请期待", "color": "#FF5CA8"}
   ]

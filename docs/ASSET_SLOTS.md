@@ -50,7 +50,7 @@
 
 ### 1.4 歌曲音乐和试听
 
-每首歌的音频放在歌曲文件夹里，命名为 `<歌曲 id>.ogg` / `.mp3` / `.wav`（见 §5）。卡片试听使用同一个文件：从 manifest 的 `previewStartMs` 开始（默认是 WAV 时长的 30 %；ogg / mp3 读不出时长，默认从 0 开始，所以建议为它们写上 `previewStartMs`），0.6 s 淡入，20 s 一个窗口循环，首尾各 0.8 s 淡入淡出。
+每首歌的音频放在歌曲文件夹里，命名为 `<歌曲 id>.ogg` / `.mp3` / `.wav`（见 §5）。卡片试听使用同一个文件：从 `previewStartMs` 放到 `previewEndMs`（写在歌曲文件夹的 `song.json` 或 manifest 的歌曲条目里，见 `docs/CHART_FORMAT.md` §12.2；默认从时长的 30 % 开始放 20 s；ogg 读不出时长，默认从 0 开始，所以建议为它写上起点），0.6 s 淡入，到终点前 0.8 s 淡出，然后从起点重新开始。起点小于 0 时先静音，等到歌曲开头；终点超过音乐结尾时放完后静音，等到终点，不跳回开头。
 
 校准用的节拍声由程序合成，不需要文件。
 
@@ -77,7 +77,7 @@
 
 ### 2.2 曲绘
 
-`assets/Charts/<歌曲 id>/jacket.png`（或 `.jpg` / `.jpeg`）。没有 `jacket.*` 时，取文件夹里按文件名排序的第一张图片，但跳过 `bg.*`；所以现有歌曲的 `1.png`、`2.png` 等仍然可用。曲绘用于地图节点缩略图、歌曲卡片、游戏画面的颜色底和结算画面。建议用正方形。
+`assets/Charts/<歌曲 id>/jacket.png`（或 `.jpg` / `.jpeg`）。没有 `jacket.*` 时，取文件夹里按文件名排序的第一张图片，但跳过 `bg.*`；所以现有歌曲的 `1.png`、`2.png` 等仍然可用。曲绘用于地图节点缩略图、歌曲卡片、游戏画面的颜色底和结算画面。建议用正方形。不是正方形的曲绘可以在谱面编辑器里选 16:9 的区域和圆形的区域（写进歌曲文件夹 `song.json` 的 `jacket16x9` / `jacketCircle`，见 CHART_FORMAT §12）：16:9 的用在歌曲卡片、结算画面和颜色底，圆形的用在地图节点、转场和个人页小图；没选时取图片中间。
 
 ---
 
@@ -86,7 +86,7 @@
 | 文件 | 用途（`ui/Fonts.Role`） | 授权 |
 |---|---|---|
 | `ChakraPetch-Regular.ttf`、`ChakraPetch-SemiBold.ttf`、`ChakraPetch-Bold.ttf` | 界面文字 `UI_REGULAR`、`UI`、`UI_LABEL`、`UI_BOLD`；Bold 也用于数字 `NUMBER` | SIL OFL，许可文本 `OFL-ChakraPetch.txt` |
-| `NotoSansSC-Medium.ttf` | 中文 `CJK`（自动用于中文字符） | SIL OFL，许可文本 `OFL-NotoSansSC.txt`。这是裁剪过的子集：GB2312 汉字，加上 Latin-1 和界面用到的符号。子集外的字（例如生僻字）显示不出来；需要时换一个更大的子集文件，文件名保持不变 |
+| `NotoSansSC-Medium.ttf` | 中文 `CJK`（自动用于中文字符） | SIL OFL，许可文本 `OFL-NotoSansSC.txt`。这是裁剪过的子集：GB2312 里的字（含希腊字母和日文假名），加上 Latin-1、界面用到的符号，以及 GB2312 没有的 ς、长音 ー 等 38 个字（2026-10-21）。子集外的字（例如生僻字）显示不出来；需要时换一个更大的子集文件，文件名保持不变 |
 | `RubikGlitch-Regular.ttf` | 标题、标志、评级印章、DESCEND、判定字（`DISPLAY`、`DISPLAY_SOFT`、`DISPLAY_OUTLINE`），警告和章节名 `RUBIK` | SIL OFL，许可文本 `OFL-RubikGlitch.txt` |
 
 **不再使用 Mokoto 字体**（2026-10-13，Kelvin 选定）：Mokoto Glitch 是收费字体，文件里写着 “All rights reserved”，不能放进公开仓库。按 DESIGN 附录 C 的预案替换：Rubik Glitch 接管标题、标志、印章、DESCEND 和判定字，Chakra Petch Bold 接管数字。每种用途对应的字体文件只写在 `ui/Fonts.java` 的 `Role` 枚举里。失去的只有三款 Mokoto 字形等宽才能实现的“字形切换”故障效果，其他故障效果（色差、切片、撕裂条）不变。
@@ -125,12 +125,12 @@
 3. 放入谱面：`Surface.json`、`Shallow.json`、`Deep.json`、`Abyss.json` 中至少一个（格式见 `docs/CHART_FORMAT.md`）。歌名、曲师、画师、谱师显示 `Shallow.json` 里的值（没有就用 `Surface.json` 的）。
 4. 放入曲绘 `jacket.png`（正方形）。
 5. 可选：游戏背景 `bg.png`；结算音乐 `result.ogg`。
-6. 在 `assets/Charts/index.json` 某个章节的 `songs` 列表里加上歌曲 id；需要设置试听起点、结算音乐起点或微调地图位置时，改用对象写法：
+6. 在 `assets/Charts/index.json` 某个章节的 `songs` 列表里加上歌曲 id；需要设置试听段（起点和终点）、结算音乐起点或微调地图位置时，改用对象写法（试听段也可以写在歌曲文件夹的 `song.json` 里，见 `docs/CHART_FORMAT.md` §12.2）：
 
    ```json
    "songs": [
      "Song 1",
-     { "id": "My New Song", "previewStartMs": 42000, "resultMusicStartMs": 15000,
+     { "id": "My New Song", "previewStartMs": 42000, "previewEndMs": 62000, "resultMusicStartMs": 15000,
        "map": { "nudgeX": 0, "nudgeY": 0 } }
    ]
    ```

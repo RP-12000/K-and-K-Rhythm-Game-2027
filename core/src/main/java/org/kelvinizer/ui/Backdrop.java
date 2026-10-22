@@ -88,6 +88,8 @@ public final class Backdrop implements Disposable {
     private float touchParX, touchParY;
     private Texture wash;
     private float washAlpha;
+    /** The song's 16:9 framing of the jacket under the wash ({x, y, w, h} fractions, y from the top), or null. */
+    private float[] washBox;
     /** Cover-cropped rect of the image / wash computed by {@link #imageRect} / {@link #washRect}. */
     private float rectX, rectY, rectW, rectH;
 
@@ -185,8 +187,14 @@ public final class Backdrop implements Disposable {
 
     /** Gameplay jacket wash (a tiny texture drawn cover-cropped), null = none. */
     public void setWash(Texture tex, float alpha) {
+        setWash(tex, alpha, null);
+    }
+
+    /** As above, the song's 16:9 framing ({x, y, w, h} fractions, y from the top; null = the centre) covering. */
+    public void setWash(Texture tex, float alpha, float[] box) {
         wash = tex;
         washAlpha = alpha;
+        washBox = box;
     }
 
     /** Motion intensity 0..1 (scales particle speed, sway and shaft drift). */
@@ -701,8 +709,19 @@ public final class Backdrop implements Disposable {
         rectH = h;
     }
 
-    /** Rect of the wash (into {@code rect*}): cover-cropped and centred. */
+    /**
+     * Rect of the wash (into {@code rect*}): cover-cropped and centred; with a framing, that part of the wash at 16:9
+     * covers the view (the wash squeezes the whole jacket into 16 × 16, so its own aspect says nothing).
+     */
     private void washRect() {
+        if (washBox != null) {
+            float s = Math.max(vw / 16f, vh / 9f);
+            rectW = 16f * s / washBox[2];
+            rectH = 9f * s / washBox[3];
+            rectX = vx0 + vw * 0.5f - (washBox[0] + washBox[2] * 0.5f) * rectW;
+            rectY = vy0 + vh * 0.5f - (1f - washBox[1] - washBox[3] * 0.5f) * rectH;
+            return;
+        }
         float scale = Math.max(vw / wash.getWidth(), vh / wash.getHeight());
         rectW = wash.getWidth() * scale;
         rectH = wash.getHeight() * scale;

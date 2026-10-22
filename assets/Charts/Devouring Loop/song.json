@@ -1,0 +1,12 @@
+{
+  "jacket16x9" : {
+    "x" : 0.0,
+    "y" : 0.35694,
+    "w" : 1.0,
+    "h" : 0.5625
+  },
+  "previewStartMs" : 22069,
+  "previewStartBeat" : 68,
+  "previewEndBeat" : 136,
+  "previewEndMs" : 44123
+}

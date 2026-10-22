@@ -739,7 +739,7 @@ public class MapScreen extends KkScreen<Main>
         cam.setReduceMotion(reduceMotion);
         renderer.reduceMotion = reduceMotion;
         renderer.zh = zh;
-        world.refresh(p, 0f);
+        world.refresh(p);
         renderer.refreshLabels();
         hud.refresh(p);
         hud.setLevel(world);
@@ -869,8 +869,8 @@ public class MapScreen extends KkScreen<Main>
         n.shake = 0.45f;
         Haptics.light();
         deselect();
-        renderer.showTip(n, zh ? "未解锁 LOCKED · 先通关 " + n.needsText + " 才能打开"
-            : "LOCKED · CLEAR " + n.needsText + " FIRST");
+        String need = MapWorld.clearPhrase(n.needsText, n.clearScore, zh);
+        renderer.showTip(n, zh ? "未解锁 LOCKED · 先" + need + " 才能打开" : "LOCKED · " + need + " FIRST");
     }
 
     /** A garbled secret song: it only flickers, no card (Kelvin 2026-10-16). */

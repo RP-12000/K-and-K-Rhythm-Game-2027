@@ -48,6 +48,8 @@ final class CaveData {
         boolean collect;
         /** Shells a single of this level costs when its spot sets no {@code price} (0: the default, 300). */
         int price;
+        /** Best score a song needs on some difficulty to count as cleared in this level's requires (0: any play). */
+        int clearScore;
         /** Ocean depth (m) the backdrop is tinted for: shallow levels are light, deep ones dark. */
         float depth = 30f;
         /** World position of the level title plate (NaN: none). */
@@ -85,8 +87,8 @@ final class CaveData {
         /** Song spot ids (or song ids) that must be cleared first. */
         String[] requires = new String[0];
         Color color;
-        /** Songs: shells this single costs when it must be bought (0: the level's price). */
-        int price;
+        /** Songs: shells this single costs when it must be bought (−1: the level's price; 0: free). */
+        int price = -1;
     }
 
     /** A path between two spots. */
@@ -199,6 +201,7 @@ final class CaveData {
         l.demo = v.getBoolean("demo", false);
         l.collect = v.getBoolean("collect", false);
         l.price = Math.max(0, v.getInt("price", 0));
+        l.clearScore = Math.max(0, v.getInt("clearScore", 0));
         l.depth = v.getFloat("depth", 30f);
         l.overviewZoom = v.getFloat("overviewZoom", 0f);
         l.sub = v.getString("sub", "");
@@ -230,7 +233,7 @@ final class CaveData {
             p.at = s.getString("at", null);
             p.secret = s.getString("secret", null);
             p.color = color(s.getString("color", null), null);
-            p.price = Math.max(0, s.getInt("price", 0));
+            p.price = Math.max(-1, s.getInt("price", -1));
             l.spots.add(p);
         }
         for (JsonValue s = child(v, "links"); s != null; s = s.next) {

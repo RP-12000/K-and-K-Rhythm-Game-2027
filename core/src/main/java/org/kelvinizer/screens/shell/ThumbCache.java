@@ -17,11 +17,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 
 /**
- * 玩家档案列表（TOP 10、LOG）用的方形歌曲小缩略图：后台线程解码曲绘并缩小，再在 GL 线程拷进同一张贴图，每首歌一格。
+ * 玩家档案列表（TOP 10、LOG）用的方形歌曲小缩略图：后台线程解码曲绘、按圆形取景裁成方形并缩小，再在 GL 线程拷进同一张贴图，每首歌一格。
  * 不碰曲库的完整曲绘贴图，地图的缓存不受影响；GL 上下文丢失后缩略图也能恢复。
  *
- * <p>Small square song thumbnails for the Profile lists (TOP 10, LOG): jackets are decoded and
- * box-downscaled to {@link #CELL}² on a background thread (no GL), then copied into one managed
+ * <p>Small square song thumbnails for the Profile lists (TOP 10, LOG): jackets are decoded, cropped to the song's
+ * circle square and box-downscaled to {@link #CELL}² on a background thread (no GL), then copied into one managed
  * page texture on the GL thread ({@link #update()}), one cell per song. The full jacket textures of
  * {@code SongLibrary} are never touched, so the map's cache is unaffected.
  *
@@ -36,7 +36,7 @@ public final class ThumbCache implements Disposable {
     private static final int LOADING = -1, FAILED = -2;
 
     private static final class Job {
-        String songId;
+        SongMeta song;
         FileHandle file;
         Pixmap small;
     }
@@ -63,12 +63,12 @@ public final class ThumbCache implements Disposable {
         }
         slots.put(song.id(), LOADING);
         final Job job = new Job();
-        job.songId = song.id();
+        job.song = song;
         job.file = f;
         worker().execute(new Runnable() {
             @Override
             public void run() {
-                Pixmap small = disposed ? null : decode(job.file);
+                Pixmap small = disposed ? null : decode(job.file, job.song);
                 if (disposed) {
                     if (small != null) small.dispose();
                     return;
@@ -101,15 +101,15 @@ public final class ThumbCache implements Disposable {
         return worker;
     }
 
-    /** Worker thread: decode, cover-crop and halve down to CELL² (no GL calls). */
-    private static Pixmap decode(FileHandle f) {
+    /** Worker thread: decode, crop to the song's circle square ({@link SongMeta#circleSquare}), halve to CELL². */
+    private static Pixmap decode(FileHandle f, SongMeta song) {
         Pixmap src = null;
         try {
             src = new Pixmap(f);
-            int side = Math.min(src.getWidth(), src.getHeight());
-            int sx = (src.getWidth() - side) / 2, sy = (src.getHeight() - side) / 2;
+            int[] sq = new int[3];
+            song.circleSquare(src.getWidth(), src.getHeight(), sq);
             Pixmap cur = src;
-            int curX = sx, curY = sy, curSide = side;
+            int curX = sq[0], curY = sq[1], curSide = sq[2];
             while (curSide > CELL * 2) {
                 int half = curSide / 2;
                 Pixmap next = new Pixmap(half, half, Pixmap.Format.RGBA8888);
@@ -141,7 +141,7 @@ public final class ThumbCache implements Disposable {
         while ((job = done.poll()) != null) {
             if (disposed || job.small == null || used >= regions.length) {
                 if (job.small != null) job.small.dispose();
-                if (!disposed) slots.put(job.songId, FAILED);
+                if (!disposed) slots.put(job.song.id(), FAILED);
                 continue;
             }
             ensurePage();
@@ -155,7 +155,7 @@ public final class ThumbCache implements Disposable {
                 job.small.getGLType(), job.small.getPixels());
             job.small.dispose();
             regions[slot] = new TextureRegion(texture, px, py, CELL, CELL);
-            slots.put(job.songId, slot);
+            slots.put(job.song.id(), slot);
         }
     }
 

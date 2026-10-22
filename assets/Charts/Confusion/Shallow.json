@@ -1,6 +1,6 @@
 {
  "formatVersion": 4,
- "iterations": 0,
+ "iterations": 1,
  "title": "Confusion",
  "artist": "Tectogen_海渊",
  "illustrator": "Unknown",
@@ -8,7 +8,7 @@
  "level": "Shallow",
  "chartConstant": 9.3,
  "bpm": 197,
- "offsetMs": 0,
+ "offsetMs": 596,
  "lanes": [
   {
    "id": -4,

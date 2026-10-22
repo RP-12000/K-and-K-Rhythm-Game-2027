@@ -72,7 +72,7 @@
 |---|---|
 | `AudioService` | 菜单这边的声音：菜单音乐（循环、淡入、选歌时压低）、地图试听、结算音乐、打击音效槽位（`hit.*`、`hit_echo.*`、`hold_end.*`、`mine.*`）和校准时的播放。每帧调用 `update`。 |
 | `ClickTrack` | 校准用的 120 BPM 节拍声，第一次使用时合成，缓存为 `cache/calib_120.wav`。 |
-| `SongClock` | 以音频位置为准的歌曲时钟：在音频锚点之间用 `System.nanoTime()` 插值，处理开场留白、暂停和恢复；MP3 的解码延迟在这里扣掉；测量设备开始出声的延迟（存在 `DeviceSettings.musicStartLatencyMs`；还不知道时在倒计时里静音试播测一次），提前这么多开播，开播后 1 秒内不跟随还在跳的位置。暂停后继续：安卓先把音乐跳回暂停的位置；倒数剩下的时间少于这个延迟时提前起音乐（`resumeLeadMs`、`primeResume`，由 `GameplayScreen` 的倒数调用），倒数完谱面马上接着走，不等音乐。继续后谱面和音乐有偏差时最多快或慢 10% 慢慢追上，不再一下子跳过去（`RESUME_SLEW`）；每次继续都量一下这台设备继续播放的出声延迟（`resumeLatencyMs`，存在 `DeviceSettings.musicResumeLatencyMs`），之后的倒数按它提前起音乐。 |
+| `SongClock` | 以音频位置为准的歌曲时钟：在音频锚点之间用 `System.nanoTime()` 插值，处理开场留白、暂停和恢复；MP3 的解码延迟在这里扣掉；测量设备开始出声的延迟（存在 `DeviceSettings.musicStartLatencyMs`；还不知道时在倒计时里静音试播测一次），提前这么多开播，开播后 1 秒内不跟随还在跳的位置。暂停后继续：安卓上倒数时音乐先静音地放（`startCountIn`）：从暂停点前 3 秒放起，时间仍停在暂停点，时钟跟着这段音乐走（`countInMs`、`countInLeftMs`），到暂停点时由 `GameplayScreen` 继续，音量一下子回到原样，谱面接着走时音乐已经在放；没有倒数的继续照旧（安卓上先把音乐跳回暂停的位置）。继续后谱面和音乐有偏差时最多快或慢 10% 慢慢追上，不再一下子跳过去（`RESUME_SLEW`）。 |
 | `WavDurationUtil` | 只读 WAV 文件头得到时长（试听起点的默认值、歌曲长度）。 |
 | `Mp3Info` | 只读 MP3 文件头（Info/Xing 头和 LAME 标签）得到时长，以及电脑上解码后开头多出来的延迟；`SongClock` 用它把 MP3 对齐到谱面。安卓按 Info 头里的目录表跳转，会差到一秒左右，所以安卓上带目录表的恒定码率 MP3 用 `seekableCopy` 做的副本播放（只清掉目录表那一位，缓存在本地的 `cache/music/`，和原文件对不上时重写）。 |
 
@@ -101,7 +101,7 @@
 | `ChartHeaderReader` | 只读谱面开头的字段（标题、曲师、画师、谱师、BPM、定数、难度名），让曲库加载很快。 |
 | `Difficulty` | 四个难度 SURFACE / SHALLOW / DEEP / ABYSS，对应 `Surface.json` / `Shallow.json` / `Deep.json` / `Abyss.json`。名字也是存档的键，不要改。 |
 | `SongLibrary` | 曲库：读 manifest，在每个歌曲文件夹里找音乐、谱面、曲绘、背景图和结算音乐；按需加载完整谱面（`loadChart`）和曲绘；教程也作为一首“伪歌曲”放在这里。 |
-| `SongMeta` | 一首歌的头信息：id（= 文件夹名，也是存档的键）、各难度的定数（精确值、谱面里写的文字、显示用的整数和上标）、文件、试听起点、结算音乐起点、地图上的位置微调。 |
+| `SongMeta` | 一首歌的头信息：id（= 文件夹名，也是存档的键）、各难度的定数（精确值、谱面里写的文字、显示用的整数和上标）、文件、试听起点、结算音乐起点、地图上的位置微调、曲绘取景（`jacket16x9`、`jacketCircle`，`crop` 和 `circleSquare` 算裁剪）。 |
 
 ### 4.5 `play`：判定和计分
 
@@ -120,14 +120,15 @@
 | `DeferredBatch` | 包内。先记录、再按贴图分组重放的 Batch：分散绘制的文字合并成每个字体页一次绘制调用。 |
 | `GlitchCapture` | 包内。音符故障的录制 Batch：`NoteRenderer` 画正在故障的音符时先录下它的四边形，再切成左右错开的横条、加上红蓝两层、偶尔变暗，画进图集批次（CHART_FORMAT §6.9）。 |
 | `EdgeEntry` | 从屏幕边缘入场（DESIGN §5.4）：出生点在参考画面之外、出生时本体却会露进可见范围的音符（场地拉伸之后就是任何屏幕上转了角度、会露出一角的音符），在第一段运动之前按它的平均速度从屏幕边缘滑进来。按当前可见范围算出每个音符的入场拍，供 `NoteRenderer`、`TrailRenderer` 和开场留白（`GameplayScreen`）使用。距离用参考单位，可见范围按 `Field` 换回参考单位来算。纯 Java，只影响画面，不影响判定。 |
+| `FadeShader` | 包内。整体淡化：在 SpriteBatch 默认着色器上再乘一个透明度，夹在 `begin` 和 `end` 之间画的东西整体变淡（暂停后继续的倒数里谱面淡入用）。第一次用时编译，编不过就什么也不改。 |
 | `Field` | 场地拉伸：谱面按 1920 × 1200 写（按 1920 × 1080 写的旧谱面读取时换算，`ChartMapper.fromFrame1080`），游戏时参考画面的中心 (960, 600) 对准屏幕中心，x 乘 `kx = worldW / 1920`、y 乘 `ky = worldH / 1200`（16:10 屏幕正好是 1，16:9 是 0.9）。引擎拉伸判定线和轨道窗口，渲染把到线的距离和尾巴长度乘 `ky`，判定区是 ±480·`ky`（上下各约半屏；画面上的判定带是 ±120·`ky`，见 `Field.bandHalf`）。音符厚度、文字、波纹和四角 HUD 不拉伸。`GameplayScreen` 加载时和每帧按视口设置；默认 1（无头测试不受影响）。 |
 | `FeedbackLayer` | 包内。判定线附近的短暂反馈：“轨道上”显示的判定字（含碰到水雷的红色 LOST）、触摸接触环、ECHO 小箭头、水雷冲击环。 |
 | `FieldRenderer` | 包内。两条判定线和轨道区：线、刻度、全高的轨道分隔线、轨道发光、TIDE 命中时整条线的涌起（`swell`）、判定区提示（从线往外到 ±0.4 屏高的渐变，线上的不透明度 `ZONE_HINT_A` 0.07）。 |
-| `GameEngine` | 一局的模型：歌曲时间、触摸和按键输入、判定（TIDE 组、联合判定、hold 和 TIDE STREAM 的按住规则）、水雷和 LANE MINE（和同轨 note 撞在一起时 note 优先）、计分、事件流、暂停和恢复、自动播放。纯 Java，不碰 GL，加载后不分配内存。 |
+| `GameEngine` | 一局的模型：歌曲时间、触摸和按键输入、判定（TIDE 组、联合判定、hold 和 TIDE STREAM 的按住规则）、水雷和 LANE MINE（和同轨 note 撞在一起时 note 优先）、计分、事件流、暂停和恢复（`startCountIn` 让暂停中的音乐在倒数时静音地先放起来）、自动播放。纯 Java，不碰 GL，加载后不分配内存。 |
 | `GameEvent` | 引擎事件流里的一条：HIT、HOLD_START、HOLD_END、LOST、MINE、EMPTY，加上标志（如 `FLAG_JOINT` 联合判定、`FLAG_LANE_MINE` 轨道水雷接触）。画面按它播放特效和文字。 |
 | `GameKeys` | 桌面键位：两排各 10 个键对应两条线的 ±1..±5 轨道，G/H、T/Y 对应插入的 0 号轨，空格只判定下线的 TIDE。 |
 | `GameplayHud` | 包内。游戏 HUD：四角（左上分数、右上暂停按钮、左下难度标签和歌名、右下剩余时间、顶边进度条）、中间的连击数和判定字、误差条。分数离屏幕左边固定 `SCORE_LEFT`（24）加额外边距，不按设备的安全边距；从顶边到上判定线默认位置这一段按 `SCORE_BAND_TOP` 0.3 / `SCORE_BAND_CAP` 0.4 / 0.3 分，分数的字高占 0.4，和暂停按钮的中线对齐。不显示准确率（计分照样算）。进度条厚度是屏幕高度的 1 %（`PROGRESS_SHARE`）；难度、歌名和时间在同一行，贴着安全底边，难度标签和分数一样离左边固定距离，三样都是 DESIGN §5.3 的 1.25 倍。自动游玩时连击数下面写 AUTOPLAY，代替 COMBO。开着「FC/AR 指示」（`Settings.fcArIndicator`）时分数按 `fcState` 变色：全共鸣淡蓝、FC 紫、断了白色。`setScoreOnly`（实时预览）时四角只剩分数，只离边 `Ui.MIN_MARGIN`。教程用的演示钩子：`demoPauseDoubleTap`、`demoJudgement`、`demoMineWord`。底部留带、在带里放实时计数的布局（`Ui.useBandHud`）在场地拉伸之后不会出现 |
-| `GameplayScreen` | 游戏画面：先把输入交给引擎、再交给暂停控件；绘制场地、潮水、残影、音符、特效和 HUD；开场、倒计时、暂停菜单和结束。教程画面继承它（受保护的演示钩子在这里）。 |
+| `GameplayScreen` | 游戏画面：先把输入交给引擎、再交给暂停控件；绘制场地、潮水、残影、音符、特效和 HUD；开场、倒计时、暂停菜单和结束。安卓上继续时的倒数（和电脑一样 3 × 1 秒、画面定住）跟着静音先放的音乐走，数完正好到暂停点。倒数时谱面（轨道区、潮水、判定线、音符、残影、光和定住的击打特效）用 `FadeShader` 从 0.05 倍透明度匀速淡回原样（`countFade`，电脑和手机一样）。教程画面继承它（受保护的演示钩子在这里）。 |
 | `GuidingText` | 教程的一条定时字幕：按拍子淡入淡出；样式 `GuidingText.Style`，锚点 `GuidingText.Anchor`（参考画面上的点、安全边、判定线或 HUD 元素）。文字为空的字幕是占位，不画。 |
 | `IntroductionGuidelines` | 教程的全部字幕（英文和中文），按语言和暂停方式构造（`IntroductionGuidelines(zh, pauseMode)`）。拍点和位置按 Kelvin 手写的谱面手工排，直接改，改完按 §6.4 检查。最后一潜之后的四句对白现在是空的占位（`PLACEHOLDER`），拍点和位置留着，写好新文案直接填；结尾是 K & K |
 | `IntroductionScreen` | 教程画面：在普通游玩之上显示字幕和演示（判定字、EARLY / LATE、暂停双击、水雷），以及 SKIP 按钮；结果标记为教程（不记录谱面成绩，只记下“看过教程”和第一次的贝壳）。结尾的 K & K 淡入后中间的连击数让开（`centreCover`）。 |
@@ -136,7 +137,7 @@
 | `PauseControl` | 右上角暂停按钮的位置（靠右，上下居中在屏幕顶边和天线之间；`edgeTop()`、`sky()` 也给 HUD 的分数用）、触摸区和输入规则（双击、按住 0.35 s、单击；哪些按下不算）。纯 Java。 |
 | `PauseMenu` | 包内。暂停菜单（方案 B）：暗幕和三个大按钮 RETRY / RESUME / QUIT。 |
 | `PreviewRun` | 「游戏界面」中间实时预览的那一局：自己持有一个 `GameEngine`（时钟用模拟的时间源 `SongClock.setTimeSource`）和 `FieldRenderer`、`NoteRenderer`、`FeedbackLayer`、`GameplayHud`（`setScoreOnly`：四角只剩分数），每局生成一张 12 组的谱（`GROUPS`，120 BPM 每拍一组，单、单、双循环四次，每组随机在上线或下线，双押车道至少隔一条），自己按每个音符（±50 ms 共鸣），第 5 组（`ECHO_GROUP`）早或晚 85–120 ms 打成回响，第 9 组（`LOST_GROUP`，双押）不打，所以分数每局淡蓝 → 紫 → 白；打完 0.7 s 换新谱。按当前玩家的设置每帧绘制，用世界坐标画一整个游戏画面，由 `screens/shell/LivePreview` 缩小、裁剪进框里。不接收点击。 |
-| `RunOverlay` | 包内。盖在 HUD 之上的时刻：3-2-1 倒计时（开场每步 1 s，在歌曲时钟开始前；恢复每步 0.6 s）、结束横幅（CLEAR / FULL COMBO / ALL RESONANCE）。开场的预备时间常量 `PREROLL_SEC` 也在这里。 |
+| `RunOverlay` | 包内。盖在 HUD 之上的时刻：3-2-1 倒计时（开场每步 1 s，在歌曲时钟开始前；恢复也是每步 1 s）、结束横幅（CLEAR / FULL COMBO / ALL RESONANCE）。开场的预备时间常量 `PREROLL_SEC` 也在这里。 |
 | `ScaledGlitch` | 包内。连击数、倒计时这类会缩放的数字的故障闪烁，固定格宽，数字变化时不抖动。 |
 | `TideWash` | 包内。TIDE 命中的潮水效果（光带浮起、退潮、变暗）和 TIDE STREAM 按住时的细光带。 |
 | `TouchMarks` | 包内。「显示触控」：游戏中每个按着的手指下面一个白色的圈（半径 `R` 64）和中间的小点，跟着手指；松开后圈放大三分之一、`FADE_SEC` 0.25 s 淡出。每帧从引擎的指针表读位置，画在音符和特效上面、四角 HUD 下面。教程里点到两个判定区外时另外闪一个淡点（`FeedbackLayer.stray`）。 |
@@ -178,7 +179,7 @@
 | `AutoChip` | 歌曲卡片上的 AUTO（自动播放）开关。 |
 | `CardChip` | 歌曲卡片上的一个难度按钮（难度名和定数）。 |
 | `CardRecord` | 歌曲卡片上一个难度的成绩区：最高分、评级（打过全连就是紫色）、准确率、这张谱的深度（当前 / 满分）、排名、次数、小目标。 |
-| `DescendButton` | DESCEND 按钮（带下沉的双箭头和光晕）；没买的单曲变成「HOLD TO BUY」购买模式（按住 0.6 秒）。 |
+| `DescendButton` | DESCEND 按钮（带下沉的双箭头和光晕）；没买的单曲变成「HOLD TO BUY」购买模式（按住 0.6 秒）；所有曲目里锁着的歌显示锁和解锁条件（要分数时分两行）。 |
 | `SortPanel` | 所有曲目的排序面板：从 SORT 按钮升起，选顺序（默认、歌名、定数、最高分、最近）和筛选（NEW / FULL COMBO / RESONATED，一次一个，再点取消）。 |
 | `GridPage` | 所有曲目页：网格的位置（一排两首、相邻两行错开半格，手机上和地图默认缩放一样大、平板小两成）、选中圈半径、网格的裁剪和渐隐（遮罩着色器）、滚动条和点击范围。网格跟着地图镜头上下滚（x 锁住、不缩放），从玩家块下面 24 开始（`MapHud.frameBottom`）；节点、名字、成绩行和行与行之间的连线由 `MapRenderer` 画，连线由 `MapWorld` 建 |
 | `TextChip` | 排序面板里的文字小按钮（选中时填满青色，放不下时折成两行；`setLabel` 换语言时换字）。 |
@@ -370,7 +371,7 @@
 
 1. 新建 `assets/Charts/<歌曲 id>/`。文件夹名就是歌曲 id，也是存档的键，之后不要改名。
 2. 放入音乐 `<歌曲 id>.ogg`（或 `.mp3` / `.wav`）、至少一个谱面（`Surface.json`、`Shallow.json`、`Deep.json`、`Abyss.json`）、曲绘 `jacket.png`；可选 `bg.png`、`result.ogg`。
-3. 在 `assets/Charts/index.json` 某个章节的 `songs` 里加上 id（可以用对象写法加 `previewStartMs`、`resultMusicStartMs`、`map` 微调）。
+3. 在 `assets/Charts/index.json` 某个章节的 `songs` 里加上 id（可以用对象写法加 `previewStartMs` / `previewEndMs`、`resultMusicStartMs`、`map` 微调；试听段也可以写在歌曲文件夹的 `song.json` 里，谱面编辑器写的就是它）。
 4. 重新构建（更新 `assets/assets.txt`），在地图上检查。
 
 代码不用改：`library/SongLibrary` 会自动找到文件。没写进 manifest 的文件夹会被追加到最后一个已开放的章节。
@@ -399,7 +400,7 @@
 
 ### 6.5 加中文文字（字库子集）
 
-`assets/fonts/NotoSansSC-Medium.ttf` 只包含 GB2312 里的字（约 7,600 个字形），常用简体字都有，生僻字没有；缺的字显示不出来。加新的中文文字前，可以用 fontTools（`pip install fonttools`）检查：
+`assets/fonts/NotoSansSC-Medium.ttf` 是 GB2312 子集（约 7,660 个字形）：常用简体字、希腊字母和日文假名都有，生僻字和日文专用的汉字没有；2026-10-21 补了 GB2312 没有的 ς、长音 ー 等 38 个字。缺的字显示不出来。加新的中文文字前，可以用 fontTools（`pip install fonttools`）检查：
 
 ```bash
 python3 -c "
@@ -410,7 +411,19 @@ print([c for c in s if ord(c) not in cmap] or '都在字库里')
 "
 ```
 
-缺字时换一个说法，或从完整的 Noto Sans SC 重新做子集。
+缺字时换一个说法，或从完整的 Noto Sans SC 重新做子集。做法（原有字形保持不变）：取 Google Fonts 的可变字体 `NotoSansSC[wght].ttf`，用 fontTools 在字重 500 实例化（不设重叠标记），再按现有文件的全部字符加上新字做子集，去掉排版特性和 hinting：
+
+```python
+from fontTools.ttLib import TTFont
+from fontTools.varLib import instancer
+from fontTools import subset
+old = TTFont('assets/fonts/NotoSansSC-Medium.ttf').getBestCmap()
+f = instancer.instantiateVariableFont(TTFont('NotoSansSC[wght].ttf'), {'wght': 500},
+                                      overlap=instancer.OverlapMode.KEEP_AND_DONT_SET_FLAGS)
+o = subset.Options(); o.layout_features = []; o.hinting = False; o.notdef_outline = True
+s = subset.Subsetter(o); s.populate(unicodes=set(old) | {ord(c) for c in '要加的字'}); s.subset(f)
+f.save('assets/fonts/NotoSansSC-Medium.ttf')
+```
 
 ### 6.6 中英文界面（`ui/Lang`）
 

@@ -1,17 +1,17 @@
 {
   "id": "singles", "kind": "route",
   "title": "SINGLES", "titleZh": "单曲", "route": "ROUTE", "routeZh": "航线",
-  "parent": "hub", "start": "rise", "depth": 30, "collect": true, "price": 300,
+  "parent": "hub", "start": "rise", "depth": 30, "collect": true, "price": 300, "clearScore": 80000000,
   "titleAt": [0, 30], "sub": "@progress", "subZh": "单曲航线",
   "pools": [[0, 0, 820, 0.30], [-560, 0, 380, 0.18], [560, 0, 380, 0.18]],
   "spots": [
     {"id": "rise", "type": "rise", "x": 0, "y": 0, "label": "ROUTES", "labelZh": "航线"},
-    {"id": "aleph0", "song": "Aleph-0", "x": -300, "y": -300},
-    {"id": "confusion", "song": "Confusion", "x": 560, "y": 0},
-    {"id": "devouring", "song": "Devouring Loop", "x": 300, "y": -300},
-    {"id": "mysoul", "song": "My Soul", "x": 300, "y": 300},
-    {"id": "dash", "song": "Dash from my eyes", "x": -300, "y": 300},
-    {"id": "altale", "song": "Altale", "x": -560, "y": 0}
+    {"id": "aleph0", "song": "Aleph-0", "x": -300, "y": -300, "price": 0},
+    {"id": "confusion", "song": "Confusion", "x": 560, "y": 0, "requires": ["devouring"]},
+    {"id": "devouring", "song": "Devouring Loop", "x": 300, "y": -300, "requires": ["aleph0"]},
+    {"id": "mysoul", "song": "My Soul", "x": 300, "y": 300, "requires": ["dash", "confusion"]},
+    {"id": "dash", "song": "Dash from my eyes", "x": -300, "y": 300, "requires": ["altale"]},
+    {"id": "altale", "song": "Altale", "x": -560, "y": 0, "requires": ["aleph0"]}
   ],
   "links": [
     ["aleph0", "devouring"], ["devouring", "confusion"], ["confusion", "mysoul"], ["mysoul", "dash"], ["dash", "altale"], ["altale", "aleph0"]

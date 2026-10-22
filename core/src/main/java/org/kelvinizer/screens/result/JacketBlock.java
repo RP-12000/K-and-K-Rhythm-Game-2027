@@ -4,6 +4,7 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.utils.Align;
+import org.kelvinizer.library.SongMeta;
 import org.kelvinizer.ui.Anim;
 import org.kelvinizer.ui.Fonts;
 import org.kelvinizer.ui.GlitchState;
@@ -18,7 +19,7 @@ import org.kelvinizer.ui.Ui;
  * 曲绘滑入时声呐线沿边框描一圈；曲名先解码再以一次 G2 故障收尾，50 个字符以内缩小到放得下，更长的就在标题带里滚动（和选歌卡片同样的节奏）。
  *
  * <p>The title band and the jacket (Kelvin 2026-10-19 06:28, design round 7, and round 8 at 15:2x):
- * a full-width band with the title and the artist centred; the 16:9 jacket (centre crop) with a soft glow of its
+ * a full-width band with the title and the artist centred; the 16:9 jacket (the song's framing) with a soft glow of its
  * own colours behind it (the library's 16 × 16 wash, kept under the band), the difficulty chip in its bottom-right
  * corner over a soft shadow (round 8, 14:59 「把shallow10-这类等级信息移动到曲绘的右下角」), its lower 58 % darkened
  * towards (6, 10, 32) so the stamp, score and best line read over it (not with three columns, where they are under
@@ -60,7 +61,7 @@ public final class JacketBlock {
     private float chipW, chipTextW, chipMarkW;
     private final Color tmp = new Color();
     private final float[] cols = new float[4], rows = new float[6];
-    private final float[] quad = new float[20];
+    private final float[] quad = new float[20], crop = new float[4];
 
     /** Creates the block. */
     public JacketBlock(ResultKit kit) {
@@ -68,10 +69,10 @@ public final class JacketBlock {
     }
 
     /**
-     * Sets the jacket texture (library-owned; may be null), its 16:9 centre crop, and the library's wash of it for
-     * the glow (may be null).
+     * Sets the jacket texture (library-owned; may be null), its 16:9 crop ({@code box}, the song's framing; null =
+     * the centre), and the library's wash of it for the glow (may be null).
      */
-    public void setJacket(Texture tex, Texture wash) {
+    public void setJacket(Texture tex, float[] box, Texture wash) {
         jacket = tex;
         this.wash = wash;
         u0 = 0f;
@@ -79,16 +80,11 @@ public final class JacketBlock {
         v0 = 0f;
         v1 = 1f;
         if (tex == null) return;
-        float w = tex.getWidth(), h = tex.getHeight();
-        if (w * 9f > h * 16f) {
-            float cw = h * 16f / 9f;
-            u0 = (w - cw) * 0.5f / w;
-            u1 = 1f - u0;
-        } else {
-            float ch = w * 9f / 16f;
-            v0 = (h - ch) * 0.5f / h;
-            v1 = 1f - v0;
-        }
+        SongMeta.crop(box, tex.getWidth(), tex.getHeight(), 16f / 9f, crop);
+        u0 = crop[0];
+        v0 = crop[1];
+        u1 = crop[2];
+        v1 = crop[3];
     }
 
     /** Fits the title and the chip for the current layout (no allocation). */

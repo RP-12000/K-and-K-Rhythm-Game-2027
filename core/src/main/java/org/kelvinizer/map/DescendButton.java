@@ -28,8 +28,8 @@ import org.kelvinizer.ui.Theme;
  * phases (atlas, DISPLAY raster). No allocation per frame.
  *
  * <p>Locked (a locked song opened on ALL SONGS, Kelvin 2026-10-16): a dark plate with a gold
- * padlock and the unlock condition in place of the label (drawn in the card's UI_BOLD phase);
- * a tap only shakes it.
+ * padlock and the unlock condition in place of the label (drawn in the card's UI_BOLD phase; a score
+ * to reach on two lines, Kelvin 2026-10-21); a tap only shakes it.
  *
  * <p>For sale (a single not bought yet, Kelvin 2026-10-17): a gold plate {@code HOLD TO BUY 🐚 300};
  * holding it {@link #HOLD_T} fills it from left to right and then buys the song (no dialog). A
@@ -49,8 +49,8 @@ final class DescendButton extends Pressable {
     private CharSequence text = "DESCEND";
     private float textW = -1f;
     private boolean auto, locked;
-    /** Locked: the condition shown and its alpha (the card cycles them). */
-    private CharSequence lockText = "";
+    /** Locked: the condition shown, its second line (empty: one line) and its alpha (the card cycles them). */
+    private CharSequence lockText = "", lockText2 = "";
     private float lockA = 1f;
     private float pressure, flash, autoK;
     /** For sale: whether the diver can pay, the text before and after the shell icon, the fill. */
@@ -89,10 +89,11 @@ final class DescendButton extends Pressable {
         auto = on;
     }
 
-    /** Locked look with condition {@code text} at alpha {@code a} (false: the normal button). */
-    void setLocked(boolean on, CharSequence text, float a) {
+    /** Locked look with condition {@code text} (and {@code text2} under it) at alpha {@code a} (false: normal). */
+    void setLocked(boolean on, CharSequence text, CharSequence text2, float a) {
         locked = on;
         lockText = text;
+        lockText2 = text2;
         lockA = a;
     }
 
@@ -157,13 +158,19 @@ final class DescendButton extends Pressable {
         label.trigger(GlitchText.Level.G2, r.time);
     }
 
-    /** Width of the padlock and the condition (cap 24, at most the button minus its padding). */
+    /** Width of the padlock and the condition (at most the button minus its padding). */
     private float lockRowW(float s) {
-        return Math.min(44f * k * s + r.boldWidth(lockText, lockCap(s)), (w - 40f * k) * s);
+        float tw = Math.max(r.boldWidth(lockText, condCap(s)), r.boldWidth(lockText2, condCap(s)));
+        return Math.min(44f * k * s + tw, (w - 40f * k) * s);
     }
 
     private float lockCap(float s) {
         return MapUi.cap(24f, k) * s;
+    }
+
+    /** Cap of the condition: 24, a little smaller on two lines. */
+    private float condCap(float s) {
+        return lockText2.length() > 0 ? lockCap(s) * 0.85f : lockCap(s);
     }
 
     @Override
@@ -285,9 +292,10 @@ final class DescendButton extends Pressable {
         if (!locked) return;
         float s = visualScale();
         float cx = centerX() + shakeX(), cy = centerY() + liftY();
-        float rw = lockRowW(s), x0 = cx - rw * 0.5f + 44f * k * s;
-        r.boldFit(b, lockText, lockCap(s), x0, cy, Align.left | Fonts.VCENTER, rw - 44f * k * s, 0.7f, Theme.INK1,
-            lockA * alpha * alphaMul());
+        float rw = lockRowW(s), x0 = cx - rw * 0.5f + 44f * k * s, cap = condCap(s), tw = rw - 44f * k * s;
+        float a = lockA * alpha * alphaMul(), dy = lockText2.length() > 0 ? cap * 0.75f : 0f;
+        r.boldFit(b, lockText, cap, x0, cy + dy, Align.left | Fonts.VCENTER, tw, 0.7f, Theme.INK1, a);
+        if (dy > 0f) r.boldFit(b, lockText2, cap, x0, cy - dy, Align.left | Fonts.VCENTER, tw, 0.7f, Theme.INK1, a);
     }
 
     /** DISPLAY phase: the label with its G1 shimmer (G2 after release). */

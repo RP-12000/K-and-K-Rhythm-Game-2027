@@ -54,7 +54,11 @@ import org.kelvinizer.ui.Ui;
  * re-grabbed a hold or covers a running TIDE STREAM does not count and does not cancel a pending
  * first tap. The hit sound plays inside the input handler. BACK / Esc, the keyboard's Pause key and
  * the app going to the background pause instantly; BACK / Esc (or RESUME, or Enter) while paused
- * resume with a 3-2-1 countdown during which notes stay frozen and nothing is judged.
+ * resume with a 3-2-1 countdown, a second a digit as at the start (Kelvin 2026-10-21 16:45), during which notes stay
+ * frozen and nothing is judged. On Android the music runs through it unheard (Kelvin 2026-10-21 15:09): it plays
+ * muted from the countdown's length before the pause and sounds at full volume as the count ends at the paused time,
+ * already in step with the notes. The chart fades back in through the count, from a twentieth of its opacity as it
+ * starts to its own as it ends (Kelvin 2026-10-21 15:40, 16:10).
  *
  * <p><b>Start</b> (DESIGN §5.11, Kelvin 2026-10-12 16:06): when the DIVE cover opens (run time
  * t = 0) a 3.3 s pre-roll runs on wall time while the song clock waits: the 3-2-1 countdown at
@@ -69,8 +73,12 @@ import org.kelvinizer.ui.Ui;
  * follow on the next frame. The corner HUD stays pinned to the corners, unstretched.
  */
 public class GameplayScreen extends KkScreen<Main> {
-    /** Length of each resume countdown step (s). */
-    public static final float COUNT_STEP_SEC = 0.6f;
+    /** Length of each resume countdown step (s): one second, as at the start (Kelvin 2026-10-21 16:45). */
+    public static final float COUNT_STEP_SEC = 1f;
+    /** On Android the music runs muted through the resume countdown from this long before the paused time (ms). */
+    private static final float COUNT_IN_MS = 3f * COUNT_STEP_SEC * 1000f;
+    /** The chart's opacity factor as the resume countdown starts; it rises evenly to 1 as the count ends. */
+    public static final float COUNT_FADE_FROM = 0.05f;
     private static final float ABYSS_PULSE_SEC = 0.40f;
     private static final float JACKET_WASH_ALPHA = 0.12f;
     private static final float ART_ALPHA = 0.15f;
@@ -129,6 +137,10 @@ public class GameplayScreen extends KkScreen<Main> {
     // pause state (field names read by the screenshot tests)
     private boolean menuOpen;
     private float countdown = -1f;
+    /** True while the music runs in through the countdown ({@link GameEngine#startCountIn}): it times the digits. */
+    private boolean countIn;
+    /** Fades the chart through the resume countdown. */
+    private final FadeShader fade = new FadeShader();
     /** How the last pause opened: "tap" (pause control), "key" (BACK / Esc / Pause) or "app". */
     @SuppressWarnings("unused")
     private String pausedBy = "";
@@ -196,6 +208,7 @@ public class GameplayScreen extends KkScreen<Main> {
         menuOpen = false;
         menu.close();
         countdown = -1f;
+        countIn = false;
         pausedBy = "";
         lastBeatFloor = Float.NaN;
         abyssT = -10f;
@@ -218,11 +231,6 @@ public class GameplayScreen extends KkScreen<Main> {
         // session), so the first judgement never waits for a load
         if (game.audio() != null) game.audio().hitSound();
         applyOffsets();
-        // a resume's music latency is learned in the clock across runs; it starts from the device's stored one
-        DeviceSettings d = game.profiles() != null ? game.profiles().device() : null;
-        if (d != null && engine.clock().resumeLatencyMs() <= 0f) {
-            engine.clock().setResumeLatencyMs(d.musicResumeLatencyMs);
-        }
         // the playfield fills the screen (Kelvin 16:17): fit the stretch before the engine and the edge entries use it
         Field.fit(Ui.worldW(), Ui.worldH());
         engine.load(chart, autoplay);
@@ -345,19 +353,12 @@ public class GameplayScreen extends KkScreen<Main> {
 
     /**
      * Keeps the music start latency the clock measured (averaged with the stored one), so the next
-     * song starts its music that much early and the first notes do not hitch, and the resume latency
-     * it learned, so the next resume's music is primed that much early.
+     * song starts its music that much early and the first notes do not hitch.
      */
-    private void recordLatencies() {
-        DeviceSettings d = game.profiles() != null ? game.profiles().device() : null;
-        if (d == null) return;
-        float r = engine.clock().resumeLatencyMs();
-        if (r > 0f && Math.abs(r - d.musicResumeLatencyMs) >= 0.5f) {
-            d.musicResumeLatencyMs = r;
-            game.profiles().markDirty();
-        }
+    private void recordStartLatency() {
         float m = engine.clock().measuredStartLatencyMs();
-        if (Float.isNaN(m)) return;
+        DeviceSettings d = game.profiles() != null ? game.profiles().device() : null;
+        if (d == null || Float.isNaN(m)) return;
         float v = d.musicStartLatencyMs > 0f ? 0.5f * (d.musicStartLatencyMs + m) : m;
         if (Math.abs(v - d.musicStartLatencyMs) < 0.5f) return;
         d.musicStartLatencyMs = v;
@@ -371,7 +372,7 @@ public class GameplayScreen extends KkScreen<Main> {
         b.clearFocus();
         b.setDepth(game.gameplayDepth(song, difficulty));
         b.setDim(settings.backgroundDim);
-        b.setWash(wash, JACKET_WASH_ALPHA);
+        b.setWash(wash, JACKET_WASH_ALPHA, song != null ? song.jacket16x9() : null);
         Texture img = imageHook();
         b.setImage(img, img != null ? ART_ALPHA * MathUtils.clamp(settings.artOpacity, 0f, 1f) : 0f);
         b.setComboLife(0);
@@ -380,7 +381,7 @@ public class GameplayScreen extends KkScreen<Main> {
     @Override
     protected void onHide() {
         engine.pause();
-        recordLatencies();
+        recordStartLatency();
         engine.clock().dispose(); // release the music; begin() loads it again
         Backdrop b = game.backdrop();
         b.setMode(Backdrop.Mode.MENU);
@@ -391,6 +392,7 @@ public class GameplayScreen extends KkScreen<Main> {
         menuOpen = false;
         menu.close();
         countdown = -1f;
+        countIn = false;
         pauseControl.reset();
     }
 
@@ -402,6 +404,7 @@ public class GameplayScreen extends KkScreen<Main> {
     @Override
     public void dispose() {
         engine.clock().dispose();
+        fade.dispose();
         disposeSongArt();
         if (defaultArt != null) game.art().release(DEFAULT_ART);
         defaultArt = null;
@@ -423,12 +426,17 @@ public class GameplayScreen extends KkScreen<Main> {
             openPause("tap");
         }
         if (countdown >= 0f) {
-            countdown -= delta;
+            if (!countIn) {
+                countdown -= delta;
+            } else {
+                // the digits follow the music running in: the count ends as it reaches the paused time
+                double left = engine.clock().countInLeftMs();
+                countdown = left > 0.0 ? Math.min(countdown, (float) (left / 1000.0)) : -1f;
+            }
             if (countdown < 0f) {
                 countdown = -1f;
+                countIn = false;
                 engine.resume();
-            } else if (countdown * 1000f < engine.clock().resumeLeadMs()) {
-                engine.primeResume(); // the sound is back as the count ends (Android start latency)
             }
         }
         if (preroll >= 0f && !menuOpen) {
@@ -475,8 +483,12 @@ public class GameplayScreen extends KkScreen<Main> {
         trails.prepare(engine, tideWash.quadsBound()); // block A may share block B's flush
         // ---- normal block A
         drawAbyssPressure();
+        // the chart fades back in through the resume countdown (Kelvin 2026-10-21 15:40)
+        float fadeA = countdown >= 0f ? countFade(countdown) : 1f;
+        boolean faded = fadeA < 1f && fade.begin(batch, fadeA);
         field.drawUnder(engine, zoneStrength(), MathUtils.clamp(introT / 0.35f, 0f, 1f));
         tideWash.draw(engine);  // above the lane field, beneath notes, judgement word and HUD
+        if (faded) fade.end(batch);
         hud.drawUnder(batch, introT, runTime, !menuOpen);
         // ---- HUD-under text (recorded, then one draw call per font page)
         text.start(batch);
@@ -485,10 +497,12 @@ public class GameplayScreen extends KkScreen<Main> {
         feedback.drawText(text, game.fonts(), runTime);
         text.replay();
         // ---- normal block B
+        faded = fadeA < 1f && fade.begin(batch, fadeA);
         field.drawLines(engine, runTime, introT);
         notes.drawBands(engine, runTime); // TIDE STREAM bands beneath trails, lane notes and mines
         trails.draw(engine);   // afterimages beneath every live note (ARCHITECTURE §17)
         notes.draw(engine, runTime);
+        if (faded) fade.end(batch);
         overlay.drawBannerScrim(engine.judgeMs(), engine.endMs());
         // ---- additive block (one blend switch)
         int src = batch.getBlendSrcFunc();
@@ -496,11 +510,15 @@ public class GameplayScreen extends KkScreen<Main> {
         int srcA = batch.getBlendSrcFuncAlpha();
         int dstA = batch.getBlendDstFuncAlpha();
         batch.setBlendFunction(GL20.GL_SRC_ALPHA, GL20.GL_ONE);
+        faded = fadeA < 1f && fade.begin(batch, fadeA);
         field.drawAdditive(engine, runTime, combo, beatPulse());
         notes.drawGlows();
+        if (faded) fade.end(batch);
         feedback.drawAdditive(runTime);
         overlay.drawBurst(batch, engine.judgeMs(), engine.endMs());
+        faded = fadeA < 1f && fade.begin(batch, fadeA); // the hit effects the pause froze fade with the chart
         fx.draw(batch);
+        if (faded) fade.end(batch);
         batch.setBlendFunctionSeparate(src, dst, srcA, dstA);
         if (showTouches) marks.draw(time); // over the notes and effects, under the HUD
         // ---- HUD-over
@@ -892,6 +910,7 @@ public class GameplayScreen extends KkScreen<Main> {
         engine.pause();
         menuOpen = true;
         countdown = -1f;
+        countIn = false;
         pausedBy = by;
         pauseControl.reset();
         hud.clearPauseHint();
@@ -911,6 +930,17 @@ public class GameplayScreen extends KkScreen<Main> {
             return;
         }
         countdown = 3f * COUNT_STEP_SEC;
+        // on Android the music runs in through the count, unheard, and is in step as it ends (Kelvin 2026-10-21 15:09)
+        countIn = engine.startCountIn(COUNT_IN_MS);
+    }
+
+    /**
+     * The chart's opacity factor at {@code left} seconds of the resume countdown: {@link #COUNT_FADE_FROM} as it
+     * starts, rising evenly to 1 as it ends (Kelvin 2026-10-21 15:40).
+     */
+    static float countFade(float left) {
+        float done = 1f - left / (3f * COUNT_STEP_SEC);
+        return COUNT_FADE_FROM + (1f - COUNT_FADE_FROM) * MathUtils.clamp(done, 0f, 1f);
     }
 
     private void retryRun() {
@@ -927,6 +957,7 @@ public class GameplayScreen extends KkScreen<Main> {
         if (resultSent || chart == null) return;
         resultSent = true;
         countdown = -1f; // a resume countdown in progress (tutorial SKIP) must not resume the run behind the result
+        countIn = false;
         engine.pause();
         game.showResult(buildResult());
     }

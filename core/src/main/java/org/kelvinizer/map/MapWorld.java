@@ -5,6 +5,7 @@ import org.kelvinizer.library.Difficulty;
 import org.kelvinizer.library.SongLibrary;
 import org.kelvinizer.library.SongMeta;
 import org.kelvinizer.profile.ChartRecord;
+import org.kelvinizer.profile.Grades;
 import org.kelvinizer.profile.Profile;
 import org.kelvinizer.profile.Shells;
 import org.kelvinizer.ui.GlitchText;
@@ -13,7 +14,10 @@ import org.kelvinizer.ui.Theme;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 /**
  * 当前这一层洞穴的世界：按 {@link CaveData} 里的层数据摆好每个点（歌曲洞、剧情入口、竖井、航线洞口），
@@ -29,7 +33,7 @@ import java.util.List;
  * 2026-10-17). On ALL SONGS this lists the songs of every pack (hidden secret packs left out),
  * flat, in the current sort, with only the songs the {@link MapFilter} keeps (Kelvin 2026-10-19); {@link GridPage}
  * places them. Per-diver state (records, locks, read
- * stories, solid / dashed paths, progress texts) is refreshed by {@link #refresh(Profile, float)}
+ * stories, solid / dashed paths, progress texts) is refreshed by {@link #refresh(Profile)}
  * on profile changes only.
  *
  * <p>World units: 1 unit = 1 reference pixel at zoom 1, y up (the data files are y down).
@@ -83,10 +87,15 @@ final class MapWorld {
     final String cardHeader, cardHeaderEn;
     /** Stats of this level's songs. */
     int songs, charts, chartsPlayed;
-    /** Library-wide stats (hub route plates). */
-    int libSongs, libCharts, libChartsPlayed;
+    /**
+     * Hub route plates: {songs, charts, charts of the lens difficulty, those played, full combos, all resonances} per
+     * level a plate leads to, "" for the whole library.
+     */
+    private final Map<String, int[]> routeCounts = new HashMap<>();
     private final SongLibrary library;
     private final CaveData data;
+    /** The selected difficulty the hub plates count (Kelvin 2026-10-21 20:15). */
+    private final Difficulty lens;
 
     MapWorld(CaveData data, CaveData.Level level, SongLibrary library, Profile p, int sort, Difficulty lens,
              MapFilter filter) {
@@ -94,6 +103,7 @@ final class MapWorld {
         this.library = library;
         this.data = data;
         this.sort = sort;
+        this.lens = lens != null ? lens : Difficulty.SURFACE;
         List<MapNode> songNodes = new ArrayList<>();
         List<MapNode> other = new ArrayList<>();
         texts = new ArrayList<>(level.texts);
@@ -126,6 +136,7 @@ final class MapWorld {
         MapNode l = null;
         for (int i = 0; i < all.length; i++) {
             all[i].idx = i;
+            all[i].clearScore = level.clearScore;
             if (all[i].kind == MapNode.TUTORIAL) l = all[i];
         }
         launch = l;
@@ -243,7 +254,7 @@ final class MapWorld {
         cardHeaderEn = h.toString();
         if (!level.titleZh.isEmpty()) h.append(" · ").append(level.titleZh);
         cardHeader = h.toString();
-        refresh(p, 0f);
+        refresh(p);
     }
 
     /** The (unbuilt) rise spot {@code spotId} of {@code level}, or null. */
@@ -519,8 +530,8 @@ final class MapWorld {
 
     /**
      * The names of the unmet requirements of spot {@code s} on {@code l} for diver {@code p}
-     * (empty when it is open): spot ids on that level (songs cleared, stories read, the tutorial
-     * seen, shafts not sealed) or song ids.
+     * (empty when it is open): spot ids on that level (songs cleared, with the level's
+     * clearScore when it sets one; stories read, the tutorial seen, shafts not sealed) or song ids.
      */
     static List<String> unmet(CaveData.Level l, CaveData.Spot s, Profile p, SongLibrary lib) {
         List<String> out = new ArrayList<>();
@@ -529,11 +540,11 @@ final class MapWorld {
             String song = r != null ? r.song : id;
             boolean met;
             if (r == null) {
-                met = songCleared(p, id);
+                met = songCleared(p, id, l.clearScore);
             } else {
                 switch (kindOf(r.type)) {
                     case MapNode.SONG:
-                        met = r.song != null && songCleared(p, r.song);
+                        met = r.song != null && songCleared(p, r.song, l.clearScore);
                         break;
                     case MapNode.STORY:
                         met = p != null && r.story != null && p.hasFlag(storyFlag(r.story));
@@ -558,9 +569,10 @@ final class MapWorld {
 
     /**
      * ALL SONGS lock of song {@code songId}: null when it is placed nowhere (SINGLES collects it)
-     * or some spot that places it is open; else the unmet requirements of the first locked spot.
+     * or some spot that places it is open; else the unmet requirements of the first locked spot,
+     * with its level's clearScore in {@code score[0]}.
      */
-    static String[] gridLock(CaveData data, SongLibrary lib, String songId, Profile p) {
+    static String[] gridLock(CaveData data, SongLibrary lib, String songId, Profile p, int[] score) {
         String[] first = null;
         for (CaveData.Level l : data.levels.values()) {
             if (CaveData.GRID.equals(l.kind)) continue;
@@ -568,7 +580,10 @@ final class MapWorld {
                 if (!songId.equals(s.song) || kindOf(s.type) != MapNode.SONG) continue;
                 List<String> u = unmet(l, s, p, lib);
                 if (u.isEmpty()) return null;
-                if (first == null) first = u.toArray(new String[0]);
+                if (first == null) {
+                    first = u.toArray(new String[0]);
+                    score[0] = l.clearScore;
+                }
             }
         }
         return first;
@@ -656,7 +671,7 @@ final class MapWorld {
      * Refreshes every node's record cache, locks, read stories, the path styles and the progress
      * texts for diver {@code p}. Allocation is fine here (profile changes only).
      */
-    void refresh(Profile p, float unused) {
+    void refresh(Profile p) {
         songs = nodes.length;
         charts = 0;
         chartsPlayed = 0;
@@ -671,46 +686,100 @@ final class MapWorld {
             }
         }
         boolean grid = isGrid();
+        int[] lockScore = new int[1];
         for (MapNode n : all) {
             n.forSale = n.isSong() && !n.glitch && n.song != null && !inStory(data, n.song.id())
                 && (p == null || !p.owns(n.song.id()));
             n.price = n.forSale ? priceOf(data, n.song.id()) : 0;
+            n.forSale &= n.price > 0; // "price": 0 on its spot: free (Kelvin 2026-10-21, Aleph-0)
             if (grid && n.isSong()) {
-                String[] c = gridLock(data, library, n.song.id(), p);
+                String[] c = gridLock(data, library, n.song.id(), p, lockScore);
                 n.lockConds = c != null ? c : new String[0];
                 n.needsText = c != null ? String.join(" · ", c) : "";
+                n.clearScore = c != null ? lockScore[0] : 0;
                 n.locked = c != null && !n.glitch;
             } else {
                 n.locked = isLocked(n, p) && !n.glitch;
             }
         }
         for (int i = 0; i < la.length; i++) lcleared[i] = all[la[i]].cleared() && all[lb[i]].cleared();
-        libSongs = library.songs().size();
-        libCharts = 0;
-        libChartsPlayed = 0;
-        for (SongMeta s : library.songs()) {
-            for (int d = 0; d < 4; d++) {
-                Difficulty dd = Difficulty.byOrdinal(d);
-                if (!s.has(dd)) continue;
-                libCharts++;
-                ChartRecord r = p != null ? p.record(s.id(), dd) : null;
-                if (r != null && r.plays > 0) libChartsPlayed++;
-            }
+        routeCounts.clear();
+        routeCounts.put("", countSongs(null, p));
+        for (MapNode n : all) {
+            String to = n.spot != null ? n.spot.to : null;
+            CaveData.Level l = to != null ? data.levels.get(to) : null;
+            if (l != null && !routeCounts.containsKey(to)) routeCounts.put(to, countSongs(l, p));
         }
     }
 
-    /** {@code 8 SONGS · 18/28 CLEARED}. */
+    /**
+     * {songs, charts, lens charts, played lens charts, full combos, all resonances} of level {@code l}: the songs of
+     * {@link #under} it, each once; the whole library when {@code l} is null. Cleared counts only the lens difficulty
+     * (Kelvin 2026-10-21 20:15: not all charts together); an ALL RESONANCE is also a full combo.
+     */
+    private int[] countSongs(CaveData.Level l, Profile p) {
+        int[] c = new int[6];
+        for (SongMeta s : library.songs()) {
+            if (l != null && !under(l, s.id(), 0)) continue;
+            c[0]++;
+            for (int d = 0; d < 4; d++) if (s.has(Difficulty.byOrdinal(d))) c[1]++;
+            if (!s.has(lens)) continue;
+            c[2]++;
+            ChartRecord r = p != null ? p.record(s.id(), lens) : null;
+            if (r == null || r.plays <= 0) continue;
+            c[3]++;
+            if (r.fullCombo || r.allResonance) c[4]++;
+            if (r.allResonance) c[5]++;
+        }
+        return c;
+    }
+
+    /**
+     * True when song {@code id} counts for a plate leading to level {@code l}: placed on it or on a level below it
+     * by {@code parent} (MAIN counts every chapter, Kelvin 2026-10-21 20:54), or placed nowhere when {@code l}
+     * collects. {@code depth} stops a loop of parents.
+     */
+    private boolean under(CaveData.Level l, String id, int depth) {
+        if (onLevel(l, id) || l.collect && !placed(data, id)) return true;
+        if (depth > 8) return false;
+        for (CaveData.Level c : data.levels.values()) {
+            if (c != l && l.id.equals(c.parent) && under(c, id, depth + 1)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * The counts behind a plate's progress bar ({@link #countSongs}: index 2 the lens charts, 3 played, 4 full
+     * combos, 5 all resonances), or null when the plate shows none.
+     */
+    int[] routeProgress(CaveData.Spot spot) {
+        return spot != null && "@progress".equals(spot.sub) ? countsFor(spot) : null;
+    }
+
+    /** The counts of the level {@code spot} leads to and the levels below it, else of the whole library. */
+    private int[] countsFor(CaveData.Spot spot) {
+        int[] c = spot != null && spot.to != null ? routeCounts.get(spot.to) : null;
+        if (c == null) c = routeCounts.get("");
+        return c != null ? c : new int[6];
+    }
+
+    /** {@code 6 SONGS · 2/6 CLEARED}, without the difficulty's name (Kelvin 2026-10-21 20:28). */
     static void appendProgress(StringBuilder sb, int songs, int charts, int played) {
         sb.append(songs).append(songs == 1 ? " SONG · " : " SONGS · ").append(played).append('/').append(charts)
             .append(" CLEARED");
     }
 
-    /** Text of a hub route plate's {@code sub} placeholder ({@code @progress}, {@code @charts}). */
-    String routeSub(String sub) {
+    /**
+     * Text of a plate's {@code sub} placeholder ({@code @progress}, {@code @charts}): it counts the songs of the level
+     * the plate leads to and the levels below it, or of the whole library without one (Kelvin 2026-10-21: SINGLES
+     * showed them all).
+     */
+    String routeSub(CaveData.Spot spot, String sub) {
         if (sub == null) return "";
+        int[] c = countsFor(spot);
         StringBuilder sb = new StringBuilder(40);
-        if ("@progress".equals(sub)) appendProgress(sb, libSongs, libCharts, libChartsPlayed);
-        else if ("@charts".equals(sub)) sb.append(libSongs).append(" SONGS · ").append(libCharts).append(" CHARTS");
+        if ("@progress".equals(sub)) appendProgress(sb, c[0], c[2], c[3]);
+        else if ("@charts".equals(sub)) sb.append(c[0]).append(" SONGS · ").append(c[1]).append(" CHARTS");
         else return sub;
         return sb.toString();
     }
@@ -731,7 +800,7 @@ final class MapWorld {
     }
 
     /**
-     * Shells single {@code songId} costs: its spot's {@code price}, else its level's, else
+     * Shells single {@code songId} costs: its spot's {@code price} (0: free), else its level's, else
      * {@link Shells#DEFAULT_PRICE}.
      */
     static int priceOf(CaveData data, String songId) {
@@ -739,7 +808,7 @@ final class MapWorld {
         for (CaveData.Level l : data.levels.values()) {
             if (!l.collect) continue;
             for (CaveData.Spot s : l.spots) {
-                if (songId.equals(s.song) && s.price > 0) return s.price;
+                if (songId.equals(s.song) && s.price >= 0) return s.price;
             }
             if (levelPrice == 0) levelPrice = l.price;
         }
@@ -753,20 +822,45 @@ final class MapWorld {
             if (m == null) m = node(id);
             if (m != null) {
                 if (!m.cleared()) return true;
-            } else if (!songCleared(p, id)) {
+            } else if (!songCleared(p, id, level.clearScore)) {
                 return true;
             }
         }
         return false;
     }
 
-    static boolean songCleared(Profile p, String songId) {
+    /** True when {@code p} played {@code songId} on some difficulty with a best of at least {@code score}. */
+    static boolean songCleared(Profile p, String songId, int score) {
         if (p == null) return false;
         for (int d = 0; d < 4; d++) {
             ChartRecord r = p.record(songId, Difficulty.byOrdinal(d));
-            if (r != null && r.plays > 0) return true;
+            if (r != null && r.plays > 0 && r.bestScore >= score) return true;
         }
         return false;
+    }
+
+    /**
+     * What a lock asks of {@code names} on one line (the tip, the song card): {@code 通关 X} / {@code CLEAR X},
+     * or with a level's clearScore {@code 在 X 的任意难度中拿到 B 及以上} /
+     * {@code GET B OR ABOVE ON ANY DIFFICULTY OF X} (Kelvin 2026-10-21 22:54).
+     */
+    static String clearPhrase(String names, int score, boolean zh) {
+        if (score <= 0) return zh ? "通关 " + names : "CLEAR " + names;
+        String[] p = clearParts(names, score, zh);
+        return p[0] + " " + p[1] + (zh ? "" : " ") + p[2];
+    }
+
+    /**
+     * {@link #clearPhrase} with a clearScore in three parts, which the label under a hole sets on two lines:
+     * {@code 在 X} · {@code 的任意难度中} · {@code 拿到 B 及以上} / {@code GET B OR ABOVE} · {@code ON ANY DIFFICULTY}
+     * · {@code OF X}. A score where a grade starts goes by that grade (80,000,000: B), any other in full.
+     */
+    static String[] clearParts(String names, int score, boolean zh) {
+        String g = null;
+        for (int i = Grades.R; i < Grades.F; i++) if (Grades.GRADE_MIN_SCORE[i] == score) g = Grades.GRADES[i];
+        String s = g != null ? g : String.format(Locale.ROOT, "%,d", score);
+        if (zh) return new String[] {"在 " + names, "的任意难度中", "拿到 " + s + (g != null ? " 及以上" : " 分及以上")};
+        return new String[] {"GET " + s + (g != null ? " OR ABOVE" : " OR MORE"), "ON ANY DIFFICULTY", "OF " + names};
     }
 
     /** Profile flag of a read story. */

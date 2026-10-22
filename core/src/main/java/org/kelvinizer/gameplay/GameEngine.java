@@ -492,7 +492,7 @@ public final class GameEngine {
      * @return true when the engine was running
      */
     public boolean pause() {
-        if (phase == Phase.PAUSED) clock.pause(); // drops a resume primed in the countdown (the menu opened again)
+        if (phase == Phase.PAUSED) clock.pause(); // stops a count-in (the menu opened again during the countdown)
         if (phase != Phase.RUNNING) return false;
         clock.pause();
         phase = Phase.PAUSED;
@@ -500,11 +500,14 @@ public final class GameEngine {
     }
 
     /**
-     * Starts the music of the paused run {@code clock().resumeLeadMs()} before the {@link #resume()} that ends the
-     * countdown, so its sound is back as the run goes on ({@link SongClock#primeResume()}). No-op unless paused.
+     * Runs the paused run's music in through the countdown ({@link SongClock#startCountIn}): it plays muted from
+     * {@code ms} before the frozen time while the run stays paused; call {@link #resume()} once
+     * {@code clock().countInLeftMs()} is up.
+     *
+     * @return false when there is nothing to run in (not paused; desktop, where a resume is exact): resume plainly
      */
-    public void primeResume() {
-        if (phase == Phase.PAUSED) clock.primeResume();
+    public boolean startCountIn(float ms) {
+        return phase == Phase.PAUSED && clock.startCountIn(ms);
     }
 
     /**

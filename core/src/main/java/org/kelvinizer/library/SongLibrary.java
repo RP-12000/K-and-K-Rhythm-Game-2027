@@ -60,6 +60,11 @@ public final class SongLibrary implements Disposable {
     public static final String CHARTS_DIR = "Charts";
     /** Manifest file name inside the charts directory. */
     public static final String MANIFEST_NAME = "index.json";
+    /**
+     * Per-song settings file inside a song folder: the keys of a manifest song entry, e.g. {@code previewStartMs},
+     * {@code previewEndMs}, {@code jacket16x9} and {@code jacketCircle}; where both set a key, this file wins.
+     */
+    public static final String SONG_SETTINGS_NAME = "song.json";
     /** Default tutorial folder (sibling of {@code Charts/}). */
     public static final String DEFAULT_TUTORIAL = "Introduction";
 
@@ -149,6 +154,7 @@ public final class SongLibrary implements Disposable {
                         SongMeta song = buildSong(id);
                         if (song == null) continue;
                         if (entry.isObject()) applyManifestEntry(song, entry);
+                        applySongSettings(song);
                         attach(chapter, song);
                     }
                 }
@@ -165,7 +171,9 @@ public final class SongLibrary implements Disposable {
             if (listed.contains(id) || id.equals(tutorialId)) continue;
             listed.add(id);
             SongMeta song = buildSong(id);
-            if (song != null) attach(lastCharted, song);
+            if (song == null) continue;
+            applySongSettings(song);
+            attach(lastCharted, song);
         }
 
         tutorial = buildFolderSong(tutorialId, root.child(tutorialId));
@@ -186,12 +194,28 @@ public final class SongLibrary implements Disposable {
     }
 
     private static void applyManifestEntry(SongMeta song, JsonValue entry) {
-        if (entry.has("previewStartMs")) song.previewStartMs = floatOf(entry.get("previewStartMs"), -1f);
+        if (entry.has("previewStartMs")) song.previewStartMs = floatOf(entry.get("previewStartMs"), Float.NaN);
+        if (entry.has("previewEndMs")) song.previewEndMs = floatOf(entry.get("previewEndMs"), Float.NaN);
         if (entry.has("resultMusicStartMs")) song.resultMusicStartMs = floatOf(entry.get("resultMusicStartMs"), 0f);
+        if (entry.has("jacket16x9")) song.jacket16x9 = boxOf(entry.get("jacket16x9"));
+        if (entry.has("jacketCircle")) song.jacketCircle = boxOf(entry.get("jacketCircle"));
         JsonValue map = entry.get("map");
         if (map != null && map.isObject()) {
             song.mapNudgeX = floatOf(map.get("nudgeX"), 0f);
             song.mapNudgeY = floatOf(map.get("nudgeY"), 0f);
+        }
+    }
+
+    /** Applies the song folder's {@link #SONG_SETTINGS_NAME} when it has one; an unreadable file is ignored. */
+    private void applySongSettings(SongMeta song) {
+        FileHandle f = song.folder().child(SONG_SETTINGS_NAME);
+        if (!f.exists()) return;
+        try (InputStream in = f.read()) {
+            JsonValue v = new JsonReader().parse(in);
+            if (v != null && v.isObject()) applyManifestEntry(song, v);
+            else log("Ignoring " + f.path() + ": not a JSON object");
+        } catch (IOException | RuntimeException e) {
+            log("Ignoring " + f.path() + " (" + e.getMessage() + ")");
         }
     }
 
@@ -834,6 +858,23 @@ public final class SongLibrary implements Disposable {
         } catch (NumberFormatException e) {
             return def;
         }
+    }
+
+    /**
+     * A jacket framing box {x, y, w, h} (fractions of the image, y from the top), or null (the centre crop) unless it
+     * is an object of four numbers with a positive size inside the image.
+     */
+    private static float[] boxOf(JsonValue v) {
+        if (v == null || !v.isObject()) return null;
+        float x = floatOf(v.get("x"), Float.NaN), y = floatOf(v.get("y"), Float.NaN);
+        float w = floatOf(v.get("w"), Float.NaN), h = floatOf(v.get("h"), Float.NaN);
+        float slack = 1e-3f;
+        if (!(w > 0f && h > 0f && x >= -slack && y >= -slack && x + w <= 1f + slack && y + h <= 1f + slack)) {
+            return null;
+        }
+        x = Math.max(0f, x);
+        y = Math.max(0f, y);
+        return new float[] {x, y, Math.min(w, 1f - x), Math.min(h, 1f - y)};
     }
 
     /** The value as a float (numbers and numeric strings), else {@code def}. */

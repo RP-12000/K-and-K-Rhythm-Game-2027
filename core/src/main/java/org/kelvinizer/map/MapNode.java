@@ -69,6 +69,11 @@ final class MapNode {
     MapNode[] needs = new MapNode[0];
     /** Display names of the required songs ({@code Song 3 · Song 4}). */
     String needsText = "";
+    /**
+     * Best score a song needs on some difficulty to count as cleared (0: any play): its level's
+     * {@code clearScore}; on ALL SONGS that of the level whose lock the card shows.
+     */
+    int clearScore;
     /** Arrival wake light 0..1 (X1 / X3: the light reaches this spot) and its delay (s). */
     float wake = 1f, wakeDelay;
     /** Lock shake time left (s) after a tap on a locked spot. */
@@ -136,11 +141,13 @@ final class MapNode {
         return spot != null && spot.sealed;
     }
 
-    /** Counts as cleared for path styling: played song, read story, open shaft or rise. */
+    /** Counts as cleared for path styling and requires: played song, read story, open shaft or rise. */
     boolean cleared() {
         switch (kind) {
             case SONG:
-                return anyPlayed;
+                if (clearScore <= 0) return anyPlayed;
+                for (int i = 0; i < 4; i++) if (played[i] && best[i] >= clearScore) return true;
+                return false;
             case STORY:
                 return read;
             case SHAFT:

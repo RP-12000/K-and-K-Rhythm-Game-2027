@@ -148,8 +148,20 @@ final class MapRenderer {
     private float[] labelK = new float[0];
     /** Per node label lines (built per level and on refresh). */
     private String[] l1 = new String[0], l2 = new String[0], l3 = new String[0];
+    /** Per song: the second line of its lock label when its level sets a clearScore (else empty). */
+    private String[] lock2 = new String[0];
     /** Title width at the UI raster per node (lazy, −1 = unknown). */
     private float[] titleW = new float[0];
+    /** Per node: a route or shaft with a progress bar under its name (its {@code sub} is {@code @progress}). */
+    private boolean[] bar = new boolean[0];
+    /**
+     * The progress bar under SINGLES, MAIN and the chapters' shafts (Kelvin 2026-10-21 20:31, the grades' colours
+     * 20:51, MAIN and the chapters 20:54): the lens difficulty's charts, ALL RESONANCE solid light blue, FULL COMBO
+     * striped purple, the other played charts translucent white. Width, height, slant of its ends, stripe period and
+     * width, the gap under it.
+     */
+    static final float BAR_W = 320f, BAR_H = 20f, BAR_SLANT = 10f, BAR_STRIPE = 8f, BAR_STRIPE_W = 4f, BAR_GAP = 14f;
+    private final float[] barQuad = new float[8];
     /**
      * Per song: the width at the UI raster of its first 15 and first 20 half-width characters, 0 when it has no
      * more (it never scrolls then), and the time its scroll has run (Kelvin 2026-10-19 13:40 / 14:00).
@@ -205,6 +217,8 @@ final class MapRenderer {
         l1 = new String[n];
         l2 = new String[n];
         l3 = new String[n];
+        lock2 = new String[n];
+        bar = new boolean[n];
         signText = new String[w.signs.size()];
         areaSub = new String[w.areas.size()];
         tipNode = null;
@@ -237,13 +251,15 @@ final class MapRenderer {
         for (MapNode n : world.all) {
             int i = n.idx;
             CaveData.Spot s = n.spot;
-            String a = "", b = "", c = "";
+            String a = "", b = "", c = "", d = "";
             switch (n.kind) {
                 case MapNode.SONG:
                     a = n.song != null ? n.glitch ? MapWorld.garble(n.song.title()) : n.song.title() : "";
                     if (n.locked && !world.isGrid()) {
-                        c = zh ? "通关 " + n.needsText + " 后解锁" : "CLEAR " + n.needsText + " TO UNLOCK";
-                    } else if (n.forSale) {
+                        String[] k = songLock(n);
+                        c = k[0];
+                        d = k[1];
+                    } else if (n.forSale && !n.locked) { // ALL SONGS: no price while locked
                         c = Integer.toString(n.price);
                     }
                     break;
@@ -252,7 +268,7 @@ final class MapRenderer {
                     a = "STORY " + (st != null ? st.number : "") + (n.read ? " · READ" : "");
                     b = st == null ? "" : !zh ? st.title
                         : !st.titleZh.isEmpty() ? st.titleZh : st.title + "  " + st.titleZh;
-                    if (n.locked) c = zh ? "通关 " + n.needsText + " 后解锁" : "CLEAR " + n.needsText + " TO UNLOCK";
+                    if (n.locked) c = lockLabel(n, zh);
                     break;
                 }
                 case MapNode.RISE:
@@ -269,14 +285,16 @@ final class MapRenderer {
                 default:
                     a = s != null && s.label != null ? s.label : "";
                     b = zh && s != null && s.labelZh != null ? s.labelZh : "";
-                    c = s != null ? world.routeSub(zh && s.subZh != null ? s.subZh : s.sub) : "";
+                    c = s != null ? world.routeSub(s, zh && s.subZh != null ? s.subZh : s.sub) : "";
                     if (!zh) c = MapWorld.latin(c);
+                    bar[i] = (n.kind == MapNode.ROUTE || n.kind == MapNode.SHAFT) && world.routeProgress(s) != null;
                     if (n.sealed() && c.isEmpty()) c = zh ? "COMING SOON · 敬请期待" : "COMING SOON";
                     break;
             }
             l1[i] = a;
             l2[i] = b;
             l3[i] = c;
+            lock2[i] = d;
             titleW[i] = -1f;
             boolean song = n.kind == MapNode.SONG && !n.glitch;
             win15[i] = song ? prefixWidth(a, 15) : 0f;
@@ -362,6 +380,32 @@ final class MapRenderer {
     /** True for the holes whose labels fade on the overview (songs, stories, contacts, slots). */
     private static boolean small(MapNode n) {
         return n.kind == MapNode.SONG || n.kind == MapNode.STORY || n.kind == MapNode.CONTACT || n.kind == MapNode.SLOT;
+    }
+
+    /**
+     * Label under a locked hole: {@code 通关 X 后解锁} / {@code CLEAR X TO UNLOCK}, or with a level's clearScore
+     * only what it asks ({@code 在 X 的任意难度中拿到 B 及以上}: the padlock says the rest).
+     */
+    private static String lockLabel(MapNode n, boolean zh) {
+        String need = MapWorld.clearPhrase(n.needsText, n.clearScore, zh);
+        return n.clearScore > 0 ? need : need + (zh ? " 后解锁" : " TO UNLOCK");
+    }
+
+    /**
+     * A song's lock label, on two lines when its level sets a clearScore (Kelvin 2026-10-21 22:54:
+     * 「在xxx曲目的任意难度中拿到B及以上」, too long for one), split where the wider of its two lines is narrowest:
+     * {@code 在 X 的任意难度中} / {@code 拿到 B 及以上}, or for a long name {@code 在 X} / {@code 的任意难度中拿到 B 及以上}.
+     */
+    private String[] songLock(MapNode n) {
+        if (n.clearScore <= 0) return new String[] {lockLabel(n, zh), ""};
+        String[] p = MapWorld.clearParts(n.needsText, n.clearScore, zh);
+        String[] a = {p[0] + " " + p[1], p[2]}, b = {p[0], p[1] + (zh ? "" : " ") + p[2]};
+        return wider(a) <= wider(b) ? a : b;
+    }
+
+    /** The wider of two lock label lines. */
+    private float wider(String[] lines) {
+        return Math.max(uiWidth(lines[0], 18f), uiWidth(lines[1], 18f));
     }
 
     /** Shown locked: locked, or unlocking until the X5 gold flow arrives. */
@@ -1402,6 +1446,12 @@ final class MapRenderer {
             }
         }
         if (gridOn) grid.unmask(draw.batch());
+        for (MapNode n : world.all) {
+            if (!bar[n.idx]) continue;
+            float la = labelA * labelK[n.idx];
+            int[] c = world.routeProgress(n.spot);
+            if (la > 0.01f && c != null) drawBar(cam.hudX(n.drawX()), barTop(n), c, d, la);
+        }
         for (int i = 0; i < signN; i++) {
             CaveData.Sign g = world.signs.get(signIdx[i]);
             float w = signW[i], h = 52f, x = signX[i] - w * 0.5f, y = signY[i] - h * 0.5f;
@@ -1417,6 +1467,70 @@ final class MapRenderer {
             draw.panel(tipX - tipW * 0.5f, tipY, tipW, 52f, 16f, 0.95f * tipA);
             draw.roundRectStroke(tipX - tipW * 0.5f, tipY, tipW, 52f, 16f, 2f, Theme.GOLD, 0.8f * tipA);
         }
+    }
+
+    /** Top of the progress bar under plate {@code n}: under its name (and Chinese name), as the text pass lays it. */
+    private float barTop(MapNode n) {
+        float cap = plateCap(), y = labelTop(n) - cap - 10f;
+        if (!l2[n.idx].isEmpty()) y -= cap * 0.8f + 10f;
+        return y - 2f;
+    }
+
+    /** Size of the progress bar: 1 at the hub's zoom, following its name's size elsewhere (a chapter's shaft). */
+    private float barK() {
+        return plateCap() / 26f;
+    }
+
+    /** Size of a route's or shaft's name at the current zoom (26 at the hub). */
+    private float plateCap() {
+        return MathUtils.clamp(26f / zoom, 20f, 30f);
+    }
+
+    /**
+     * The progress bar centred on {@code cx} under {@code top}: a slanted track with, from the left, the ALL
+     * RESONANCE charts solid, the other full combos striped and the other played charts translucent ({@code c} from
+     * {@link MapWorld#routeProgress}) in the grades' colours, its border in difficulty {@code d}'s (Kelvin 2026-10-21
+     * 20:31 / 20:51).
+     */
+    private void drawBar(float cx, float top, int[] c, int d, float a) {
+        float k = barK(), w = BAR_W * k, h = BAR_H * k, s = BAR_SLANT * k, x0 = cx - 0.5f * (w + s), y0 = top - h;
+        float px = Ui.worldPerPx();
+        slant(x0, y0, w, h, s, 0f, 1f);
+        draw.convexFill(barQuad, 4, Theme.PANEL, 0.9f * a, px);
+        draw.convexStroke(barQuad, 4, 1.5f, Theme.difficultyAccent(d), 0.55f * a, px);
+        int total = c[2];
+        if (total <= 0) return;
+        float in = 3f * k, iw = w - 2f * in, ih = h - 2f * in, is = s * ih / h, ix = x0 + in + s * in / h, iy = y0 + in;
+        float f1 = c[5] / (float) total, f2 = c[4] / (float) total, f3 = c[3] / (float) total;
+        if (f1 > 0f) {
+            slant(ix, iy, iw, ih, is, 0f, f1);
+            draw.convexFill(barQuad, 4, Theme.ALL_RESONANCE, a, px);
+        }
+        if (f2 > f1) {
+            slant(ix, iy, iw, ih, is, f1, f2);
+            draw.convexFill(barQuad, 4, Theme.FULL_COMBO, 0.18f * a, px);
+            for (float t = f1 * iw; t < f2 * iw - 0.5f; t += BAR_STRIPE * k) {
+                slant(ix, iy, iw, ih, is, t / iw, Math.min(t + BAR_STRIPE_W * k, f2 * iw) / iw);
+                draw.convexFill(barQuad, 4, Theme.FULL_COMBO, 0.95f * a, px);
+            }
+        }
+        if (f3 > f2) {
+            slant(ix, iy, iw, ih, is, f2, f3);
+            draw.convexFill(barQuad, 4, Theme.INK1, 0.35f * a, px);
+        }
+    }
+
+    /** {@link #barQuad}: the part {@code f0}..{@code f1} of a {@code w} × {@code h} bar at (x, y), top shifted s. */
+    private void slant(float x, float y, float w, float h, float s, float f0, float f1) {
+        float xa = x + f0 * w, xb = x + f1 * w;
+        barQuad[0] = xa;
+        barQuad[1] = y;
+        barQuad[2] = xb;
+        barQuad[3] = y;
+        barQuad[4] = xb + s;
+        barQuad[5] = y + h;
+        barQuad[6] = xa + s;
+        barQuad[7] = y + h;
     }
 
     // ------------------------------------------------------------------- ALL SONGS score row
@@ -1542,6 +1656,10 @@ final class MapRenderer {
                 if (lockShown(n)) {
                     uiFit(b, l3[i], 18f, x, y - labelCap - 12f, Align.center | Align.top,
                         MapStyle.LABEL_MAX_W, Theme.GOLD, la);
+                    if (!lock2[i].isEmpty()) {
+                        uiFit(b, lock2[i], 18f, x, y - labelCap - 40f, Align.center | Align.top,
+                            MapStyle.LABEL_MAX_W, Theme.GOLD, la);
+                    }
                 } else if (saleShown(n)) {
                     // the price after a small shell (drawn in the atlas pass)
                     ui(b, l3[i], 18f * lk, x + 15f * lk, y - labelCap - 12f * lk, Align.center | Align.top, Theme.GOLD,
@@ -1557,7 +1675,7 @@ final class MapRenderer {
                 continue;
             }
             boolean big = n.kind == MapNode.SHAFT || n.kind == MapNode.ROUTE;
-            float cap = big ? MathUtils.clamp(26f / zoom, 20f, 30f) : labelCap * 0.9f;
+            float cap = big ? plateCap() : labelCap * 0.9f;
             Color main = n.kind == MapNode.STORY ? Theme.INK2 : n.kind == MapNode.RISE ? Theme.SURFACE_TOP
                 : n.sealed() ? Theme.INK2 : Theme.INK1;
             uiFit(b, l1[i], cap, x, y, Align.center | Align.top, 420f, main, la);
@@ -1567,6 +1685,7 @@ final class MapRenderer {
                     n.kind == MapNode.STORY ? Theme.INK1 : Theme.INK2, la);
                 yy -= cap * 0.8f + 10f;
             }
+            if (bar[i]) yy -= (BAR_H + BAR_GAP) * barK();
             if (!l3[i].isEmpty()) {
                 Color c = lockShown(n) ? Theme.GOLD : n.sealed() ? Theme.GLITCH_M : Theme.INK3;
                 uiFit(b, l3[i], 17f, x, yy, Align.center | Align.top, 420f, c, la);

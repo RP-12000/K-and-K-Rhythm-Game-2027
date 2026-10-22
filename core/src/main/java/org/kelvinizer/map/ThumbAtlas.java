@@ -12,18 +12,19 @@ import com.badlogic.gdx.utils.Disposable;
 import org.kelvinizer.library.SongMeta;
 
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
- * 节点上的圆形缩略图：后台线程把曲绘裁成 256² 的圆形，
+ * 节点上的圆形缩略图：后台线程把曲绘裁成 256² 的圆形（按歌曲设的圆形取景，没设就取中间），
  * 缓存到 {@code cache/thumbs/}，每 16 张拼成一页贴图，所有节点从同一张贴图画。
  * 缩略图没准备好时，节点先画一个占位圆。
  *
- * <p>Node thumbnails (DESIGN §3.3): each jacket is decoded, centre-cropped, scaled to 256² in two
- * bilinear steps and masked to a soft circle on a worker thread (CPU only, no GL), cached as
- * {@code local("cache/thumbs/<id>-<modified>-<length>.png")} and packed 16 per 1024² page so
- * all nodes draw from one texture. The GL thread copies finished thumbs into the page pixmap and
+ * <p>Node thumbnails (DESIGN §3.3): each jacket is decoded, cropped to the song's circle framing (else its
+ * centre), scaled to 256² in two bilinear steps and masked to a soft circle on a worker thread (CPU only, no GL),
+ * cached as {@code local("cache/thumbs/<id>-<modified>-<length>[-c<framing hash>].png")} and packed 16 per 1024²
+ * page so all nodes draw from one texture. The GL thread copies finished thumbs into the page pixmap and
  * re-uploads the page (with mipmaps) at most once per frame while thumbs keep arriving; until a
  * thumb is ready {@link #region(int)} returns null and the node draws a placeholder disc.
  *
@@ -187,8 +188,9 @@ final class ThumbAtlas implements Disposable {
         Pixmap src = new Pixmap(jacket);
         Pixmap mid = null, out;
         try {
-            int side = Math.min(src.getWidth(), src.getHeight());
-            int sx = (src.getWidth() - side) / 2, sy = (src.getHeight() - side) / 2;
+            int[] sq = new int[3];
+            song.circleSquare(src.getWidth(), src.getHeight(), sq);
+            int sx = sq[0], sy = sq[1], side = sq[2];
             int midSize = side > SIZE * 2 ? SIZE * 2 : side;
             mid = new Pixmap(midSize, midSize, Pixmap.Format.RGBA8888);
             mid.setBlending(Pixmap.Blending.None);
@@ -222,7 +224,10 @@ final class ThumbAtlas implements Disposable {
                 char c = id.charAt(i);
                 sb.append(Character.isLetterOrDigit(c) && c < 128 ? c : '_');
             }
-            sb.append('-').append(jacket.lastModified()).append('-').append(jacket.length()).append(".png");
+            sb.append('-').append(jacket.lastModified()).append('-').append(jacket.length());
+            float[] box = song.jacketCircle();
+            if (box != null) sb.append("-c").append(Integer.toHexString(Arrays.hashCode(box)));
+            sb.append(".png");
             return Gdx.files.local(sb.toString());
         } catch (Throwable t) {
             return null;

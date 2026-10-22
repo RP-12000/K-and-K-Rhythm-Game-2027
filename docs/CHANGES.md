@@ -1268,3 +1268,106 @@
 * 代码：`audio/SongClock`（`setResumeLatencyMs`、`resumeLatencyMs`、`RESUME_SLEW`；`resumeLeadMs` 先用继续播放的延迟；`update` 里继续后的纠正和测量）、`profile/DeviceSettings`（`musicResumeLatencyMs`）、`gameplay/GameplayScreen`（开局时把存下的值交给时钟，离开时存回去：`recordLatencies`）。
 * 怎么验证：编译通过，25 组自动测试全过。新的测试：模拟继续和开局出声快慢不同的播放器（继续 40 / 开局 200、继续 250 / 开局 120、继续 200 / 开局 120 且出声前报告的位置一直在走、两者都是 120），各暂停 5 次：每一帧谱面移动的距离和正常相差都不超过 1.7 毫秒（原来跳 160 毫秒或停 130 毫秒），4 秒后和音乐差 0 毫秒，测出的继续延迟和模拟的一样；继续延迟的存取和范围（NaN 当 0，最多 400）。7.105 的两条测试改成「最后一帧之内」：倒计时比声音早结束时谱面先走，最多差一帧，之后自然对齐。手机上的效果要在手机上试。
 * 文档：ARCHITECTURE §6；DEVELOPER 一行；README §7.4 一条。
+
+### 7.107 暂停后继续：倒数时音乐先静音地放，数完直接响起（2026-10-21 14:03–15:10，Kelvin）
+
+* Kelvin 在几种做法里选了「倒数先放音乐」。先试过倒数 3 秒、音乐从一半音量渐强、谱面在倒数时从 3 秒前淡淡地重放，没有采用。15:09 改成：「恢复之前的暂停，但是音乐从321的倒计时就开始走，只是音量为0，然后倒计时结束后以后瞬间到1」；15:10：「除了音乐提前开始“跑”但是不播放出来以外其他的都和之前的暂停一模一样」。
+* 原因：7.105 和 7.106 都是在倒数快结束时才按出声延迟提前起音乐。手机继续播放时出声的快慢每次不一样，谱面还是要追一下（7.106 改成了慢慢追）。别的音乐游戏的做法是在倒数里就把音乐放起来，等它稳了再接着判定。
+* 现在（只在手机上；电脑上继续本来就准，完全照旧）：
+  * 倒数和以前一模一样：画面定住，3、2、1 每个 0.6 秒，不判定。
+  * 按继续时音乐就从暂停点前 1.8 秒开始放，但音量是 0；时钟跟着它走，倒数的数字也跟着它，数完正好到暂停点，音量一下子回到原样，谱面接着走。播放器刚开始放时报告的位置不稳的那一段都在倒数里过去了。
+  * 暂停点离歌曲开头不到 1.8 秒时，从开场留白里开始数，音乐像开局一样从头静音地放；倒数时再暂停，回到暂停菜单，时间仍是原来的暂停点。
+  * 去掉 7.105 的提前起音乐（`resumeLeadMs`、`primeResume`）和 7.106 的继续播放出声延迟（`resumeLatencyMs`、`DeviceSettings.musicResumeLatencyMs`）：倒数时音乐已经放了 1.8 秒，用不着了。继续后的慢慢追（`RESUME_SLEW`）留着。
+* 代码：`audio/SongClock`（`startCountIn`、`countInMs`、`countInLeftMs`；倒数中 `setVolume` 和渐变不打开声音；倒数中 `pause` 回到暂停点）、`gameplay/GameEngine`（`startCountIn`）、`gameplay/GameplayScreen`（倒数开始时调用、数字跟着音乐走）、`profile/DeviceSettings`（去掉 `musicResumeLatencyMs`，旧存档里的这一项读的时候跳过）。
+* 怎么验证：编译通过，25 组自动测试全过。暂停继续这组改写（145 项）：模拟出声延迟不同的播放器（继续 / 开局 120 / 120、40 / 200、250 / 120，出声前报告的位置一直在走，没有开局延迟），每次倒数音乐从暂停点前起播、全程静音、倒数中时间不动、数完正好到暂停点（最多差一帧）、之后没有跳或停、4 秒后和音乐差 0 毫秒、音量一下子回到 0.8；倒数中改音量仍静音；暂停点离开头不到 1.8 秒；倒数中再暂停；电脑、循环音乐、开场留白里不倒数；播放器放不出声时照样数完 1.8 秒；超过歌曲结尾不跳；引擎在倒数中停在暂停点、什么都不判定。手机上的效果要在手机上试。
+* 文档：ARCHITECTURE §6；DESIGN §5.12；DEVELOPER 三行；README §7.4 一条。
+
+### 7.108 暂停后继续：倒数时谱面从几乎看不见匀速变回原样（2026-10-21 15:40–16:10，Kelvin）
+
+* Kelvin 15:40 在 7.107 上又加了一条：「谱面逐渐淡入吧，就是从倒计时第3秒的0.25倍透明度提升到1倍透明度，匀速提升」；16:10 改成「从0.05倍开始加透明度」。
+* 现在（电脑和手机一样）：按继续后 3 一出现，谱面就只剩原来的 0.05 倍不透明度，之后跟着倒数匀速升高，数完正好回到原样，接着走。淡的是轨道区、潮水、判定线、TIDE STREAM 光带、残影、音符、加法混合的光，还有暂停时定住的击打特效；连击数、判定字、四角 HUD 和倒数的数字不变。手机上倒数的数字跟着静音先放的音乐走，淡入也跟着它。其余和 7.107 一样。
+* 代码：`gameplay/FadeShader`（新，SpriteBatch 默认着色器再乘一个透明度）、`gameplay/GameplayScreen`（`COUNT_FADE_FROM`、`countFade`，绘制时倒数中把上面几段夹在淡化里）。
+* 怎么验证：编译通过，25 组自动测试全过；暂停继续这组加了淡入的几项（开始 0.05 倍、一半 0.525 倍、1 出现时约 0.68 倍、数完 1 倍、等音乐时停在 0.05 倍、匀速）。手机比例的游戏画面视频看过：3 时谱面几乎看不见，数完时和平常一样。
+* 文档：DESIGN §5.12；DEVELOPER 两行；README §7.4 一条。
+
+### 7.109 暂停后继续：倒数改成 3 秒，每个数字 1 秒（2026-10-21 16:45，Kelvin）
+
+* Kelvin：「倒计时是3秒啊，1秒出现一个数」。
+* 现在（电脑和手机一样）：继续时 3、2、1 每个 1 秒，共 3 秒，数字的放大、淡出和收拢的圈和开场倒数一模一样（以前每个 0.6 秒，共 1.8 秒）。手机上音乐从暂停点前 3 秒静音地放起，数完正好到暂停点、以原来的音量响起；谱面从 0.05 倍匀速淡回原样也拉长到这 3 秒。暂停点离歌曲开头不到 3 秒时，从开场留白里开始数。开场的倒数不变。
+* 代码：`gameplay/GameplayScreen`（`COUNT_STEP_SEC` 改成 1 秒，`COUNT_IN_MS` 由它算出 3000）、`gameplay/RunOverlay`（`RESUME_STEP_SEC` 取 `GameplayScreen.COUNT_STEP_SEC`；数字动画仍按原来 0.6 秒那套时间写，用 `DIGIT_BASE_SEC` 拉伸到每步的长度）。
+* 怎么验证：编译通过，25 组自动测试全过（TIDE 那组的不分配内存检查第一遍多算了 280 字节，单独重跑三遍都过；这次没动引擎）。暂停继续这组按 3 秒改了（152 项：音乐从暂停点前 3 秒起、数完用 3 秒、暂停在开头后 2.95 秒时音乐马上起播、淡入在 3 秒时 0.05 倍、1.5 秒时 0.525 倍、2 出现时约 0.37 倍、1 出现时约 0.68 倍）。手机比例的游戏画面视频看过。
+* 文档：DESIGN §5.11、§5.12；ARCHITECTURE §6；DEVELOPER 三行；README §7.4 两条。
+
+### 7.110 试听段可以设起点和终点；单曲入口只数单曲；歌名里的 ς 显示出来（2026-10-21 17:45–17:54，Kelvin）
+
+* Kelvin 17:45 / 17:52：「加一个previewStartMs以及长度。如果previewStart<0就等到进度到了0再开始，超过结尾也不要回到开头，等时间条跑完」「目前的default都用你现在有的，就是整首歌30%开始的20s」「参数改为起点和终点而不是起点和持续时长」。
+  * 歌曲文件夹里可以放 `song.json`，写 `previewStartMs`（试听起点）和 `previewEndMs`（试听终点），单位毫秒，按音乐文件自己的时间。`index.json` 的歌曲条目也能写这两个键，两边都写时以 `song.json` 为准。谱面编辑器设置试听段时写这个文件。
+  * 不写时和以前一样：起点是整首歌的 30 %，放 20 s。终点不晚于起点时也按起点后 20 s。
+  * 起点小于 0：先静音，等到歌曲的 0 再从头放。终点超过音乐结尾：放完后静音，等到终点，不跳回开头。到终点前 0.8 s 淡出，然后从起点重新开始。以前「起点到结尾不足约 2 s 就从 0 开始」的规则去掉了。
+* Kelvin 17:47：「现在怎么单曲还显示的是13songs，检查一下单曲进入界面的统计逻辑」。航线 hub 上 SINGLES 牌子的「N SONGS · p/c CLEARED」以前数的是整个曲库；现在只数牌子通往的那张地图上的歌，加上自动收进单曲、哪张地图都没放的歌。
+* Kelvin 17:54：「ς 这个字符好像并没有在Mγ ς0μ1(feat.初音ミク)这首歌名里出现」。中文字体 `NotoSansSC-Medium.ttf` 是 GB2312 子集，GB2312 有 24 个小写希腊字母，但没有词尾的 ς（U+03C2），所以画不出来。从同一个 Noto Sans SC（字重 500）重新做了子集：原来的 7623 个字形完全不变，加了 38 个：ς、长音 ー、假名区其余的字（如 ゔ、ヷ–ヺ、ヽ、ヾ）、小片假名 ㇰ–ㇿ 和 ｟｠。文件多了 6 KB。做法写在 DEVELOPER §6.5。
+* 代码：`library/SongMeta`（`previewEndMs`、`DEFAULT_PREVIEW_MS`、`defaultPreviewStartMs`）、`library/SongLibrary`（读 `song.json`，`SONG_SETTINGS_NAME`）、`audio/AudioService`（试听窗口：静音的开头和结尾、到终点从起点重来）、`map/MapWorld`（`routeCounts`、`countSongs`）、`map/MapRenderer`（牌子把点传给 `routeSub`）。
+* 怎么验证：编译通过，26 组自动测试全过。新加一组试听测试（20 项：默认 30 %–50 %、到终点回到起点、起点 −3 s 先静音再从 0 放、结尾后静音不回 0、整段在结尾之后时一直静音、`song.json` 盖过 `index.json`、坏文件被忽略）；地图那组加了两项（SINGLES 牌子只数单曲地图上的歌，没有 `to` 时数整个曲库）。字体逐个字形比对过原来的 7623 个。
+* 文档：CHART_FORMAT §12.1、§12.2；ASSET_SLOTS §1.4、§3、§5；DESIGN 四处；ARCHITECTURE 两处；MAP_FORMAT 一处；DEVELOPER 两处；README §7.3 三条。
+
+### 7.111 曲绘取景：16:9 区域和圆形区域（2026-10-21 18:32，Kelvin）
+
+* Kelvin 18:32（在谱面编辑器那边）：「然后曲绘显示还是要再调，因为有些曲绘不是16：9就需要我选定区域，圆形部分也要我选定。」
+* 歌曲文件夹的 `song.json`（或 `index.json` 的歌曲条目）可以写 `jacket16x9` 和 `jacketCircle`，各是 `{ "x", "y", "w", "h" }`，占整张图的比例，y 从上往下。谱面编辑器的取景框写这两个键。
+  * `jacket16x9`：歌曲卡片（宽屏右侧卡片）的曲绘和它的光晕、结算画面的曲绘和光晕、游戏和结算背景的淡色底。
+  * `jacketCircle`：地图上的圆孔（也就是转场里的圆盘）、窄屏底部卡片的方形曲绘、个人页列表的小图。地图缩略图的缓存文件名带上取景，改了取景会重新做。
+  * 不写、写成 `null`、超出图片、宽或高不大于 0 时，和以前一样取图片中间。框的形状和位置不一样时（比如 16:9 的框放进方形位置），取框的中间。
+* 代码：`library/SongMeta`（`jacket16x9`、`jacketCircle`、`crop`、`circleSquare`）、`library/SongLibrary`（读这两个键，`boxOf`）、`map/SongCard`、`screens/result/JacketBlock`、`screens/ResultScreen`、`map/ThumbAtlas`、`screens/shell/ThumbCache`、`ui/Backdrop`（`setWash` 带上取景）、`gameplay/GameplayScreen`。
+* 怎么验证：编译通过，27 组自动测试全过。新加一组取景测试（没取景时和以前的中间裁剪一样、16:9 的框原样用、方形位置取框的中间、`song.json` 盖过 `index.json`、坏的框和 `null` 取中间、数字写成字符串也认、圆形区域换算成像素）。
+* 文档：CHART_FORMAT §12.1、§12.2；ASSET_SLOTS §2.2；DESIGN 四处；ARCHITECTURE 一处；DEVELOPER 一处；README §7.3 一条。
+
+### 7.112 单曲入口的通关数按选中的难度；个人页只亮选中的难度（2026-10-21 20:15、20:28，Kelvin）
+
+* Kelvin：「那个（x/19）cleared改为选中了哪个难度就显示那个难度有多少cleared，而不是所有chart一起。同理，user界面也不要一上来就把所有的chart都选上」。
+* 洞口 SINGLES 牌子：以前「6 SONGS · x/19 CLEARED」把四个难度的谱面一起数；现在只数地图上选中的那个难度，比如「6 SONGS · 2/6 CLEARED」。先写过难度名（「2/6 SURFACE CLEARED」），Kelvin 20:28：「不要写“Surfaced”，就直接2/6 cleared」，就去掉了。「CLEARED」的意思不变：玩过就算。`@charts` 的谱面数还是四个难度都算。
+* 个人页 STATS：以前四个难度开关一开始全亮（只在程序开着时记住）；现在每次打开个人页只亮地图上选中的那个难度（不知道时亮 SURFACE），还可以再点亮几个看合计。
+* 代码：`map/MapWorld`（`lens`、`countSongs` 多记选中难度的谱面数和玩过数）、`screens/shell/StatsTab`（`lightOnly`，默认只亮 SURFACE）、`screens/ProfileScreen`（打开时按 `Profile.lastDifficulty` 点亮）。
+* 怎么验证：编译通过，27 组自动测试全过；地图那组加了三项（SURFACE 和 ABYSS 时 SINGLES 牌子只数那个难度、不写难度名，`@charts` 还是数四个难度）。
+* 文档：MAP_FORMAT 两处；DESIGN 两处；README §7.3、§7.7 各一条。
+
+### 7.113 单曲、主线和主线章节的入口加进度条（2026-10-21 20:31、20:51、20:54，Kelvin）
+
+* Kelvin 20:31（附了一张别的游戏个人卡片上的斜进度条）：「或者说弄一个像这样子的进度条一样的东西，选择哪个难度就这样，resonance实心颜色，fc虚线颜色，clear半透明」。20:51 选了评级的配色，下面的字留着。20:54：「所有的主线章节在故事模式下都这么处理，然后外面的main入口也这么处理」。
+* 洞口 SINGLES 牌子：名字下面加一条两头斜切的进度条（320 × 20）。整条是地图上选中的那个难度的全部谱面，每张谱按最好的一档算一次，从左往右：全 RESONANCE 浅蓝实心，FULL COMBO 紫色斜纹，其他玩过的白色半透明，没玩过的是空槽。颜色和评级的一样，边框跟选中的难度变色。下面照旧写「6 SONGS · 2/6 CLEARED」。
+* 洞口 MAIN 入口也有这条进度条和「N SONGS · x/y CLEARED」，数的是主线每一章的歌（同一首歌在几章里都有只算一次）。
+* 故事模式下，章节里通往下一章的竖井（第 1 章里的「02 暮光层」）也有进度条，下面的「第 2 层」换成那一章的「N SONGS · x/y CLEARED」。章节地图会缩放，进度条跟着名字的大小变（洞口上是原大）。封着、还没有地图的章节不加；章节模式那一层（`main.json`）的竖井没改。
+* 地图数据：`hub.json` 的 MAIN 和 `main_c1.json` 的 `c2` 竖井 `sub` 改成 `@progress`（`c2` 去掉 `subZh`）。`@progress` / `@charts` 现在数 `to` 那一层和它下面的层（`parent` 是它的层），所以 MAIN 数到每一章。
+* 代码：`map/MapWorld`（`countSongs` 多记 FULL COMBO 数和全 RESONANCE 数，新的 `under`、`routeProgress`）、`map/MapRenderer`（`drawBar`、`barK`；名字下面的字往下让出进度条的位置；竖井也画）。
+* 怎么验证：编译通过，27 组自动测试全过；地图那组加了六项（这一层有五张以上 SURFACE 谱；进度条只算选中难度和这一层的歌，每张谱按最好的一档算一次；下面的字照旧；`sub` 不是 `@progress` 的点没有进度条；MAIN 把每一章的歌各算一次；章节竖井只算那一章）。
+* 文档：MAP_FORMAT、DESIGN 各一处；README §7.3 两条。
+
+### 7.114 再整理一遍代码（2026-10-21 21:49，Kelvin）
+
+* Kelvin：「再清理一遍代码，和上次一样，不用改版本号」。版本号还是 0.1.0-beta.1。
+* 按 7.104 的办法，把 7.104 以后改过的代码（23 个文件）和整个仓库重新查了一遍：没用到的导入、私有成员、没人调用的方法和常量、只写不读的变量、从来没打开过的开关、注释掉的代码、超过 120 个字符的行。大部分已经是干净的，改了这几处（游戏的行为、画面和存档都不变）：
+  * 删掉 `audio/AudioService` 的 `PREVIEW_WINDOW_MS`：7.110 以后试听的长度由 `library/SongMeta` 决定，这个常量没有地方用了。
+  * `map/MapWorld` 的 `refresh` 去掉一个从来没用过的参数。
+  * `map/MapWorld`：牌子下面那行字和进度条查的是同一份计数，查法合成一个 `countsFor`；`map/MapRenderer`：航线点和竖井名字的字号算法合成 `plateCap`，名字、进度条的位置和大小共用。
+  * `screens/shell/ThumbCache`：缩略图任务不再另存一份歌曲 id，直接用歌曲本身的。
+  * `map/MapRenderer` 里一行超过 120 个字符的注释改短了。
+* 文档：本日志 7.107、7.108、7.113 去掉了过程用语；ARCHITECTURE 去掉一处提交号和一处分支名；DEVELOPER 的类名检查（§8）两部分都没有输出；仓库里没有开发机上的路径，名字都写 Kelvin。README §7 的测试清单每次改动时都跟着更新过，这次不用改。
+* 怎么验证：编译通过，27 组自动测试全过；谱面编辑器和地图编辑器的源码对整理后的游戏也编译通过；不带调试信息编译整理前后的代码，453 个类里除了上面改到的 6 个（`AudioService`、`MapRenderer`、`MapScreen`、`MapWorld`、`ThumbCache` 和它的 `Job`），其余 447 个逐字节相同。
+
+### 7.115 单曲解锁链：任意难度 80M 算通关，Aleph-0 免费（2026-10-21 22:33，Kelvin）
+
+* Kelvin 22:33：「现在单曲不是有6首嘛，devouring loop和altale的解锁条件是通关aleph-0任意难度（通关=达到80M分）。confusion的解锁条件是devouring loop通关。Dash From my eyes的通关条件是altale通关，最后一首的解锁条件是dash from my eyes+confusion通关。（这里提到的通关都是任意难度通关）。然后还要保留300贝壳的东西。这个在解锁以后再显示300贝壳购买」，又说「aleph-0默认解锁」；22:39 选了 Aleph-0 免费、不用买。
+* 地图数据新加两个写法：层的 `clearScore`（这一层 `requires` 里的歌要在任意难度的最好成绩达到这个分数才算通关；0 = 玩过一次就算，和以前一样），歌曲洞的 `"price": 0`（免费）。单曲层写 `"clearScore": 80000000`，Aleph-0 写 `"price": 0`，另外五首按上面的条件写 `requires`。主线各章没写 `clearScore`，还是玩过一次就算。
+* 锁着的单曲先显示金锁和条件，解锁以后才显示贝壳和价格（按住 HOLD TO BUY 买），这部分本来就是这样；只是所有曲目里锁着的单曲以前会在洞下面写价格，现在不写。
+* 锁的字（Kelvin 22:54：「洞下面的提示就是"在xxx曲目的任意难度中拿到B及以上"」）：层写了 `clearScore` 时，分数正好是某个评级的分数线就写评级（80,000,000 是 B，见 `profile/Grades`）。洞下面一行放不下，分两行，在两行比较匀的地方断：「在 X 的任意难度中」/「拿到 B 及以上」，名字长时「在 X」/「的任意难度中拿到 B 及以上」（英文「GET B OR ABOVE」/「ON ANY DIFFICULTY OF X」或「GET B OR ABOVE ON ANY DIFFICULTY」/「OF X」）；不加「后解锁」，金锁已经说明了。点锁的提示是「未解锁 LOCKED · 先在 X 的任意难度中拿到 B 及以上 才能打开」，所有曲目卡片的按钮上分两行「先在 X 的任意难度中」/「拿到 B 及以上」（英文「GET B OR ABOVE ON ANY DIFFICULTY」/「OF X FIRST」；两行时字小一点）。不是评级分数线的分数写全（「拿到 85,500,000 分及以上」）。没写 `clearScore` 的层还是「通关 X 后解锁」。
+* 代码：`map/CaveData`（`clearScore`；`price` 没写时是 −1）、`map/MapNode`（`clearScore`，`cleared` 按分数算）、`map/MapWorld`（`songCleared` 带分数，`unmet`、`isLocked`、`gridLock` 按层的 `clearScore` 算，新的 `clearPhrase` 和 `clearParts`，价格是 0 的歌不卖）、`map/MapRenderer`（`lockLabel`、`songLock`，洞下面第二行 `lock2`，所有曲目里锁着的不写价格）、`map/MapScreen`、`map/SongCard` 和 `map/DescendButton`（卡片按钮上的条件可以两行）。
+* 怎么验证：编译通过，27 组自动测试全过；地图那组加了 21 项（读 `clearScore` 和 `"price": 0`；79,999,999 不算、任意难度 80,000,000 算；免费的歌不卖，锁着的单曲仍是 300 的单曲，解锁后显示价格；所有曲目的锁带分数；条件里写歌曲 id 时也按分数；`clearScore` 是 0 时玩过就算；锁的字八项：B、R、写全的分数、中英文、三段）。测试曲目改用这六首的歌名、排成同样的解锁链，中英文截图（1920 × 1200）里洞下面的两行、点锁的提示和所有曲目卡片上的字都没有被截断。
+* 文档：MAP_FORMAT 四处；README §7.3 一条改成两条。
+
+### 7.116 上传 GitHub 前再整理一遍（2026-10-22 03:06，Kelvin）
+
+* Kelvin 03:06：「清理一遍代码，删掉之前的备份然后确认一下各种手册，我要传github了」。版本号不变（0.1.0-beta.1）。
+* 代码：按 7.114 的办法又查了一遍（没用的成员和 import、只写不读的字段、超过 120 字的行、注释里的过程用语），7.115 加的代码没有新问题；只把 `map/MapRenderer` 里 `songLock` 说明的一句英文改通顺（行号不变）。
+* 构建：仓库里的 `build.gradle`（Android Gradle Plugin 9.4.1）和 `gradle/wrapper/gradle-wrapper.properties`（Gradle 9.8.0）换成 Kelvin 电脑上现在用的版本。
+* 音乐：Kelvin 03:33 决定音乐文件不放进 GitHub。`.gitignore` 加上歌曲（含各首的结算音乐）、全局结算音乐、教程和菜单音乐的 `.mp3` / `.ogg` / `.wav`，和 README §5 说的一致；已经提交过的音乐要用 `git rm --cached` 移出一次，文件留在电脑上。
+* 文档：README §1 写清单曲要先解锁再买，§2 的 Gradle 和 Android Gradle Plugin 版本跟着改，§5 写明 `.gitignore` 排除了音乐；DEVELOPER 的 `DescendButton` 一行加上锁着时的样子；DESIGN 开头指向 `docs/ARCHITECTURE.md`；ARCHITECTURE 开头 Java 11 的说明改清楚，删掉一句多余的话。其余手册里的链接、文件路径和版本号都核对过。
+* 怎么验证：编译通过，27 组自动测试全过。

@@ -17,6 +17,9 @@ import java.util.List;
  * every saved record. Per-difficulty data is stored in arrays, so the accessors never allocate.
  */
 public final class SongMeta {
+    /** Preview length when no end is set (ms). */
+    public static final float DEFAULT_PREVIEW_MS = 20_000f;
+
     private final String id;
     private final FileHandle folder;
     String title = "";
@@ -43,7 +46,10 @@ public final class SongMeta {
     FileHandle music;
     FileHandle resultMusic;
     FileHandle background;
-    float previewStartMs = -1f;
+    /** Preview start and end from {@code song.json} or the manifest (ms; NaN = not set). */
+    float previewStartMs = Float.NaN, previewEndMs = Float.NaN;
+    /** Jacket framing from {@code song.json} or the manifest: {x, y, w, h} fractions of the image, y from the top. */
+    float[] jacket16x9, jacketCircle;
     float resultMusicStartMs;
     float durationMs;
     float mapNudgeX;
@@ -173,14 +179,75 @@ public final class SongMeta {
     public float mapNudgeX() { return mapNudgeX; }
     /** @return map node y nudge from the manifest ({@code map.nudgeY}). */
     public float mapNudgeY() { return mapNudgeY; }
+    /** @return the 16:9 framing of the jacket {x, y, w, h} (fractions of the image, y from the top), or null */
+    public float[] jacket16x9() { return jacket16x9; }
+    /** @return the square round the jacket's circle {x, y, w, h} (fractions, y from the top), or null */
+    public float[] jacketCircle() { return jacketCircle; }
 
     /**
-     * @return where the preview starts in ms: the manifest's {@code previewStartMs} when set,
-     *         else 30 % of the duration, else 0 when the duration is unknown
+     * @return where the preview starts in ms: {@code previewStartMs} when set (before 0 the preview is silent until
+     *         the song's start), else {@link #defaultPreviewStartMs}
      */
     public float previewStartMs() {
-        if (previewStartMs >= 0f) return previewStartMs;
+        return Float.isNaN(previewStartMs) ? defaultPreviewStartMs(durationMs) : previewStartMs;
+    }
+
+    /**
+     * @return where the preview ends and loops in ms: {@code previewEndMs} when after the start (past the music's end
+     *         the preview is silent until it), else {@link #DEFAULT_PREVIEW_MS} after the start
+     */
+    public float previewEndMs() {
+        float start = previewStartMs();
+        return previewEndMs > start ? previewEndMs : start + DEFAULT_PREVIEW_MS;
+    }
+
+    /** @return the default preview start: 30 % of {@code durationMs}, or 0 when it is unknown (Kelvin 2026-10-21). */
+    public static float defaultPreviewStartMs(float durationMs) {
         return durationMs > 0f ? durationMs * 0.3f : 0f;
+    }
+
+    /**
+     * Crops an image of {@code imageW} × {@code imageH} for a slot of aspect {@code aspect} (width / height): the
+     * framing {@code box} ({x, y, w, h} fractions, y from the top; null = the whole image), centre-cropped to the
+     * slot's shape (Kelvin 2026-10-21 18:32). Writes {u0, v0, u1, v1} (fractions, v from the top) into {@code out}.
+     */
+    public static void crop(float[] box, float imageW, float imageH, float aspect, float[] out) {
+        float x = 0f, y = 0f, w = 1f, h = 1f;
+        if (box != null) {
+            x = box[0];
+            y = box[1];
+            w = box[2];
+            h = box[3];
+        }
+        if (imageW > 0f && imageH > 0f && aspect > 0f) {
+            float pw = w * imageW, ph = h * imageH;
+            if (pw > ph * aspect) {
+                float cut = (w - ph * aspect / imageW) * 0.5f;
+                x += cut;
+                w -= 2f * cut;
+            } else {
+                float cut = (h - pw / aspect / imageH) * 0.5f;
+                y += cut;
+                h -= 2f * cut;
+            }
+        }
+        out[0] = x;
+        out[1] = y;
+        out[2] = x + w;
+        out[3] = y + h;
+    }
+
+    /**
+     * The square of an {@code imageW} × {@code imageH} jacket shown in a round or square slot (pixels, y from the
+     * top): the square round the song's circle framing, else the centred one. Writes {x, y, side} into {@code out}.
+     */
+    public void circleSquare(int imageW, int imageH, int[] out) {
+        float[] uv = new float[4];
+        crop(jacketCircle, imageW, imageH, 1f, uv);
+        int side = Math.min(Math.round((uv[2] - uv[0]) * imageW), Math.round((uv[3] - uv[1]) * imageH));
+        out[2] = Math.max(1, side);
+        out[0] = Math.max(0, Math.min(Math.round(uv[0] * imageW), imageW - out[2]));
+        out[1] = Math.max(0, Math.min(Math.round(uv[1] * imageH), imageH - out[2]));
     }
 
     @Override

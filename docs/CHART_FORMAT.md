@@ -986,8 +986,9 @@ v1 lane 10..19 按同样的方式对应到上线（`upper`）的 −5..5（10 �
 | `jacket.png` / `.jpg` / `.jpeg` | 曲绘（地图、卡片、结算） | 优先 `jacket.*`；没有时取按文件名排序的第一张图片，但跳过 `bg.*`（所以现有的 `1.png` 等也能用）。建议用正方形 |
 | `bg.png` / `.jpg` / `.jpeg` | 游戏中的背景图（可选） | 见 `docs/ASSET_SLOTS.md`。没有时用全局的 `ChartVisualizer.png` |
 | `result.ogg` / `.mp3` / `.wav` | 这首歌自己的结算音乐（可选） | 见 `docs/ASSET_SLOTS.md` |
+| `song.json` | 这首歌的设置（可选） | 试听段的起点和终点等，键和 manifest 的歌曲条目一样，见 §12.2；两边都写时以它为准 |
 
-只有 WAV 能读出时长。时长用于试听的默认起点和试听窗口；ogg / mp3 的时长目前按未知（0）处理。
+WAV 和 MP3 能读出时长，ogg 的时长按未知（0）处理。时长用于试听的默认起点（时长的 30 %），时长未知时默认从 0 开始。
 
 ### 12.2 manifest：`assets/Charts/index.json`
 
@@ -1000,7 +1001,7 @@ v1 lane 10..19 按同样的方式对应到上线（`upper`）的 −5..5（10 �
       "depthMeters": 0, "depthBottom": 200, "uncharted": false,
       "songs": [
         "Song 1",
-        { "id": "Song 2", "previewStartMs": 42000, "resultMusicStartMs": 15000,
+        { "id": "Song 2", "previewStartMs": 42000, "previewEndMs": 62000, "resultMusicStartMs": 15000,
           "map": { "nudgeX": 40, "nudgeY": -20 } }
       ]
     }
@@ -1025,9 +1026,13 @@ v1 lane 10..19 按同样的方式对应到上线（`upper`）的 −5..5（10 �
 | 键 | 默认 | 说明 |
 |---|---|---|
 | `id` | 必填 | 文件夹名 |
-| `previewStartMs` | WAV：时长的 30 %；其他：0 | 卡片试听的起点（毫秒）。试听窗口 20 s，循环，首尾各淡入淡出 0.8 s；如果从起点到歌曲结尾不足约 2 s，就从 0 开始 |
+| `previewStartMs` | 时长的 30 %（时长未知时 0） | 卡片试听的起点（毫秒，按音乐文件自己的时间）。可以小于 0：先静音，等到歌曲开头再从头放 |
+| `previewEndMs` | 起点后 20 000 | 卡片试听的终点（毫秒）。不晚于起点时按起点后 20 s。可以超过音乐结尾：放完后静音，等到终点，不跳回开头。第一次 0.6 s 淡入；到终点前 0.8 s 淡出，然后从起点重新开始 |
 | `resultMusicStartMs` | 0 | 这首歌**自己的** `result.*` 从第几毫秒开始播放。不影响全局结算音乐和备用音乐 |
 | `map.nudgeX` / `map.nudgeY` | 0 | 把这首歌的节点在地图上平移（地图世界单位，y 向上为正），用来避开重叠 |
+| `jacket16x9` / `jacketCircle` | 不设 | 曲绘取景：`{ "x", "y", "w", "h" }`，都是占整张图的比例（x、w 按宽，y、h 按高，y 从上往下）。`jacket16x9` 是 16:9 的那块，用在歌曲卡片、结算画面和游戏、结算的颜色底；`jacketCircle` 是圆外面的正方形，用在地图圆孔、转场圆盘、窄屏卡片的方形曲绘和个人页小图。不设、写成 `null`、超出图片或宽高不大于 0 时取图片中间；位置的形状和框不一样时取框的中间 |
+
+**`song.json`**（歌曲文件夹里，可选）：和歌曲条目一样的键（`id` 除外），例如 `{ "previewStartMs": -1500, "previewEndMs": 30000 }`。同一个键两边都写时以 `song.json` 为准；谱面编辑器设置试听段和曲绘取景时写的就是这个文件。读不出来的 `song.json` 被忽略（写日志）。
 
 **其他规则：**
 

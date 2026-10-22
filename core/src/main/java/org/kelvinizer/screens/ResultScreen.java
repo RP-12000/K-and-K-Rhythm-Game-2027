@@ -237,7 +237,8 @@ public class ResultScreen extends KkScreen<Main> {
         retry.cancel();
         cont.cancel();
         aura = game.library().wash(song); // the library's 16×16 jacket wash (shared with gameplay)
-        jacket.setJacket(song != null ? game.library().jacket(song) : null, aura);
+        jacket.setJacket(song != null ? game.library().jacket(song) : null, song != null ? song.jacket16x9() : null,
+            aura);
         if (!resultPageTried && s != null && s.backgroundArt) {
             resultPageTried = true;
             resultPage = game.art().acquire(RESULT_PAGE);
@@ -314,7 +315,7 @@ public class ResultScreen extends KkScreen<Main> {
         float art = s != null && s.backgroundArt ? 0.20f * s.artOpacity : 0f;
         b.setImage(art > 0f ? resultPage : null, art);
         b.setImageParallax(0f);
-        b.setWash(aura, aura != null ? 0.35f : 0f);
+        b.setWash(aura, aura != null ? 0.35f : 0f, song != null ? song.jacket16x9() : null);
         b.clearFocus();
         game.audio().playResult(song);
         game.audio().duckResult(0f, 0f);

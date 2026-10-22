@@ -26,7 +26,7 @@ import org.kelvinizer.ui.Ui;
  * to the pre-roll's own clock while the song clock waits (NUMBER 132, scale 1.2 → 1 over the
  * first third of its second, G2 on appear, fading over 11/12 of it, a {@code ring_thin}
  * contracting from r 600 over the whole second), then {@link #BUFFER_SEC} of nothing before the
- * song clock starts (Kelvin 2026-10-12 16:06); the same visuals at 0.6 s steps for a resume; and
+ * song clock starts (Kelvin 2026-10-12 16:06); the same for a resume (a second a digit, Kelvin 2026-10-21 16:45); and
  * the end banner (Kelvin 2026-10-17: not right after the last note but {@code Params.END_BANNER_DELAY_MS} after the
  * run's end, the later of the last note end and the music end; {@code ALL RESONANCE} / {@code FULL COMBO} /
  * {@code CLEAR} / {@code AUTOPLAY COMPLETE}, RUBIK {@value #BANNER_CAP} with a scale punch, a G3 tear in, G1
@@ -38,7 +38,9 @@ final class RunOverlay {
     /** Length of each start countdown step (s, DESIGN §5.11). */
     static final float COUNT_SEC = 1f;
     /** Length of each resume countdown step (s, DESIGN §5.12). */
-    static final float RESUME_STEP_SEC = 0.6f;
+    static final float RESUME_STEP_SEC = GameplayScreen.COUNT_STEP_SEC;
+    /** The step the digit's scale-in, fade and ring are timed for (s); other steps stretch them. */
+    private static final float DIGIT_BASE_SEC = 0.6f;
     /** Nothing but the stage between the start countdown's {@code 1} and the song clock's start (s). */
     static final float BUFFER_SEC = 0.3f;
     /** The whole pre-roll: 3 × {@link #COUNT_SEC} + {@link #BUFFER_SEC} (s of wall time before the song clock runs). */
@@ -120,9 +122,9 @@ final class RunOverlay {
     }
 
     /**
-     * Resume countdown (3 × 0.6 s) with the start visuals.
+     * Resume countdown (3 × {@link #RESUME_STEP_SEC}) with the start visuals.
      *
-     * @param remaining seconds left (3 × 0.6 … 0)
+     * @param remaining seconds left (3 × {@link #RESUME_STEP_SEC} … 0)
      */
     void drawResumeCountdown(Batch b, float remaining, float now) {
         if (remaining < 0f) return;
@@ -134,11 +136,11 @@ final class RunOverlay {
 
     /**
      * One digit, {@code el} seconds into its step of {@code step} seconds. The scale-in, fade and
-     * ring follow the 0.6 s resume timeline stretched to the step ({@code k}); the G2 burst keeps
-     * its 0.25 s.
+     * ring follow the {@link #DIGIT_BASE_SEC} timeline stretched to the step ({@code k}); the G2 burst
+     * keeps its 0.25 s.
      */
     private void drawCount(Batch b, int n, float el, float now, float step) {
-        float k = el * (RESUME_STEP_SEC / step);
+        float k = el * (DIGIT_BASE_SEC / step);
         float scale = 1.2f - 0.2f * Anim.POW3_OUT.apply(Math.min(1f, k / 0.20f));
         float a = 1f - Math.min(1f, k / 0.55f);
         int mode = el < 0.25f ? ScaledGlitch.G2 : ScaledGlitch.NONE;

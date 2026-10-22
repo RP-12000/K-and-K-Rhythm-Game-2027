@@ -40,9 +40,9 @@ import org.kelvinizer.ui.Ui;
  * <p><b>Content</b> (§4.2–§4.7; the side card is design round 5, Kelvin 2026-10-19 07:00 / 07:01):
  * header (‹ at its left end and › at its right step through songs, the level's name between them, all a little
  * larger since Kelvin 2026-10-19 13:37, who also dropped the ×: tapping the map, swiping the card away or Back closes
- * it); the 16:9 jacket (centre crop, scanline reveal, thin stroke) over a glow of its own colours (the library's
- * wash); a full-width title band with the title on one line (34, shrinking to 29; past 30 characters, or still too
- * wide at 29, it scrolls at 29 with {@link Marquee} timing and faded ends)
+ * it); the 16:9 jacket (the song's framing, else a centre crop; scanline reveal, thin stroke) over a glow of its
+ * own colours (the library's wash); a full-width title band with the title on one line (34, shrinking to 29; past 30
+ * characters, or still too wide at 29, it scrolls at 29 with {@link Marquee} timing and faded ends)
  * over the artist and the BPM; the record ({@link CardRecord}): the best score with dim leading zeros, DEPTH and
  * PLAYS under it and the grade ring at the right (purple once the chart has a full combo, Kelvin 2026-10-19 13:09,
  * which replaced the FULL COMBO / RESONATED ribbon); difficulty chips ({@link CardChip}; a horizontal swipe on the
@@ -164,8 +164,8 @@ final class SongCard {
     private float swapT, recordT = 1f, recordOutT = -1f;
     private final CardRecord rec = new CardRecord();
     private final StringBuilder layerText = new StringBuilder(48), metaText = new StringBuilder(96);
-    /** A locked song (ALL SONGS): its unlock conditions, shown one at a time on DESCEND. */
-    private String[] lockTexts = new String[0];
+    /** A locked song (ALL SONGS): its unlock conditions, shown one at a time on DESCEND (second lines: scores). */
+    private String[] lockTexts = new String[0], lockTexts2 = new String[0];
     private int lockIdx;
     private float lockT;
     /** Each condition holds this long, then fades out and the next fades in (Kelvin 2026-10-16 22:39: 1 s in all). */
@@ -191,8 +191,9 @@ final class SongCard {
     // ------------------------------------------------------------------ jacket
     private SongMeta jacketSong;
     private Texture jacket, wash;
-    /** The jacket's crop to the box (16:9 centre on the side card, all of it in the sheet's square). */
+    /** The jacket's crop to the box (the song's 16:9 framing on the side card, its circle's square on the sheet). */
     private float cu0, cv0, cu1 = 1f, cv1 = 1f;
+    private final float[] cropUv = new float[4];
     private boolean jacketTried, holdJacket;
     private float jacketWait, reveal, jacketGlitch;
     private final float[] jv = new float[20 * 12];
@@ -370,9 +371,18 @@ final class SongCard {
         auto.setEnabled(!n.locked && !n.forSale);
         descend.setText(n.launch ? "DIVE IN" : auto.isOn() ? "WATCH" : "DESCEND");
         lockTexts = new String[n.locked ? Math.max(1, n.lockConds.length) : 0];
+        lockTexts2 = new String[lockTexts.length];
         for (int i = 0; i < lockTexts.length; i++) {
             String c = i < n.lockConds.length ? n.lockConds[i] : "?";
-            lockTexts[i] = r.zh ? "先通关 " + c : "CLEAR " + c + " FIRST";
+            if (n.clearScore > 0) { // two lines, too long for one: 先在 X 的任意难度中 / 拿到 B 及以上
+                String[] p = MapWorld.clearParts(c, n.clearScore, r.zh);
+                lockTexts[i] = (r.zh ? "先" : "") + p[0] + " " + p[1];
+                lockTexts2[i] = r.zh ? p[2] : p[2] + " FIRST";
+            } else {
+                String need = MapWorld.clearPhrase(c, 0, r.zh);
+                lockTexts[i] = r.zh ? "先" + need : need + " FIRST";
+                lockTexts2[i] = "";
+            }
         }
         lockIdx = 0;
         lockT = LOCK_FADE;
@@ -636,21 +646,22 @@ final class SongCard {
         crop();
     }
 
-    /** The jacket's centre crop to the box's shape (16:9 on the side card). */
+    /**
+     * The jacket's crop to the box's shape: the song's 16:9 framing on the side card, the square round its circle on
+     * the sheet, centred when the song sets none ({@link SongMeta#crop}).
+     */
     private void crop() {
         cu0 = 0f;
         cv0 = 0f;
         cu1 = 1f;
         cv1 = 1f;
         if (jacket == null || jW <= 0f || jH <= 0f) return;
-        float tw = jacket.getWidth(), th = jacket.getHeight(), box = jW / jH;
-        if (tw > th * box) {
-            cu0 = (tw - th * box) * 0.5f / tw;
-            cu1 = 1f - cu0;
-        } else {
-            cv0 = (th - tw / box) * 0.5f / th;
-            cv1 = 1f - cv0;
-        }
+        float[] box = jacketSong == null ? null : sheetLayout ? jacketSong.jacketCircle() : jacketSong.jacket16x9();
+        SongMeta.crop(box, jacket.getWidth(), jacket.getHeight(), jW / jH, cropUv);
+        cu0 = cropUv[0];
+        cv0 = cropUv[1];
+        cu1 = cropUv[2];
+        cv1 = cropUv[3];
     }
 
     /** Place of chip {@code i} in the row: charts the song lacks have no chip, so the rest close up from the left. */
@@ -998,7 +1009,7 @@ final class SongCard {
     /** Cycles a locked song's conditions on DESCEND: hold 3 s, fade out .5 s, next fades in .5 s. */
     private void updateLock(float dt) {
         if (content == null || lockTexts.length == 0) {
-            descend.setLocked(false, "", 1f);
+            descend.setLocked(false, "", "", 1f);
             return;
         }
         float a = 1f;
@@ -1013,7 +1024,7 @@ final class SongCard {
             if (lockT < LOCK_FADE) a = lockT / LOCK_FADE;
             else if (lockT > LOCK_FADE + LOCK_HOLD) a = (period - lockT) / LOCK_FADE;
         }
-        descend.setLocked(true, lockTexts[lockIdx], MathUtils.clamp(a, 0f, 1f));
+        descend.setLocked(true, lockTexts[lockIdx], lockTexts2[lockIdx], MathUtils.clamp(a, 0f, 1f));
     }
 
     private void updateJacket(float dt) {

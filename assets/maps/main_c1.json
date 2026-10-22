@@ -13,7 +13,7 @@
     {"id": "song3", "song": "Song 3", "x": 280, "y": 110, "r": 112},
     {"id": "stB", "type": "story", "story": "story02", "x": 530, "y": -120},
     {"id": "c2", "type": "shaft", "to": "main_c2", "x": 900, "y": -20, "r": 162,
-     "label": "02 TWILIGHT", "labelZh": "暮光层", "sub": "LEVEL 2", "subZh": "第 2 层", "color": "#6FA8FF"},
+     "label": "02 TWILIGHT", "labelZh": "暮光层", "sub": "@progress", "color": "#6FA8FF"},
     {"id": "song4", "song": "Song 4", "x": 600, "y": -740, "r": 112, "area": "north"},
     {"id": "song5", "song": "Song 5", "x": 1100, "y": -790, "r": 112, "area": "north", "requires": ["song3", "song4"]},
     {"id": "sideN", "type": "shaft", "sealed": true, "x": 1620, "y": -760, "r": 140, "area": "north",

@@ -3,7 +3,7 @@
 **Status:** final, binding for looks. This is the unified design. The *tactile* proposal is the backbone. It carries grafts from *cinematic* (ocean-zone metres, the sonar field, the Descent line transition, landmarks, uncharted contacts, readability rules) and from *graphic* (ARCHITECTURE alignment, the single-pass backdrop, fixed-cell digits, score decode, local ranking, zh subtitles, difficulty-safe layer names).
 
 **What wins where:**
-- Code structure follows `spec/ARCHITECTURE.md`; looks follow this file.
+- Code structure follows `docs/ARCHITECTURE.md`; looks follow this file.
 - Anything this design needs from FOUNDATION-owned code is listed in **Appendix A**.
 - **ARCHITECTURE section references.** "ARCHITECTURE §10" is used to mean its Gameplay contract (one tap judges at most one note, neighbour-lane tolerance). Section numbers of this document are written as plain §N.
 - **Wave 2 (owner decisions of 2026-10-12, as built).** Each decision is folded into the section it changes. Text it supersedes is marked **Replaced** (with what replaces it) instead of being left to contradict the new rule. §22 lists every decision and the section that now holds it. Where the code and this file disagree on a number, the code is the record and this file is corrected.
@@ -195,7 +195,7 @@ Gameplay note tokens live with the notes: `mine` `#FF3344`, `mineCore` `#2A0610`
 **Fonts shipped:**
 - the five existing glitch TTFs
 - **Chakra Petch** 400 / 600 / 700 (OFL)
-- **Noto Sans SC Medium** GB2312 subset (OFL), incremental
+- **Noto Sans SC Medium** GB2312 subset plus ς, ー and the rest of the kana block (OFL), incremental
 
 **Role mapping** follows the ARCHITECTURE `Fonts.Role` enum, plus one requested role, `UI_LABEL` (Appendix A).
 
@@ -542,7 +542,7 @@ The game visibly darkens as the player improves.
 - **Base.** Same shader without caustics; `u_bright = 0.70`; shafts × 0.35; grain .03; vignette fixed at .55. Then the **background dim** scrim (`#02040F @ backgroundDim`, default 0.35).
 - **Jacket wash.**
   - At load, downscale the jacket to a 16×16 Pixmap and make it a Texture (Linear). It is owned by GameplayScreen and recreated per song.
-  - Draw it full-screen, cover-cropped, at α .12. That gives a free "blurred jacket aura".
+  - Draw it full-screen, cover-cropped, at α .12. That gives a free "blurred jacket aura". With the song's `jacket16x9` framing, that part of it covers the screen (CHART_FORMAT §12.1).
 - **Beat pulse.** `u_pulse` goes 1 → 0 over 200 ms on each beat (chart BPM).
 - **Bar ping.** Every 4 beats, `ping(960, 540, 700, 1.2, accent, 0.06, 1)`.
 - **Combo life** [P1]. Bio-motes: 0 while combo < 10, ramping linearly to 24 at combo ≥ 100. On a combo break they scatter outward and dim over 500 ms.
@@ -591,7 +591,7 @@ The manifest is `assets/Charts/index.json`, written by FOUNDATION. Refinements a
 | tutorial | Introduction | — | the LAUNCH POINT buoy |
 
 - **Songs per layer:** target 4, minimum 3, maximum 6.
-- **Optional per-song fields:** `previewStartMs`, `map: {nudgeX, nudgeY}`.
+- **Optional per-song fields:** `previewStartMs`, `previewEndMs`, `map: {nudgeX, nudgeY}`; the song folder's `song.json` takes the same keys and wins (CHART_FORMAT §12.2).
 - **Unlisted folders** go into **Singles** (§16): new test songs appear there without editing the manifest.
 
 ### 3.2 World layout [P0]
@@ -642,7 +642,7 @@ The manifest is `assets/Charts/index.json`, written by FOUNDATION. Refinements a
 ### 3.3 Nodes (song buoys) [P0 unless tagged]
 
 **Thumbnails** (MAP owns `map/ThumbAtlas`):
-- Load the jacket Pixmap and scale it to 256² (BiLinear).
+- Load the jacket Pixmap, crop it to the song's `jacketCircle` framing (else the centred square) and scale it to 256² (BiLinear). The cache name gets a hash of the framing.
 - Apply a CPU circular alpha mask: `α = clamp(r₀ − d + 0.5, 0, 1)`.
 - Pack into 1024² pages, 16 per page, so all nodes draw in one call.
 - Cache as `local("cache/thumbs/<id>-<lastModified>.png")`. Also keep the 16×16 aura and the average colour.
@@ -967,7 +967,7 @@ The card is 700 wide (760 at aspect ≥ 2.0) with padding 40, so on 16:10 the co
 | y (from top) | Element |
 |---|---|
 | 100 (centre) | header: ‹ at the left, flush with the jacket's left edge (x 1260), and › at the right, flush with its right edge (x 1880): icon buttons (`P` hits; 76 visuals, 64 until 2026-10-19 13:37) that step through songs in path order, wrapping round at the ends (› on the last song opens the first; 2026-10-17) · between them, centred, the layer chip `SINGLES · 单曲` (UI_LABEL 26, accent; 20 until 13:37). No × since 2026-10-19 13:37 (§24.22) |
-| 177–526 | **jacket** 16:9 across the content width (620 × 349, centre crop), radius 14, no float or tilt; a 1.2 stroke (140, 200, 255) α .31 over it and a soft glow of its own colours under it (the jacket blurred over 1.16 × 1.24 of its size, α .47 at the middle, feathered to 0 at the edges, as on the result screen) |
+| 177–526 | **jacket** 16:9 across the content width (620 × 349, the song's `jacket16x9` framing, else centre crop), radius 14, no float or tilt; a 1.2 stroke (140, 200, 255) α .31 over it and a soft glow of its own colours under it (the jacket blurred over 1.16 × 1.24 of its size, α .47 at the middle, feathered to 0 at the edges, as on the result screen) |
 | 546–660 | **title band** across the whole panel: (8, 13, 38) α .59, a 1.2 line (120, 200, 255) α .27 at each edge |
 | 602 (baseline) | **title** UI_BOLD 34 from x 1260, one line; shrinks to fit, down to 29. Past 30 characters, or too wide even at 29 (CJK titles can be with fewer), it is 29 and scrolls (`ui/Marquee`, §24.20) |
 | 642 (baseline) | artist UI 22 `ink2` from x 1260 · `BPM 182` UI 20 `ink3` right-aligned at x 1880 (the range `BPM 140-400` when the song changes tempo) |
@@ -1057,7 +1057,7 @@ All rows are measured upward from SB.
 | Event | Audio behaviour |
 |---|---|
 | Select | menu BGM ducks to 25 % over 300 ms |
-| Dwell 450 ms on the same selection | `audio.playPreview(song)`: starts at `previewStartMs` (default 30 % of duration); fades in 600 ms while the menu fades to 0; loops a 20 s window with 800 ms fades at its edges |
+| Dwell 450 ms on the same selection | `audio.playPreview(song)`: plays `previewStartMs` to `previewEndMs` (default 20 s from 30 % of duration; silent before 0 and past the music's end, never wrapping to 0); fades in 600 ms while the menu fades to 0; loops the window with 800 ms fades at its edges |
 | Rapid re-selection | resets the dwell; the previous preview fades out over 300 ms and is disposed. **Never more than one preview `Music` alive.** |
 | Deselect | preview fades out 400 ms; menu returns to 100 % over 800 ms |
 
@@ -1305,7 +1305,7 @@ t = 0 is when the DIVE open completes. The run begins with a **3.3 s pre-roll** 
 | 3.30 | the game starts: the song clock runs from its start time, judging opens, notes appear at the screen edge and fall |
 | 3.30 − start / 1000 | song time 0: the music starts |
 
-- **Pause during the pre-roll** (BACK / Esc / Pause, the pause control, the app going to the background): the menu opens over the waiting stage; RESUME starts the pre-roll again from the `3` (no resume countdown). A pause after t 3.30 resumes with the 3 × 0.6 s countdown of §5.12, unchanged.
+- **Pause during the pre-roll** (BACK / Esc / Pause, the pause control, the app going to the background): the menu opens over the waiting stage; RESUME starts the pre-roll again from the `3` (no resume countdown). A pause after t 3.30 resumes with the 3 × 1 s countdown of §5.12.
 - The tutorial runs the same sequence; its first captions (beat 0, song 27 ms) fade in after the game starts.
 
 **Replaced 2026-10-12 16:06:** the intro card (t 0.20–1.20: layer chip, title, artist and difficulty chip) and the lead-in on song time: `GameEngine.LEAD_IN_MS` 3300 (`SongClock.prepare(−3300)`, `min(−3300, the first visibleFrom)`), the countdown at song −2100 / −1500 / −900 ms (t 1.20 / 1.80 / 2.40, 0.6 s steps) and the quiet buffer at song −300 … 0 while the notes already moved. Before that (12:42): `DIVE` (RUBIK 56, G2) flashing for 300 ms at song time 0 after a 3.0 s lead-in.
@@ -1327,7 +1327,7 @@ t = 0 is when the DIVE open completes. The run begins with a **3.3 s pre-roll** 
 - **Motion.** Opens in 200 ms (`pow3Out`, fade and scale .96 → 1); ignores touches for its first 80 ms (the finger that paused). Every button acts on release.
 - **Keys.** BACK, Esc, Pause and Enter while paused = RESUME.
 - **Replaced:** the 760×600 panel with `PAUSED`, the song line, progress, the offset row (output + ±5 ms nudges), the Music / Hit sound mini sliders, and the note legend under the panel. Offsets and volumes live in Settings; the note legend left the pause menu, and it became the Settings NOTE GUIDE panel (§9.2, gone since 2026-10-18).
-- **Resume:** a 3 × 0.6 s countdown (same visuals) with notes frozen. A hold detached by the pause can be re-grabbed within 100 ms after the resume (ARCHITECTURE §10).
+- **Resume:** a 3 × 1 s countdown with notes frozen, the same as at the start (Kelvin 2026-10-21 16:45: 「倒计时是3秒啊，1秒出现一个数」; it had 0.6 s steps before). The chart fades back in through it (Kelvin 2026-10-21 15:40, 16:10): the lane field, lines, notes and the hit effects the pause froze show at 0.05 of their opacity as the "3" appears and rise evenly to their own as the count ends. On a phone (Android) the music runs through it unheard (Kelvin 2026-10-21 15:09): it plays muted from 3 s before the pause point and sounds at full volume as the count ends there, already in step with the notes; everything else is as before. A hold detached by the pause can be re-grabbed within 100 ms after the resume (ARCHITECTURE §10).
 - **Judgement is blocked** while paused and during any countdown.
 - RETRY restarts the run; QUIT returns to the map through the IRIS.
 
@@ -2154,7 +2154,7 @@ ECHO weight is **0.65** (Params), so with N = 1,693 notes each ECHO costs about 
 | Slot | Source | Behaviour |
 |---|---|---|
 | **MENU** | `assets/background.(ogg\|mp3\|wav)` (optional) | Loops; 0.6 s fade-in on Welcome, Map, Profile, Settings. Ducks to 25 % on node select (300 ms); goes to 0 while a preview plays; fades out over 400 ms on DESCEND; returns over 800 ms. |
-| **PREVIEW** | song music from `previewStartMs` (default 30 % of duration) | 450 ms dwell; 600 ms fade-in; 20 s window loop with 800 ms edge fades; at most one alive (§4.8) |
+| **PREVIEW** | song music from `previewStartMs` to `previewEndMs` (default 20 s from 30 % of duration; silent before 0 and past the music's end) | 450 ms dwell; 600 ms fade-in; window loop with 800 ms edge fades; at most one alive (§4.8) |
 | **GAMEPLAY** | `SongClock` (GAMEPLAY-owned) | audio-anchored clock, never seeked during play; ends at last note + 1.5 s; disposed before the result shows |
 | **RESULT** | chain in §6.7; temporary `Introduction/Introduction.wav` | 1.2 s fade-in to `musicVolume × 0.8`; loops; 450 ms fade-out on CONTINUE, 300 ms on RETRY; ducks to 60 % during level-up |
 | **HIT** (reserved) | `assets/Sounds/hit.(ogg\|wav)`, optional `hit_echo.*`, `hold_end.*`, `mine.*` (§5.15) | not shipped; silent when absent; primed at load with a volume-0 play; played inside the input handler; volume `sfxVolume` |
@@ -2252,7 +2252,7 @@ A dark sonar-console scene over the Backdrop at the diver's depth.
 
 ### 16.5 As built 2026-10-16: the cave mouth, main-line modes, ALL SONGS locks
 Kelvin 21:58 / 22:14 (circled preview) / 22:39, approved 22:43 (preview v2). Map keys are in MAP_FORMAT §1, §2 and §5.
-- **Hub (`hub.json`, renamed `CAVE MOUTH · 洞口`)**: SINGLES left, MAIN enlarged in the centre (r 230), COLLAB right (`COMING SOON`). MAIN has no sub-line since 2026-10-18 20:17 (`DEMO · 7 CHAPTERS` / `演示 · 7 章` before; 「主线底下的"演示 · 7章"不要了」). COLLAB is an empty shaft like MAIN behind the iron grate of a sealed hole since 20:18 (`"art": "shaft"`, sealed; a ring of cover art before; 「Collab里面暂时不要填充曲绘，就一个和主线一样空的洞，然后装上那种网」). No SIDE hole (side stories live in MAIN), no ALL SONGS hole, no `ROUTES · 航线` plate. The hub takes no zoom: pinch only pans, the wheel, `+` / `-` and double-tap do nothing (`MapCamera.zoomLocked`), and it always opens centred at zoom 1.
+- **Hub (`hub.json`, renamed `CAVE MOUTH · 洞口`)**: SINGLES left, MAIN enlarged in the centre (r 230), COLLAB right (`COMING SOON`). SINGLES' sub-line (`@progress`, e.g. `6 SONGS · 2/6 CLEARED`) counts the songs of the singles level (Kelvin 2026-10-21 17:47) and, since 20:15, only the charts of the map's selected difficulty (「选中了哪个难度就显示那个难度有多少cleared，而不是所有chart一起」), without naming it (20:28: 「不要写“Surfaced”，就直接2/6 cleared」). Between the name and the sub-line sits a slanted progress bar of the same charts (20:31: 「resonance实心颜色，fc虚线颜色，clear半透明」; the grades' colours 20:51): each chart once at its best, ALL RESONANCE solid light blue, FULL COMBO striped purple, other played charts translucent white, the rest an empty track whose border takes the difficulty's colour (`MapRenderer.drawBar`, 320 × 20). MAIN and, in story mode, the shaft to the next chapter inside a chapter (`02 TWILIGHT` in chapter 1) have the same bar and `@progress` line since 20:54 (「所有的主线章节在故事模式下都这么处理，然后外面的main入口也这么处理」): MAIN counts the songs of every chapter once (levels whose `parent` is `main`), a shaft only its chapter; on a chapter map the bar follows the name's size (`barK`). MAIN had no sub-line from 2026-10-18 20:17 to 2026-10-21 20:54 (`DEMO · 7 CHAPTERS` / `演示 · 7 章` before; 「主线底下的"演示 · 7章"不要了」). COLLAB is an empty shaft like MAIN behind the iron grate of a sealed hole since 20:18 (`"art": "shaft"`, sealed; a ring of cover art before; 「Collab里面暂时不要填充曲绘，就一个和主线一样空的洞，然后装上那种网」). No SIDE hole (side stories live in MAIN), no ALL SONGS hole, no `ROUTES · 航线` plate. The hub takes no zoom: pinch only pans, the wheel, `+` / `-` and double-tap do nothing (`MapCamera.zoomLocked`), and it always opens centred at zoom 1.
 - **ALL SONGS button**: the hub's bottom-right corner (256×88, `panel`, `ALL SONGS` UI 22 over `所有曲目` UI 16 and a chevron, no icon). It is the only way into ALL SONGS, which still rises back to the hub.
 - **Story mode (default)**: MAIN goes straight into chapter 1 (`storyTo`); chapter 1 rises to the hub and each later chapter to the one before it (`storyParent`).
 - **Chapter mode**: MAIN goes to `main.json` (`LAUNCH POINT · 起潜点`, a title no longer drawn since §24.28): every chapter shaft and side-story entrance on one layer, at the size of the hub's SINGLES (r 132–140) and spaced out; chapters 3–7 are sealed placeholders. A side entrance opens chapter 1 on its own spot (`at`). Every chapter rises to this layer; a rise lands on the entrance taken down.
@@ -2588,7 +2588,7 @@ The DIVE without cover art (RETRY, the tutorial) shows nothing on the closed wal
 「然后白色的方框和箭头：把1/9 played等字样放到下面5/9charts cleared，上面的选项按钮只保留surface shallow deep abyss」(15:25, on 方案图2)
 - **Header** (`ProfileHeader`): avatar, name, the shell count (gold, centred between the name and the depth, no `SHELLS` label) and the depth. PLAYS and PLAY TIME moved here from STATS: two full-width bars under the card down to the bottom (label UI_LABEL 20 left, NUMBER 36 right, at most 140 tall, gap 16). On 4:3 they sit at the right of the header block.
 - **STATS** (`StatsTab`):
-  - Row one: four difficulty toggles (112 tall, gap 24) with only the name (UI_BOLD 30, vertically centred; `6/9 PLAYED` dropped at 15:25). Lit: tinted card, border and lamp in the difficulty colour. Unlit: plain card, ring lamp, grey text. All four start lit (kept while the app runs). Any combination can be lit, but at least one: tapping the last lit toggle only shakes it.
+  - Row one: four difficulty toggles (112 tall, gap 24) with only the name (UI_BOLD 30, vertically centred; `6/9 PLAYED` dropped at 15:25). Lit: tinted card, border and lamp in the difficulty colour. Unlit: plain card, ring lamp, grey text. Each time the profile opens only the map's selected difficulty is lit (Kelvin 2026-10-21 20:15: 「user界面也不要一上来就把所有的chart都选上」; until then all four started lit, kept while the app ran). Any combination can be lit, but at least one: tapping the last lit toggle only shakes it.
   - Row two (140 tall), summed over the lit difficulties, with a stripe of their colours: CHARTS CLEARED (best score D or better) out of the lit difficulties' charts (`13/31`, the `/31` in `ink3`; 15:25), FULL COMBOS and ALL RESONANCE (`RESONATED` since 2026-10-18 14:29, English in both languages, §24.13).
   - **BEST SCORES** fills the rest of the tab down to the bottom (at least 300 tall; the tab scrolls only when it is shorter). It is the lit difficulties' best scores as a histogram drawn like the result screen's echo trace (`EchoTrace`, dropped 2026-10-19 17:48, §24.25): 41 mirrored bins of 1,000,000 from 60,000,000 (lower scores in the first bin, 100,000,000 and up in the last). Bins from 96,000,000 (`Depth.BONUS_FROM`, where a chart counts exactly 40 × c²: lower scores take from the constant, higher ones add; marked by a 2 px line) are RESONANCE cyan, lower ones ECHO purple. Ticks 60M, 70M, 80M, 90M, 96M, 100M; a caret `μ 87.23M` at the mean best score. The tallest bin counts at least 3 charts. The bins rise as a sweep crosses (0.8 s, starting 0.3 s after a show or a toggle); an idle sweep repeats every 4 s. Nothing played: `NO CHARTS PLAYED YET` (`NO SHALLOW CHARTS PLAYED YET` with one lit).
 - **TOP 10** (`TopTab`): the DIVE PROFILE (moved from STATS, 200 tall) is pinned on top (14:41); only `YOUR DEPTH IS THE AVERAGE OF THESE TEN` and the rows under it scroll. **Since 2026-10-18 the tab is DST 10, the sentence is gone and DEEPEST 10 / OVERFLOW list the charts (§24.4).**
@@ -2743,7 +2743,7 @@ Asks, in order: 03:16 / 03:19 on the phone layout (the stamp beside the score, n
 | Player frame | x 24, y 1076–1160 (84 high), as wide as its text + 22 | `draw.panel` (PANEL α .78, 1 px white α .14, radius 18, top highlight); avatar 60 at x 36; name UI_BOLD 22, baseline 1124, from x 112 (shrinks past 420); `DEPTH` UI_LABEL 13 `ink2` + `-2,698 m` NUMBER 17, baseline 1088, then `▼ 212` (metres deeper, NUMBER 17, `resonance`). Tap → depth breakdown. |
 | Shell capsule | right x 1896, centre y 1118, 44 high | `gold` α .16 pill on a deep gold fill (#443A2B α .88, `Theme.SHELL_CAPSULE`, since 2026-10-19 13:59, §24.23); shell icon 28, count NUMBER 22 `gold`, then `+151` NUMBER 17 `ink1`. Tap → shells breakdown. |
 | Title band | full width, y 900–1060 | fill (8, 13, 38) α .43, a 1 px line (120, 200, 255) α .27 at each edge; title UI_BOLD 48 centred on x 960, baseline 988, shrinks only past 1,728 wide; a title of up to 50 characters always shows whole, a longer one keeps its size and scrolls (04:55); artist UI 24 `ink2`, baseline 932; chip x 96, y 920–968 (UI_BOLD 22, pad 22, superscript − / +) |
-| Jacket | x 96–1136, y 279–864 (1040 × 585, 16:9, centre crop) | radius 18, 1 px stroke; a soft glow of its own colours behind it (never above the band); its lower 58 % darkens to (6, 10, 32), 86 % at the bottom |
+| Jacket | x 96–1136, y 279–864 (1040 × 585, 16:9, the song's `jacket16x9` framing, else centre crop) | radius 18, 1 px stroke; a soft glow of its own colours behind it (never above the band); its lower 58 % darkens to (6, 10, 32), 86 % at the bottom |
 | Over the jacket | stamp ring r 84 at (234, 407); score NUMBER 66 from x 366, baseline 337 (dim leading 0); best line pill 30 high from x 366, top 453; clear badge 168 × 40 at x 932–1100, y 418–458 | badge fill (32, 41, 98) α .92, UI 18 |
 | Under the jacket | RESONANCE CHAIN / MAX COMBO x 96–600 (line y 193, bars 16, labels baselines 219 / 143); early / late line baseline 97; offset hint baseline 53 | as before; the hint keeps its rule (§6.5) |
 | Counts | labels x 676, values right-aligned at 1036; RESONANCE 219, PERFECT n 191 (UI 14), ECHO 153, LOST 111, MINES 69 | MINES always shown, `0 / 0` in `ink3` when nothing was touched (02:40 「没有水雷也表0/0」 overrides the mock-up's note), LOST colour when one was |

@@ -1,6 +1,7 @@
 package org.kelvinizer.screens;
 
 import org.kelvinizer.Main;
+import org.kelvinizer.library.Difficulty;
 import org.kelvinizer.profile.Profile;
 import org.kelvinizer.profile.ProfileStore;
 import org.kelvinizer.screens.shell.AvatarEditorSheet;
@@ -119,6 +120,8 @@ public class ProfileScreen extends ShellScreen {
     protected void enterScreen() {
         tabs.select(tab, false);
         setTab(tab);
+        Profile active = game.profiles().active();
+        ((StatsTab) tabViews[TAB_STATS]).lightOnly(active != null ? Difficulty.parse(active.lastDifficulty) : null);
         refresh(false);
         game.backdrop().setFocus(header.avatarX(), header.avatarY());
     }

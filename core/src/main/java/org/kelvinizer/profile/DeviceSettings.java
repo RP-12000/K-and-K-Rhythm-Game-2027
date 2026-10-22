@@ -75,12 +75,6 @@ public class DeviceSettings {
      * much early so it sounds on time (SongClock, learned from each song start).
      */
     public float musicStartLatencyMs = 0f;
-    /**
-     * Measured music resume latency in ms (0 = not measured yet): how long a paused song takes to sound again once
-     * put back at the paused time; the resume countdown starts its music this much early (SongClock, learned from
-     * each resume).
-     */
-    public float musicResumeLatencyMs = 0f;
 
     /** Audio offsets per output, in ms. */
     public static class Outputs {
@@ -140,7 +134,6 @@ public class DeviceSettings {
         sfxVolume = Settings.clamp(sfxVolume, 0f, 1f);
         uiVolume = Settings.clamp(uiVolume, 0f, 1f);
         musicStartLatencyMs = Float.isNaN(musicStartLatencyMs) ? 0f : Settings.clamp(musicStartLatencyMs, 0f, 400f);
-        musicResumeLatencyMs = Float.isNaN(musicResumeLatencyMs) ? 0f : Settings.clamp(musicResumeLatencyMs, 0f, 400f);
         outputs.speaker = Settings.clamp(outputs.speaker, AUDIO_OFFSET_MIN, AUDIO_OFFSET_MAX);
         outputs.wired = Settings.clamp(outputs.wired, AUDIO_OFFSET_MIN, AUDIO_OFFSET_MAX);
         outputs.bt = Settings.clamp(outputs.bt, AUDIO_OFFSET_MIN, AUDIO_OFFSET_MAX);
