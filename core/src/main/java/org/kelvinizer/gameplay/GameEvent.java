@@ -48,7 +48,8 @@ public final class GameEvent {
     public static final int HOLD_END = 3;
     /**
      * A mine was touched, or a LANE MINE was contacted ({@link #FLAG_LANE_MINE}; {@link #count} =
-     * the contact number, 1 for the first): combo broken, no judgement, no score change. The
+     * the contact number, 1 for the first): combo broken, no judgement; the first contact costs
+     * 10,000 of the score (ScoreKeeper#minePenalty). The
      * screen shows the red LOST word and the mine shock.
      */
     public static final int MINE = 4;

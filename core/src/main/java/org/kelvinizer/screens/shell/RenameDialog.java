@@ -3,6 +3,7 @@ package org.kelvinizer.screens.shell;
 import com.badlogic.gdx.graphics.g2d.Batch;
 import com.badlogic.gdx.utils.Align;
 import org.kelvinizer.Main;
+import org.kelvinizer.profile.NameWidth;
 import org.kelvinizer.profile.Profile;
 import org.kelvinizer.profile.ProfileStore;
 import org.kelvinizer.ui.Button;
@@ -30,7 +31,8 @@ public final class RenameDialog extends Modal {
         super(game, host);
         avatar = new AvatarView(game);
         field = widgets.add(new TextField(draw, fonts, "TAP TO NAME YOUR PLAYER"));
-        field.setLabel("PLAYER NAME").setMaxLength(ProfileStore.MAX_NAME_CODEPOINTS);
+        field.setLabel("PLAYER NAME").setMaxLength(ProfileStore.MAX_NAME_CODEPOINTS)
+            .setWidthLimit(NameWidth.MAX_UNITS);
         field.setListener(new TextField.Listener() {
             @Override
             public void committed(TextField f, String text) {

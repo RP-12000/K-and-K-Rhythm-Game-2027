@@ -2,8 +2,6 @@ package org.kelvinizer.profile;
 
 import org.kelvinizer.play.Judgement;
 
-import java.util.List;
-
 /**
  * 深度（米），代替原来的评分 rating（Kelvin 2026-10-17）：每张谱的深度 = 40 米 × max(0, 定数 + (分数 − 9600 万) / 200 万)²，
  * 9600 万分时正好是 40 × 定数²，1 亿分时定数加 2，超过 1 亿的部分不算；低于 9600 万时定数往下减，减到 0 为止
@@ -19,7 +17,7 @@ import java.util.List;
  * so a score below 96 M lowers the constant (down to a depth of 0).
  * Player depth = the mean of the {@link #TOP_N} deepest charts (empty slots count 0). Depth tiers
  * start at 0, 2,000, 4,000, 6,000, 7,000, 8,000 and 9,000 m, then every 500 m ({@link #tierMeters});
- * tiers 1 to 11 unlock the avatar options. Depths here are positive metres below the surface; every
+ * {@link #crestTier} picks the look of the depth crest. Depths here are positive metres below the surface; every
  * screen shows them with a minus sign ({@code -4,000 m}, Kelvin 14:20). Also the card's NEXT goal.
  * Pure Java, no allocation in the numeric helpers.
  */
@@ -44,22 +42,6 @@ public final class Depth {
     /** Depth (m) between tiers after the last fixed one. */
     public static final int TIER_STEP = 500;
 
-    /** Labels of the avatar options unlocked by tiers 1, 2, 3 … (the result alert); see {@link AvatarSpec}. */
-    private static final String[] UNLOCK_LABELS = {
-        "NEW PATTERN · WAVES",
-        "NEW FRAME · DASHED SONAR",
-        "NEW PATTERN · GRID",
-        "+3 PALETTES",
-        "NEW FRAME · DOUBLE",
-        "NEW PATTERN · SPLIT-K",
-        "NEW PATTERN · SPIRAL",
-        "NEW PATTERN · CONSTELLATION",
-        "NEW GLYPH · K",
-        "ORBIT RING",
-        "NEW FRAME · IRIDESCENT",
-    };
-    /** Depth (m) that unlocks the animated orbit ring (tier 10). */
-    public static final int ORBIT_RING_METERS = 11000;
 
     private Depth() {
     }
@@ -194,25 +176,10 @@ public final class Depth {
     }
 
     /**
-     * Appends the labels of every avatar option unlocked in ({@code fromM}, {@code toM}] metres
-     * (option {@code i} unlocks at the start of tier {@code i + 1}).
-     *
-     * @return number of labels appended
+     * The depth crest's tier, 1 to 16 (Kelvin 2026-10-30 20:40): {@link #tierOf} plus one, every depth from 13,500 m
+     * on in tier 16 (the rainbow). Tiers 7–9, 10–12 and 13–15 are the abyss, glow and heart-sea families at levels 1–3.
      */
-    public static int unlocksBetween(int fromM, int toM, List<String> out) {
-        int n = 0;
-        for (int i = 0; i < UNLOCK_LABELS.length; i++) {
-            int m = tierMeters(i + 1);
-            if (m > fromM && m <= toM) {
-                out.add(UNLOCK_LABELS[i]);
-                n++;
-            }
-        }
-        return n;
-    }
-
-    /** @return true when the animated orbit ring is unlocked at depth {@code m}. */
-    public static boolean orbitRingUnlocked(int m) {
-        return m >= ORBIT_RING_METERS;
+    public static int crestTier(int m) {
+        return Math.min(tierOf(Math.max(0, m)), 15) + 1;
     }
 }

@@ -42,8 +42,6 @@ public final class DiverList {
         public boolean active;
         /** Sigil spec. */
         public final Avatar.Spec spec = new Avatar.Spec();
-        /** Orbit ring unlocked (6,000 m). */
-        public boolean orbit;
     }
 
     private final Entry[] entries = new Entry[ProfileStore.MAX_PROFILES];
@@ -88,7 +86,6 @@ public final class DiverList {
         e.lastDive = ShellFormat.lastDive(p.lastPlayedAt, now);
         e.lastActivity = ShellFormat.lastActivity(p.lastPlayedAt, now);
         AvatarView.toSpec(p.avatar, e.name, e.spec);
-        e.orbit = Depth.orbitRingUnlocked(e.depth);
     }
 
     /** Number of divers. */

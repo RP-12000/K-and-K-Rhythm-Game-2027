@@ -9,15 +9,14 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import org.kelvinizer.Params;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -25,127 +24,28 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * 谱面的读取和写出：解析 v2 格式，并把 v1 谱面精确转换成 v2；修正或丢弃的内容记入加载报告。
+ * 谱面的读取和写出：读 v5 和旧格式（v1–v4，见 {@link LegacyChartFormat}），写出一律是 v5（{@link ChartFormatV5}）；
+ * 歌曲信息从同一文件夹的 {@code song.json} 读（{@link SongInfo}），修正或丢弃的内容记入加载报告。
  *
- * <p>Loads (and writes) charts: format v4 parsing, the exact v1 → v2 conversion of
- * ARCHITECTURE §13.3, the v2 → v3 change of frame and the v3 → v4 move of the lines. Thread-safe; {@code Main}
- * calls it on the chart loader thread.
+ * <p>Loads and writes charts (docs/CHART_FORMAT.md). A file with {@code "format": 5} is read by {@link ChartFormatV5},
+ * with the song-wide values (title, artist, illustrator, BPM and tempo changes, offset) from the folder's
+ * {@code song.json}; any other file is an old chart (v1–v4) read by {@link LegacyChartFormat}, which moves it into the
+ * current frame and lines. Both fill the same raw model, which {@link #build} turns into a {@link Chart}: lanes
+ * (default, declared, inserted, deleted, filled for unlimited lanes), notes (sanitised; notes sharing a line, lane and
+ * beat all stay since Kelvin 2026-11-02), the judgement lines and veils. The writer always writes v5. Thread-safe;
+ * {@code Main} calls it on the chart loader thread.
  *
- * <p><b>Format v3</b> ({@code "formatVersion": 3}, Kelvin 2026-10-19 03:51: 「坐标系我们现在修改为1920*1200」) is
- * format v2 with every position in the 1920 × 1200 reference frame instead of 1920 × 1080. Format v1 and v2 charts
- * are read in the old frame and their y values (line heights and their events, note distances and tail lengths
- * with their events, pivot y) are multiplied by 1200 / 1080 on load ({@link #fromFrame1080}), so they look and
- * play exactly as before; x values (lane widths, camera frame, pivot x) keep their numbers.
- *
- * <p><b>Format v4</b> ({@code "formatVersion": 4}, Kelvin 2026-10-19 14:55: 「我觉得换成1080/120」) is format v3 with
- * the default judgement lines at 1080 / 120 instead of 1066.67 / 133.33. Older charts are moved on load
- * ({@link #toLines1080}): line heights and their events are stretched about the frame's centre y 600 by 36 / 35, the
- * gap between the lines (960 over 933.33), and rounded to 0.001 ({@link #toV4Line}: 1066.67 → 1080, 133.33 → 120).
- * Every other value keeps its number: note distances, tail lengths and pivots are measured from the line, so notes
- * still reach the lines on their beats, and the default fall stays 1080 over 2 beats (Kelvin 15:19:
- * 「默认下落改为两拍1080的距离」). The judgement zone stays ±480 about each line, so the two zones meet at the
- * centre. The writer always writes v4.
- *
- * <p>Parsing uses the Jackson streaming API (no reflection, so it is ProGuard-safe and fast).
- * Unknown keys are skipped, so stale keys in the shipped files ({@code combo}, {@code score},
- * {@code finalScore}, {@code endTime}, {@code typeName}, …) are ignored.
- *
- * <p><b>Format v2</b> ({@code "formatVersion": 2}): {@code lanes} (absent → ids −4..−1, 1..4,
- * width 240, opacity 1), notes with {@code type} tap / hold / mine / universal
- * (case-insensitive), {@code line} lower (default) / upper, {@code lane} for lane notes, and
- * {@code LineEvents} (absent lines → 1080 / 120 in v4, 1066.67 / 133.33 in v3, 960 / 120 in v2). A note on an
- * undeclared lane adds that lane with defaults; lane 0 is rejected unless the chart inserts it. A
- * lane's optional {@code insert} object (Kelvin 2026-10-15, CHART_FORMAT §3.6) inserts it during the
- * song ({@link Lane#inserted()}), its optional {@code delete} object (Kelvin 2026-10-17, §3.7) deletes
- * it ({@link Lane#deleted()}). Optional {@code offsetMs}:
- * song time in ms of beat 0 (absent → 0; non-finite → 0 with a report message), so the beat grid
- * can start where the music's first beat is; v1 charts ignore it. Optional {@code laneCount}
- * (Kelvin 2026-10-13, {@link Chart#laneLimit()}): N ≥ 1 makes the lanes finite (the lanes as
- * declared share a 1920 × lane scale wide frame about the axis; the editor declares
- * −⌊N/2⌋..−1, 1..⌈N/2⌉); without it the lanes are unlimited (each keeps its width from the
- * axis) and the loader adds the gap lanes and the lanes the screen can reach
- * ({@link Lane#implicit()}, not written back). Optional {@code LineEvents.laneScale} /
- * {@code laneScaleEvents} (Kelvin 2026-10-13): global lane scaling, a factor on every lane width
- * ({@link JudgementLine#laneScaleAt}; absent → 1, negative or non-finite base → 1 with a report
- * message); scaling some lanes is their {@code widthEvents}. Optional {@code LineEvents.cameraFrame}
- * / {@code cameraFrameEvents} (Kelvin 2026-10-13 05:29): the lanes' axis offset from x 960
- * ({@link JudgementLine#cameraFrameAt}; absent or non-finite base → 0). The old window keys
- * ({@code leftBound}, {@code rightBound}, {@code leftEvents}, {@code rightEvents}) are no longer
- * written; read in v2 they become the camera frame and lane scale for finite lanes and are
- * dropped for unlimited lanes (a report message unless they are the old defaults).
- *
- * <p><b>Format v1</b> (no {@code formatVersion}; every shipped song chart) converts exactly:
- * <ol>
- *   <li>a lane outside 0..19 becomes {@code lane % 20} (the shipped lane-115 note → 15);</li>
- *   <li>{@code line = lane ≥ 10 ? upper : lower}; with {@code c = lane % 10} the id is
- *       {@code c < 5 ? c − 5 : c − 4} (0 → −5, 4 → −1, 5 → 1, 9 → 5);</li>
- *   <li>unlimited default lanes (Kelvin 2026-10-13): the ten 240-wide lanes filled the window
- *       (absent bounds → −240 / 2160), so its width over 2400 becomes the global lane scale and
- *       its centre's offset from x 960 the camera frame (Kelvin 2026-10-13 05:29), events
- *       included, so the look is unchanged (the shipped songs: scale 1, 0.8 for beats 526–562,
- *       camera frame 0). A left and right event pair with the same times and exponent converts
- *       exactly; unpaired window events are dropped (a report message);</li>
- *   <li>line y values and events are copied unchanged;</li>
- *   <li>a note whose motion misses its judgement ({@link Note#v1NeedsApproach}) gets the
- *       default approach as its movement event ({@link Note#defaultApproachEvent}), the look it
- *       had before format v2 used motion as written (Kelvin 2026-10-13).</li>
- * </ol>
- * In both formats tap / hold notes with the same (line, lane, judgement beat) are
- * de-duplicated (a hold beats a tap; the longer hold wins; otherwise the first is kept). Mines
- * and universal notes are never de-duplicated: stacked ones are intentional (mines since
- * Kelvin 2026-10-22, 「地雷的限制不用那么多」).
- *
- * <p><b>TIDE STREAM</b> (ARCHITECTURE §19): a {@code universal} note with a positive
- * {@code duration} (beats) is a TIDE STREAM; {@code height} is its band length, as for holds.
- * A missing, zero, negative or non-finite duration leaves a TIDE drop (the same sanitising as a
- * hold's duration, not counted in the load report). There is no new {@code type} string.
- *
- * <p><b>LANE MINE</b> (ARCHITECTURE §20): likewise a {@code mine} with a positive {@code duration}
- * is a LANE MINE (its {@code height} is the column length). A lane note (tap / hold head) or a
- * plain mine inside a LANE MINE's block window on the same line and lane is counted in
- * {@link Chart.LoadReport#laneMineConflicts()} (the chart still loads).
- *
- * <p><b>HeightEvents</b> (ARCHITECTURE §20 "Tail motion"): optional {@code "HeightEvents"} on a
- * hold, TIDE STREAM or LANE MINE (event type {@code Height}, the same fields as every event list;
- * value = visible tail length in ref units). Ignored on other notes and on v1 charts
- * ({@link Chart.LoadReport#heightEventsIgnored()}).
- *
- * <p>Notes with an unknown type or a non-finite judgement beat are dropped. Everything fixed or
- * dropped is counted in {@link Chart#loadReport()} and logged once per chart. A chart without a
- * positive {@code bpm} cannot be timed and fails to load.
- *
- * <p><b>Afterimage trails</b> (ARCHITECTURE §17): a v2 note may carry
- * {@code "trail": {"length", "density", "alpha", "fade", "mode", "from", "to"}} (the key and its
- * fields are read case-insensitively). Missing {@code length} / {@code density} take the readable
- * defaults 0.5 / 16 of DESIGN §17.2, missing {@code alpha} / {@code fade} / {@code mode} 0.6 / 1 /
- * path, missing {@code from} / {@code to} are unbounded. Bad values are sanitised by
- * {@link NoteTrail#of} and counted in {@link Chart.LoadReport#trailsFixed()}; v1 charts get no
- * trails ({@link Chart.LoadReport#trailsIgnored()}). Since 2026-10-14 {@code "trail"} may also be
- * an array of such objects: segments, each with its own window and look.
- *
- * <p><b>Glitches</b> (CHART_FORMAT §6.9): a v2 note may carry {@code "glitch"}, one object or an
- * array of objects with {@code from}, {@code to} (or {@code duration}), {@code intensity},
- * {@code intensityEnd}, {@code exponent}, {@code rate}, {@code split}, {@code slice} and
- * {@code flicker} (read case-insensitively; sanitised by {@link NoteGlitch#of}, counted in
- * {@link Chart.LoadReport#glitchesFixed()}); v1 charts get none
- * ({@link Chart.LoadReport#glitchesIgnored()}).
- *
- * <p><b>Pivot</b> (CHART_FORMAT §6.1.1, Kelvin 2026-10-16): a note may carry {@code "pivot": [x, y]}
- * (or an object with {@code x} and {@code y}; the key read case-insensitively): the point it turns
- * about, in reference units in its own frame from its origin ({@link Note#pivotX()}). Missing = the
- * origin. A value that is not two finite numbers is read as far as it goes (a missing or bad
- * coordinate is 0) and counted in {@link Chart.LoadReport#pivotsFixed()}. Written only when not the
- * origin.
+ * <p>Parsing uses the Jackson streaming API (no reflection, so it is ProGuard-safe and fast). Unknown keys are skipped.
  */
 public final class ChartMapper {
     /** Raw lane count of format v1 (0..9 lower line, 10..19 upper line); used by the converter only. */
     public static final int LANES = 20;
     /** Chart format this loader writes and reads natively: v4, the 1920 × 1200 frame with the lines at 1080 / 120. */
-    public static final int FORMAT_VERSION = 4;
+    public static final int FORMAT_VERSION = 5;
     /** Format v4's stretch of the line heights about y 600: the gap between the lines, 960 / 933.33. */
     private static final double V4_STRETCH = 36.0 / 35.0;
     /** Default v2 lane ids when a chart declares no {@code lanes}. */
-    private static final int[] DEFAULT_LANE_IDS = {-4, -3, -2, -1, 1, 2, 3, 4};
+    static final int[] DEFAULT_LANE_IDS = {-4, -3, -2, -1, 1, 2, 3, 4};
     /** Lanes of a format v1 chart (±1..±5). */
     private static final int V1_LANE_COUNT = 10;
     /** Largest |lane id| the loader adds for unlimited lanes (64 lanes of 240 reach far past any window). */
@@ -157,8 +57,8 @@ public final class ChartMapper {
     private static final float V1_SPAN = V1_LANE_COUNT * Lane.DEFAULT_WIDTH;
 
     private static final String TAG = "ChartMapper";
-    private static final JsonFactory FACTORY = new JsonFactory();
-    private static final Pattern JSON_NUMBER = Pattern.compile("-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?");
+    static final JsonFactory FACTORY = new JsonFactory();
+    static final Pattern JSON_NUMBER = Pattern.compile("-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?");
     private static final String[] AUDIO_EXT = {"ogg", "mp3", "wav"};
     private static final String[] IMAGE_EXT = {"png", "jpg", "jpeg"};
 
@@ -173,14 +73,26 @@ public final class ChartMapper {
     }
 
     /**
-     * Parses a chart from a stream (the stream is closed).
+     * Parses a chart from a stream (the stream is closed). A v5 chart needs its song's values: see
+     * {@link #read(InputStream, String, SongInfo)}.
      *
      * @param source name used in the load log line (may be null)
      * @throws IOException for malformed JSON, a missing / non-positive bpm, or an I/O error
      */
     public static Chart read(InputStream inputStream, String source) throws IOException {
+        return read(inputStream, source, null);
+    }
+
+    /**
+     * Parses a chart from a stream (the stream is closed).
+     *
+     * @param source name used in the load log line (may be null)
+     * @param song   the song's {@code song.json} values for a v5 chart (null = none; old charts carry their own)
+     * @throws IOException for malformed JSON, a missing / non-positive bpm, or an I/O error
+     */
+    public static Chart read(InputStream inputStream, String source, SongInfo song) throws IOException {
         try (InputStream in = inputStream) {
-            return parse(in, source != null ? source : "chart");
+            return parse(in, source != null ? source : "chart", song, null);
         }
     }
 
@@ -196,12 +108,13 @@ public final class ChartMapper {
 
     /**
      * Parses a chart file and attaches the given music and jacket handles (either may be null).
+     * A v5 chart takes its song's values from the {@code song.json} beside it and its level from its file name.
      * Used by {@code SongLibrary.loadChart}.
      */
     public static Chart read(FileHandle chartFile, FileHandle musicFile, FileHandle jacketFile) throws IOException {
         Chart chart;
         try (InputStream in = chartFile.read()) {
-            chart = parse(in, chartFile.path());
+            chart = parse(in, chartFile.path(), SongInfo.besides(chartFile), chartFile.nameWithoutExtension());
         } catch (RuntimeException e) {
             throw new IOException("Cannot read chart " + chartFile.path(), e);
         }
@@ -227,10 +140,21 @@ public final class ChartMapper {
         return ((rawLane % LANES) + LANES) % LANES;
     }
 
-    private static Chart parse(InputStream in, String source) throws IOException {
+    /**
+     * @param song  the song's values for a v5 chart (null = none)
+     * @param level the difficulty for a v5 chart (its file name; null = none)
+     */
+    private static Chart parse(InputStream in, String source, SongInfo song, String level) throws IOException {
+        byte[] bytes = readAll(in);
         RawChart raw;
-        try (JsonParser p = FACTORY.createParser(in)) {
-            raw = parseChart(p);
+        if (ChartFormatV5.isV5(FACTORY, bytes)) {
+            try (JsonParser p = FACTORY.createParser(bytes)) {
+                raw = ChartFormatV5.parse(p, song, level);
+            }
+        } else {
+            try (JsonParser p = FACTORY.createParser(bytes)) {
+                raw = LegacyChartFormat.parse(p);
+            }
         }
         try {
             return build(raw, source);
@@ -239,21 +163,30 @@ public final class ChartMapper {
         }
     }
 
-    // ------------------------------------------------------------------ v1/v2 → model
+    private static byte[] readAll(InputStream in) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream(1 << 16);
+        byte[] buf = new byte[1 << 15];
+        int n;
+        while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+        return out.toByteArray();
+    }
+
+    // ------------------------------------------------------------------ raw model → Chart
 
     private static Chart build(RawChart raw, String source) throws IOException {
         Chart.LoadReport report = new Chart.LoadReport();
         boolean v1 = raw.formatVersion < 2;
-        report.sourceFormat = v1 ? 1 : Math.min(raw.formatVersion, FORMAT_VERSION);
-        if (raw.formatVersion > FORMAT_VERSION) {
-            report.messages.add("format " + raw.formatVersion + " read as " + FORMAT_VERSION);
+        report.sourceFormat = v1 ? 1 : Math.min(raw.formatVersion, raw.readerFormat);
+        if (raw.formatVersion > raw.readerFormat) {
+            report.messages.add("format " + raw.formatVersion + " read as " + raw.readerFormat);
         }
-        if (raw.formatVersion < 3) toFrame1200(raw);
-        if (raw.formatVersion < 4) toLines1080(raw);
         float[][] tempo = tempoMap(raw.bpmList, report);
         float bpm = raw.bpm;
         if (!(bpm > 0f) || bpm == Float.POSITIVE_INFINITY) {
-            if (tempo == null) throw new IOException(source + ": missing or invalid bpm");
+            if (tempo == null) {
+                throw new IOException(source + (raw.readerFormat >= 5 ? ": missing or invalid bpm in song.json"
+                    : ": missing or invalid bpm"));
+            }
             bpm = tempo[1][0];
         }
         float offsetMs = 0f;
@@ -352,6 +285,15 @@ public final class ChartMapper {
                     if (r.glitchFixed) report.glitchesFixed++;
                 }
             }
+            List<NoteDistortion> distortions = null;
+            if (r.hasDistortion) {
+                if (v1) {
+                    report.distortionsIgnored++;
+                } else {
+                    distortions = r.distortions;
+                    if (r.distortionFixed) report.distortionsFixed++;
+                }
+            }
             List<Events> heights = r.heights;
             if (v1 && heights != null && !heights.isEmpty()) {
                 report.heightEventsIgnored++;
@@ -362,11 +304,16 @@ public final class ChartMapper {
             if (v1 && Note.v1NeedsApproach(movement, r.appearance, r.judgement)) {
                 movement = Collections.singletonList(Note.defaultApproachEvent(r.judgement));
             }
-            if (r.pivotFixed) report.pivotsFixed++;
+            if (r.pivotFixed || r.orbitFixed) report.pivotsFixed++;
+            NoteOrbit orbit = r.hasOrbit ? new NoteOrbit(r.orbitX, r.orbitY, r.orbitXEvents, r.orbitYEvents,
+                r.orbitRadius, r.orbitRadiusEvents, r.orbitAngle, r.orbitAngleEvents, r.orbitConflict, r.orbitRigid)
+                : null;
             notes.add(new Note(type, line, laneId, r.appearance, r.judgement, r.duration, r.height,
-                movement, r.rotation, r.disappear, heights, trails, glitches, r.pivotX, r.pivotY));
+                movement, r.rotation, r.disappear, heights, trails, glitches, r.pivotX, r.pivotY, distortions,
+                r.waveSpeed, r.offsetX, r.offsetXEvents, orbit, r.fake));
         }
-        notes = dedupe(notes, report);
+        // Taps / holds sharing (line, lane id, beat) all stay since Kelvin 2026-11-02 (「现在我们要放开这个限制」): each
+        // takes its own finger. Mines and TIDEs were never removed.
 
         RawLine rl = raw.line != null ? raw.line : new RawLine();
         JudgementLine geometry = v1 ? v1Line(rl, report) : v2Line(rl, report, raw.hasLaneCount && raw.laneCount >= 1);
@@ -391,12 +338,38 @@ public final class ChartMapper {
             raw.chartConstant, bpm, offsetMs, new ArrayList<>(lanes.values()), geometry, notes,
             tempo != null ? tempo[0] : null, tempo != null ? tempo[1] : null, laneLimit);
         chart.sourceFormat = report.sourceFormat;
+        if (raw.veils != null) chart.setVeils(veils(raw.veils, v1, false, report));
+        if (raw.curtains != null) chart.setCurtains(veils(raw.curtains, v1, true, report));
         report.laneMineConflicts = chart.laneMineConflicts(Params.LANE_MINE_LEAD_MS);
         chart.report = report;
         if (!report.clean() && Gdx.app != null) {
             Gdx.app.log(TAG, source + ": " + report);
         }
         return chart;
+    }
+
+    /** @return the usable veils (or curtains) of a v2+ chart (counted with the veils in the report); none for v1. */
+    private static List<Veil> veils(List<RawVeil> raw, boolean v1, boolean curtains, Chart.LoadReport report) {
+        List<Veil> out = new ArrayList<>(raw.size());
+        if (v1) {
+            if (!raw.isEmpty()) report.messages.add(raw.size() + " veil(s) of a v1 chart ignored");
+            return out;
+        }
+        for (RawVeil r : raw) {
+            Veil v = r.dropped ? null : Veil.of(r.shape, r.radius, r.points, r.x, r.y, r.rotation, r.opacity,
+                r.startTime, r.endTime, r.xEvents, r.yEvents, r.rotationEvents, r.opacityEvents, r.glitches,
+                r.distortions);
+            if (v != null && curtains) v = v.withBlur(r.blur, r.blurEvents);
+            if (v == null || !v.isValid()) {
+                report.veilsDropped++;
+                continue;
+            }
+            if (r.fixed || r.shape == Veil.Shape.CIRCLE && r.points != null && r.points.length > 0) {
+                report.veilsFixed++;
+            }
+            out.add(v);
+        }
+        return out;
     }
 
     /**
@@ -597,82 +570,6 @@ public final class ChartMapper {
     }
 
     /**
-     * Removes tap / hold notes that share (line, lane id, judgement beat) with another one.
-     * Priority: hold (longer wins) over tap; equal ones keep the first. Mines are never removed:
-     * stacked mines and a mine on a tap's or hold's spot all stay.
-     */
-    private static List<Note> dedupe(List<Note> notes, Chart.LoadReport report) {
-        Map<String, Integer> winner = new HashMap<>();
-        boolean[] drop = new boolean[notes.size()];
-        int removed = 0;
-        StringBuilder key = new StringBuilder(32);
-        for (int i = 0; i < notes.size(); i++) {
-            Note a = notes.get(i);
-            if (!a.type().inLane() || a.type() == NoteType.MINE) continue;
-            key.setLength(0);
-            key.append(a.line().ordinal()).append(':').append(a.laneId()).append(':')
-                .append(Float.floatToIntBits(a.judgement()));
-            String k = key.toString();
-            Integer w = winner.get(k);
-            if (w == null) {
-                winner.put(k, i);
-                continue;
-            }
-            removed++;
-            if (beats(a, notes.get(w))) {
-                drop[w] = true;
-                winner.put(k, i);
-            } else {
-                drop[i] = true;
-            }
-        }
-        if (removed == 0) return notes;
-        report.duplicatesRemoved += removed;
-        List<Note> kept = new ArrayList<>(notes.size() - removed);
-        for (int i = 0; i < notes.size(); i++) {
-            if (!drop[i]) kept.add(notes.get(i));
-        }
-        return kept;
-    }
-
-    /** @return true when duplicate {@code a} should replace the earlier {@code b}. */
-    private static boolean beats(Note a, Note b) {
-        int ra = rank(a.type());
-        int rb = rank(b.type());
-        if (ra != rb) return ra > rb;
-        return a.type() == NoteType.HOLD && a.duration() > b.duration();
-    }
-
-    private static int rank(NoteType t) {
-        switch (t) {
-            case HOLD: return 2;
-            case TAP: return 1;
-            default: return 0;
-        }
-    }
-
-    /**
-     * Scales a format v1 / v2 chart's y values from the 1920 × 1080 frame to the 1920 × 1200 frame: the line
-     * heights and their events, every note's distances ({@code MovementEvents}), tail length and
-     * {@code HeightEvents}, and pivot y. Absent values (NaN) stay absent, so they take the v3 defaults.
-     */
-    private static void toFrame1200(RawChart raw) {
-        RawLine l = raw.line;
-        if (l != null) {
-            l.upper = fromFrame1080(l.upper);
-            l.lower = fromFrame1080(l.lower);
-            l.upperEvents = fromFrame1080(l.upperEvents);
-            l.lowerEvents = fromFrame1080(l.lowerEvents);
-        }
-        for (RawNote r : raw.notes) {
-            r.height = fromFrame1080(r.height);
-            r.pivotY = fromFrame1080(r.pivotY);
-            r.movement = fromFrame1080(r.movement);
-            r.heights = fromFrame1080(r.heights);
-        }
-    }
-
-    /**
      * @return a y value (position or distance) of the old 1920 × 1080 frame in the 1920 × 1200 frame:
      *         {@code y · 1200 / 1080} (so 120 → 133.33, 960 → 1066.67, 972 → 1080)
      */
@@ -692,20 +589,6 @@ public final class ChartMapper {
     }
 
     /**
-     * Moves a format v1–v3 chart (already in the 1200-high frame) onto the v4 lines 1080 / 120: the line heights and
-     * their events by {@link #toV4Line}. Absent values (NaN) stay absent, so they take the v4 defaults; the notes keep
-     * their numbers.
-     */
-    private static void toLines1080(RawChart raw) {
-        RawLine l = raw.line;
-        if (l == null) return;
-        l.upper = toV4Line(l.upper);
-        l.lower = toV4Line(l.lower);
-        l.upperEvents = toV4(l.upperEvents);
-        l.lowerEvents = toV4(l.lowerEvents);
-    }
-
-    /**
      * @return a format v3 line height in format v4: {@code 600 + (y − 600) · 36/35} to 0.001, so the old lines land
      *         exactly on 1080 and 120 (1066.67 → 1080, 133.33 → 120)
      */
@@ -714,21 +597,12 @@ public final class ChartMapper {
         return (float) (Math.rint((cy + (y - cy) * V4_STRETCH) * 1e3) / 1e3);
     }
 
-    /** @return the line events with both values moved by {@link #toV4Line} (null stays null). */
-    private static List<Events> toV4(List<Events> events) {
-        if (events == null) return null;
-        List<Events> out = new ArrayList<>(events.size());
-        for (Events e : events) {
-            out.add(e == null ? null : new Events(e.type(), e.startTime(), e.endTime(), toV4Line(e.initialValue()),
-                toV4Line(e.finalValue()), e.exponent()));
-        }
-        return out;
-    }
-
     // ------------------------------------------------------------------ streaming parse
 
-    private static final class RawChart {
+    static final class RawChart {
         int formatVersion = 1;
+        /** The newest format this reader knows (a legacy file claiming a later one is read by v4 rules). */
+        int readerFormat = FORMAT_VERSION;
         String title;
         String artist;
         String illustrator;
@@ -745,9 +619,33 @@ public final class ChartMapper {
         List<RawLane> lanes;
         final List<RawNote> notes = new ArrayList<>();
         RawLine line;
+        List<RawVeil> veils;
+        List<RawVeil> curtains;
     }
 
-    private static final class RawLane {
+    static final class RawVeil {
+        boolean dropped;
+        boolean fixed;
+        Veil.Shape shape;
+        float radius = Float.NaN;
+        float[] points;
+        float x = 960f;
+        float y = 600f;
+        float rotation;
+        float opacity = 1f;
+        float startTime = Float.NaN;
+        float endTime = Float.NaN;
+        List<Events> xEvents;
+        List<Events> yEvents;
+        List<Events> rotationEvents;
+        List<Events> opacityEvents;
+        List<NoteGlitch> glitches;
+        List<NoteDistortion> distortions;
+        float blur = Float.NaN;
+        List<Events> blurEvents;
+    }
+
+    static final class RawLane {
         boolean hasId;
         int id;
         boolean hasWidth;
@@ -771,7 +669,7 @@ public final class ChartMapper {
         float delExponent = 1f;
     }
 
-    private static final class RawNote {
+    static final class RawNote {
         String type;
         String line;
         boolean hasLane;
@@ -791,12 +689,31 @@ public final class ChartMapper {
         boolean hasGlitch;
         boolean glitchFixed;
         List<NoteGlitch> glitches;
+        boolean hasDistortion;
+        boolean distortionFixed;
+        List<NoteDistortion> distortions;
         float pivotX;
         float pivotY;
+        float waveSpeed;
+        float offsetX;
+        List<Events> offsetXEvents;
         boolean pivotFixed;
+        boolean hasOrbit;
+        boolean orbitFixed;
+        float orbitX;
+        float orbitY;
+        List<Events> orbitXEvents;
+        List<Events> orbitYEvents;
+        float orbitRadius = Float.NaN;
+        List<Events> orbitRadiusEvents;
+        float orbitAngle = Float.NaN;
+        List<Events> orbitAngleEvents;
+        int orbitConflict;
+        boolean orbitRigid;
+        boolean fake;
     }
 
-    private static final class RawLine {
+    static final class RawLine {
         float upper = Float.NaN;
         float lower = Float.NaN;
         float left = Float.NaN;
@@ -813,38 +730,42 @@ public final class ChartMapper {
         List<Events> cameraEvents;
     }
 
-    private static RawChart parseChart(JsonParser p) throws IOException {
-        if (p.nextToken() != JsonToken.START_OBJECT) throw new IOException("chart is not a JSON object");
-        RawChart c = new RawChart();
-        JsonToken t;
-        while ((t = p.nextToken()) == JsonToken.FIELD_NAME) {
-            String name = p.currentName();
-            JsonToken v = p.nextToken();
-            switch (name) {
-                case "formatVersion": c.formatVersion = (int) floatValue(p, v, 1f); break;
-                case "title": c.title = text(p, v); break;
-                case "artist": c.artist = text(p, v); break;
-                case "illustrator": c.illustrator = text(p, v); break;
-                case "charter": c.charter = text(p, v); break;
-                case "level": c.level = text(p, v); break;
-                case "chartConstant": c.chartConstant = text(p, v); break;
-                case "bpm": c.bpm = floatValue(p, v, Float.NaN); break;
-                case "bpmList": c.bpmList = parseBpmList(p, v); break;
-                case "offsetMs": c.hasOffset = true; c.offsetMs = floatValue(p, v, Float.NaN); break;
-                case "lanes": c.lanes = parseLanes(p, v); break;
-                case "laneCount": c.hasLaneCount = true; c.laneCount = intValue(p, v); break;
-                case "notes": parseNotes(p, v, c.notes); break;
-                case "LineEvents":
-                case "judgementLine": c.line = parseLine(p, v); break;
-                default: p.skipChildren(); break;
-            }
+    /** @return true for NaN or ±∞. */
+    static boolean bad(float v) {
+        return Float.isNaN(v) || Float.isInfinite(v);
+    }
+
+    /**
+     * Reads a polygon's {@code points}: an array of {@code [x, y]} pairs or {@code {"x", "y"}} objects. Entries
+     * that are not two finite numbers are left out and mark the veil as fixed.
+     */
+    static float[] parseVeilPoints(JsonParser p, JsonToken v, RawVeil r) throws IOException {
+        if (v != JsonToken.START_ARRAY) {
+            if (v != JsonToken.VALUE_NULL) r.fixed = true;
+            p.skipChildren();
+            return null;
         }
-        if (t != JsonToken.END_OBJECT) throw new IOException("truncated chart JSON");
-        return c;
+        float[] out = new float[8];
+        int n = 0;
+        JsonToken t;
+        while ((t = p.nextToken()) != JsonToken.END_ARRAY && t != null) {
+            RawNote pt = new RawNote();
+            parsePivot(p, t, pt);
+            if (pt.pivotFixed || t == JsonToken.VALUE_NULL) {
+                r.fixed = true;
+                continue;
+            }
+            if (n + 2 > out.length) out = Arrays.copyOf(out, out.length * 2);
+            out[n++] = pt.pivotX;
+            out[n++] = pt.pivotY;
+            r.fixed |= Math.abs(pt.pivotX) > Veil.MAX_SIZE || Math.abs(pt.pivotY) > Veil.MAX_SIZE;
+        }
+        if (n / 2 > Veil.MAX_POINTS) r.fixed = true;
+        return Arrays.copyOf(out, n);
     }
 
     /** Reads {@code bpmList}: an array of {@code {"beat", "bpm"}} objects; anything else in it is skipped. */
-    private static List<float[]> parseBpmList(JsonParser p, JsonToken v) throws IOException {
+    static List<float[]> parseBpmList(JsonParser p, JsonToken v) throws IOException {
         List<float[]> out = new ArrayList<>();
         if (v != JsonToken.START_ARRAY) {
             p.skipChildren();
@@ -904,101 +825,8 @@ public final class ChartMapper {
         return out;
     }
 
-    private static List<RawLane> parseLanes(JsonParser p, JsonToken v) throws IOException {
-        if (v != JsonToken.START_ARRAY) {
-            p.skipChildren();
-            return null;
-        }
-        List<RawLane> out = new ArrayList<>();
-        JsonToken t;
-        while ((t = p.nextToken()) != JsonToken.END_ARRAY && t != null) {
-            if (t != JsonToken.START_OBJECT) {
-                p.skipChildren();
-                out.add(null);
-                continue;
-            }
-            RawLane l = new RawLane();
-            while ((t = p.nextToken()) == JsonToken.FIELD_NAME) {
-                String name = p.currentName();
-                JsonToken fv = p.nextToken();
-                switch (name) {
-                    case "id": {
-                        long id = intValue(p, fv);
-                        l.hasId = id != NO_INT;
-                        l.id = l.hasId ? (int) id : 0;
-                        break;
-                    }
-                    case "width": l.width = floatValue(p, fv, Lane.DEFAULT_WIDTH); l.hasWidth = true; break;
-                    case "opacity": l.opacity = floatValue(p, fv, Lane.DEFAULT_OPACITY); break;
-                    case "widthEvents": l.widthEvents = parseEvents(p, fv); break;
-                    case "opacityEvents": l.opacityEvents = parseEvents(p, fv); break;
-                    case "insert": parseInsert(p, fv, l); break;
-                    case "delete": parseDelete(p, fv, l); break;
-                    default: p.skipChildren(); break;
-                }
-            }
-            out.add(l);
-        }
-        return out;
-    }
-
-    private static void parseNotes(JsonParser p, JsonToken v, List<RawNote> out) throws IOException {
-        if (v != JsonToken.START_ARRAY) {
-            p.skipChildren();
-            return;
-        }
-        JsonToken t;
-        while ((t = p.nextToken()) != JsonToken.END_ARRAY && t != null) {
-            RawNote n = new RawNote();
-            if (t != JsonToken.START_OBJECT) {
-                p.skipChildren();
-                out.add(n); // no type: counted as unknown
-                continue;
-            }
-            while ((t = p.nextToken()) == JsonToken.FIELD_NAME) {
-                String name = p.currentName();
-                JsonToken fv = p.nextToken();
-                if (TRAIL_KEY.equalsIgnoreCase(name)) {
-                    parseTrail(p, fv, n);
-                    continue;
-                }
-                if (GLITCH_KEY.equalsIgnoreCase(name)) {
-                    parseGlitch(p, fv, n);
-                    continue;
-                }
-                if (PIVOT_KEY.equalsIgnoreCase(name)) {
-                    parsePivot(p, fv, n);
-                    continue;
-                }
-                switch (name) {
-                    case "type": n.type = text(p, fv); break;
-                    case "line": n.line = text(p, fv); break;
-                    case "lane": {
-                        long lane = intValue(p, fv);
-                        n.hasLane = fv != JsonToken.VALUE_NULL;
-                        n.laneInvalid = n.hasLane && lane == NO_INT;
-                        n.lane = lane == NO_INT ? 0 : (int) lane;
-                        break;
-                    }
-                    case "appearance": n.appearance = floatValue(p, fv, Float.NaN); break;
-                    case "judgement": n.judgement = floatValue(p, fv, Float.NaN); break;
-                    case "duration": n.duration = floatValue(p, fv, 0f); break;
-                    case "height":
-                    case "length": n.height = floatValue(p, fv, 0f); break;
-                    case "MovementEvents": n.movement = parseEvents(p, fv); break;
-                    case "RotationEvents": n.rotation = parseEvents(p, fv); break;
-                    case "DisappearEvents":
-                    case "OpacityEvents": n.disappear = parseEvents(p, fv); break;
-                    case "HeightEvents": n.heights = parseEvents(p, fv); break;
-                    default: p.skipChildren(); break;
-                }
-            }
-            out.add(n);
-        }
-    }
-
     /** JSON key of a note's rotation pivot (read case-insensitively). */
-    private static final String PIVOT_KEY = "pivot";
+    static final String PIVOT_KEY = "pivot";
 
     /**
      * Reads a note's {@code pivot} into {@code n} (a later key replaces an earlier one): {@code [x, y]}
@@ -1006,11 +834,61 @@ public final class ChartMapper {
      * non-numeric or non-finite coordinate: what can be read is kept (the rest 0) and
      * {@code n.pivotFixed} is set.
      */
-    private static void parsePivot(JsonParser p, JsonToken v, RawNote n) throws IOException {
+    static void parsePivot(JsonParser p, JsonToken v, RawNote n) throws IOException {
         n.pivotX = 0f;
         n.pivotY = 0f;
         n.pivotFixed = false;
         if (v == JsonToken.VALUE_NULL) return;
+        float[] xy = new float[2];
+        int extra = readPoint(p, v, xy);
+        boolean okX = !Float.isNaN(xy[0]) && !Float.isInfinite(xy[0]);
+        boolean okY = !Float.isNaN(xy[1]) && !Float.isInfinite(xy[1]);
+        n.pivotX = okX ? xy[0] : 0f;
+        n.pivotY = okY ? xy[1] : 0f;
+        n.pivotFixed = !okX || !okY || extra != 0;
+    }
+
+    /** JSON key of a lane note's orbit centre, 公转 (read case-insensitively). */
+    static final String ORBIT_KEY = "orbit";
+
+    /**
+     * Reads a note's {@code orbit} centre into {@code n} (a later key replaces an earlier one), written like
+     * {@link #parsePivot}: {@code [x, y]} or {@code {"x": .., "y": ..}} in reference units, y up from the bottom;
+     * {@code null} = none. A missing, extra, non-numeric or non-finite coordinate sets {@code n.orbitFixed} (a bad
+     * coordinate is the middle of the screen, {@link NoteOrbit}); a value that is neither is no orbit.
+     */
+    static void parseOrbit(JsonParser p, JsonToken v, RawNote n) throws IOException {
+        n.hasOrbit = false;
+        n.orbitFixed = false;
+        if (v == JsonToken.VALUE_NULL) return;
+        float[] xy = new float[2];
+        int extra = readPoint(p, v, xy);
+        n.hasOrbit = extra >= 0;
+        n.orbitX = xy[0];
+        n.orbitY = xy[1];
+        n.orbitFixed = extra != 0 || Float.isNaN(xy[0]) || Float.isInfinite(xy[0]) || Float.isNaN(xy[1])
+            || Float.isInfinite(xy[1]);
+    }
+
+    /** JSON values of a note's {@code orbitConflict}, by {@link NoteOrbit#conflict()} (none for unset). */
+    static final String[] ORBIT_CONFLICT_NAMES = {null, "orbit", "move"};
+
+    /** @return the {@link NoteOrbit#conflict()} an {@code orbitConflict} value names (case-insensitive; else unset) */
+    static int orbitConflictOf(String s) {
+        if (s == null) return NoteOrbit.CONFLICT_UNSET;
+        String t = s.trim();
+        if (t.equalsIgnoreCase("orbit")) return NoteOrbit.CONFLICT_ORBIT;
+        if (t.equalsIgnoreCase("move")) return NoteOrbit.CONFLICT_MOVE;
+        return NoteOrbit.CONFLICT_UNSET;
+    }
+
+    /**
+     * Reads a point written {@code [x, y]} or {@code {"x": .., "y": ..}} into {@code xy} (NaN for a missing or
+     * non-numeric coordinate).
+     *
+     * @return how many entries there were beyond x and y, or −1 for a value that is neither (skipped)
+     */
+    private static int readPoint(JsonParser p, JsonToken v, float[] xy) throws IOException {
         float x = Float.NaN;
         float y = Float.NaN;
         int extra = 0;
@@ -1038,16 +916,15 @@ public final class ChartMapper {
             }
         } else {
             p.skipChildren();
+            extra = -1;
         }
-        boolean okX = !Float.isNaN(x) && !Float.isInfinite(x);
-        boolean okY = !Float.isNaN(y) && !Float.isInfinite(y);
-        n.pivotX = okX ? x : 0f;
-        n.pivotY = okY ? y : 0f;
-        n.pivotFixed = !okX || !okY || extra > 0;
+        xy[0] = x;
+        xy[1] = y;
+        return extra;
     }
 
     /** JSON key of a note's afterimage trail (read case-insensitively). */
-    private static final String TRAIL_KEY = "trail";
+    static final String TRAIL_KEY = "trail";
 
     /**
      * Reads a note's {@code trail} into {@code n} (a later {@code trail} key replaces an earlier
@@ -1055,7 +932,7 @@ public final class ChartMapper {
      * an array element that is not an object, is ignored and counted as fixed; {@code null} means
      * none.
      */
-    private static void parseTrail(JsonParser p, JsonToken v, RawNote n) throws IOException {
+    static void parseTrail(JsonParser p, JsonToken v, RawNote n) throws IOException {
         n.trails = null;
         n.trailFixed = false;
         n.hasTrail = v != JsonToken.VALUE_NULL;
@@ -1140,14 +1017,14 @@ public final class ChartMapper {
     }
 
     /** JSON key of a note's glitch segments (read case-insensitively). */
-    private static final String GLITCH_KEY = "glitch";
+    static final String GLITCH_KEY = "glitch";
 
     /**
      * Reads a note's {@code glitch} into {@code n} (a later {@code glitch} key replaces an earlier
      * one): one object or an array of objects (segments). A value that is neither, or an array
      * element that is not an object, is ignored and counted as fixed; {@code null} means none.
      */
-    private static void parseGlitch(JsonParser p, JsonToken v, RawNote n) throws IOException {
+    static void parseGlitch(JsonParser p, JsonToken v, RawNote n) throws IOException {
         n.glitches = null;
         n.glitchFixed = false;
         n.hasGlitch = v != JsonToken.VALUE_NULL;
@@ -1205,7 +1082,8 @@ public final class ChartMapper {
                     intensityEnd = floatValue(p, fv, Float.NaN);
                     fixed |= Float.isNaN(intensityEnd) && !isNull;
                     break;
-                case "exponent": exponent = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(exponent); break;
+                case "exponent":
+                case "ease": exponent = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(exponent); break;
                 case "rate": rate = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(rate); break;
                 case "split": split = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(split); break;
                 case "slice": slice = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(slice); break;
@@ -1239,127 +1117,94 @@ public final class ChartMapper {
         return NoteGlitch.of(from, to, intensity, intensityEnd, exponent, rate, split, slice, flicker);
     }
 
-    private static RawLine parseLine(JsonParser p, JsonToken v) throws IOException {
-        if (v != JsonToken.START_OBJECT) {
-            p.skipChildren();
-            return null;
-        }
-        RawLine l = new RawLine();
-        while (p.nextToken() == JsonToken.FIELD_NAME) {
-            String name = p.currentName();
-            JsonToken fv = p.nextToken();
-            switch (name) {
-                case "upperJudgementLine":
-                case "upperInitial": l.upper = floatValue(p, fv, Float.NaN); break;
-                case "lowerJudgementLine":
-                case "lowerInitial": l.lower = floatValue(p, fv, Float.NaN); break;
-                case "leftBound":
-                case "initialLeftBound": l.left = floatValue(p, fv, Float.NaN); break;
-                case "rightBound":
-                case "initialRightBound": l.right = floatValue(p, fv, Float.NaN); break;
-                case "upperEvents": l.upperEvents = parseEvents(p, fv); break;
-                case "lowerEvents": l.lowerEvents = parseEvents(p, fv); break;
-                case "leftEvents": l.leftEvents = parseEvents(p, fv); break;
-                case "rightEvents": l.rightEvents = parseEvents(p, fv); break;
-                case "laneScale": l.hasLaneScale = true; l.laneScale = floatValue(p, fv, Float.NaN); break;
-                case "laneScaleEvents": l.laneScaleEvents = parseEvents(p, fv); break;
-                case "cameraFrame": l.hasCamera = true; l.camera = floatValue(p, fv, Float.NaN); break;
-                case "cameraFrameEvents": l.cameraEvents = parseEvents(p, fv); break;
-                default: p.skipChildren(); break;
-            }
-        }
-        return l;
-    }
+    /** JSON key of distortion segments (read case-insensitively). */
+    static final String DISTORTION_KEY = "distortion";
 
-    /** A lane's {@code insert} object (Kelvin 2026-10-15): the keys of an event; {@code final} may be absent. */
-    private static void parseInsert(JsonParser p, JsonToken v, RawLane l) throws IOException {
-        if (v != JsonToken.START_OBJECT) {
-            p.skipChildren();
-            return;
-        }
-        l.hasInsert = true;
-        while (p.nextToken() == JsonToken.FIELD_NAME) {
-            String name = p.currentName();
-            JsonToken fv = p.nextToken();
-            switch (name) {
-                case "startTime": l.insStart = floatValue(p, fv, 0f); break;
-                case "endTime": l.insEnd = floatValue(p, fv, Float.NaN); break;
-                case "initialVal":
-                case "initial": l.insInitial = floatValue(p, fv, 0f); break;
-                case "finalVal":
-                case "final": l.insFinal = floatValue(p, fv, Float.NaN); break;
-                case "exponent": l.insExponent = floatValue(p, fv, 1f); break;
-                default: p.skipChildren(); break;
-            }
-        }
-    }
-
-    /** A lane's {@code delete} object (Kelvin 2026-10-17): the keys of an event, every one optional. */
-    private static void parseDelete(JsonParser p, JsonToken v, RawLane l) throws IOException {
-        if (v != JsonToken.START_OBJECT) {
-            p.skipChildren();
-            return;
-        }
-        l.hasDelete = true;
-        while (p.nextToken() == JsonToken.FIELD_NAME) {
-            String name = p.currentName();
-            JsonToken fv = p.nextToken();
-            switch (name) {
-                case "startTime": l.delStart = floatValue(p, fv, 0f); break;
-                case "endTime": l.delEnd = floatValue(p, fv, Float.NaN); break;
-                case "initialVal":
-                case "initial": l.delInitial = floatValue(p, fv, Float.NaN); break;
-                case "finalVal":
-                case "final": l.delFinal = floatValue(p, fv, 0f); break;
-                case "exponent": l.delExponent = floatValue(p, fv, 1f); break;
-                default: p.skipChildren(); break;
-            }
-        }
-    }
-
-    private static List<Events> parseEvents(JsonParser p, JsonToken v) throws IOException {
-        if (v != JsonToken.START_ARRAY) {
-            p.skipChildren();
-            return null;
-        }
-        List<Events> out = new ArrayList<>();
-        JsonToken t;
-        while ((t = p.nextToken()) != JsonToken.END_ARRAY && t != null) {
-            if (t != JsonToken.START_OBJECT) {
-                p.skipChildren();
-                continue;
-            }
-            Events.TYPE type = null;
-            float start = 0f;
-            float end = 0f;
-            float initial = 0f;
-            float fin = 0f;
-            float exponent = 1f;
-            while (p.nextToken() == JsonToken.FIELD_NAME) {
-                String name = p.currentName();
-                JsonToken fv = p.nextToken();
-                switch (name) {
-                    case "type": type = Events.TYPE.parse(text(p, fv)); break;
-                    case "startTime": start = floatValue(p, fv, 0f); break;
-                    case "endTime": end = floatValue(p, fv, 0f); break;
-                    case "initialVal":
-                    case "initial": initial = floatValue(p, fv, 0f); break;
-                    case "finalVal":
-                    case "final": fin = floatValue(p, fv, 0f); break;
-                    case "exponent": exponent = floatValue(p, fv, 1f); break;
-                    default: p.skipChildren(); break;
+    /**
+     * Reads {@code distortion} into {@code n} like {@link #parseGlitch}: one object or an array of objects; anything
+     * else is ignored and counted as fixed; {@code null} means none.
+     */
+    static void parseDistortion(JsonParser p, JsonToken v, RawNote n) throws IOException {
+        n.distortions = null;
+        n.distortionFixed = false;
+        n.hasDistortion = v != JsonToken.VALUE_NULL;
+        if (!n.hasDistortion) return;
+        List<NoteDistortion> out = new ArrayList<>(2);
+        if (v == JsonToken.START_OBJECT) {
+            out.add(parseDistortionObject(p, n));
+        } else if (v == JsonToken.START_ARRAY) {
+            JsonToken t;
+            while ((t = p.nextToken()) != JsonToken.END_ARRAY && t != null) {
+                if (t == JsonToken.START_OBJECT) {
+                    out.add(parseDistortionObject(p, n));
+                } else {
+                    p.skipChildren();
+                    n.distortionFixed = true;
                 }
             }
-            out.add(new Events(type, start, end, initial, fin, exponent));
+        } else {
+            p.skipChildren();
+            n.distortionFixed = true;
         }
-        return out;
+        n.distortions = out;
+    }
+
+    /** Reads one distortion object (the parser is on its START_OBJECT), as {@link #parseGlitchObject}. */
+    private static NoteDistortion parseDistortionObject(JsonParser p, RawNote n) throws IOException {
+        float from = Float.NaN;
+        float to = Float.NaN;
+        float duration = Float.NaN;
+        float intensity = NoteDistortion.DEFAULT_INTENSITY;
+        float intensityEnd = Float.NaN;
+        float exponent = 1f;
+        boolean fixed = false;
+        while (p.nextToken() == JsonToken.FIELD_NAME) {
+            String name = p.currentName().trim().toLowerCase(Locale.ROOT);
+            JsonToken fv = p.nextToken();
+            boolean isNull = fv == JsonToken.VALUE_NULL;
+            switch (name) {
+                case "from": from = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(from) && !isNull; break;
+                case "to": to = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(to) && !isNull; break;
+                case "duration":
+                    duration = floatValue(p, fv, Float.NaN);
+                    fixed |= Float.isNaN(duration) && !isNull;
+                    break;
+                case "intensity": intensity = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(intensity); break;
+                case "intensityend":
+                    intensityEnd = floatValue(p, fv, Float.NaN);
+                    fixed |= Float.isNaN(intensityEnd) && !isNull;
+                    break;
+                case "exponent":
+                case "ease": exponent = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(exponent); break;
+                default: p.skipChildren(); break;
+            }
+        }
+        if (Float.isInfinite(from)) {
+            from = Float.NaN;
+            fixed = true;
+        }
+        if (Float.isInfinite(to)) {
+            to = Float.NaN;
+            fixed = true;
+        }
+        if (Float.isNaN(to) && !Float.isNaN(duration)) {
+            if (Float.isNaN(from) || Float.isInfinite(duration)) fixed = true; // a duration needs a start
+            else to = from + Math.max(0f, duration);
+            if (duration < 0f) fixed = true;
+        }
+        float max = NoteDistortion.MAX_INTENSITY;
+        if (intensity < 0f || intensity > max || intensityEnd < 0f || intensityEnd > max) fixed = true;
+        if (exponent < NoteGlitch.MIN_EXPONENT || exponent > NoteGlitch.MAX_EXPONENT) fixed = true;
+        if (from > to) fixed = true;
+        if (fixed) n.distortionFixed = true;
+        return NoteDistortion.of(from, to, intensity, intensityEnd, exponent);
     }
 
     /**
      * @return a numeric value as float (numbers exactly as Jackson data binding reads a float
      *         field; numeric strings parsed), else {@code def} (structures are skipped)
      */
-    private static float floatValue(JsonParser p, JsonToken v, float def) throws IOException {
+    static float floatValue(JsonParser p, JsonToken v, float def) throws IOException {
         if (v == JsonToken.VALUE_NUMBER_INT || v == JsonToken.VALUE_NUMBER_FLOAT) {
             return p.getFloatValue();
         }
@@ -1375,14 +1220,14 @@ public final class ChartMapper {
     }
 
     /** Marks "not an int" for {@link #intValue}. */
-    private static final long NO_INT = Long.MIN_VALUE;
+    static final long NO_INT = Long.MIN_VALUE;
 
     /**
      * @return an int value (a fractional number is truncated, as Jackson data binding does for
      *         an int field; numeric strings parsed), or {@link #NO_INT} for null, non-numeric or
      *         out-of-range values (structures are skipped)
      */
-    private static long intValue(JsonParser p, JsonToken v) throws IOException {
+    static long intValue(JsonParser p, JsonToken v) throws IOException {
         if (v == JsonToken.VALUE_NUMBER_INT) {
             return p.getNumberType() == JsonParser.NumberType.INT ? p.getIntValue() : NO_INT;
         }
@@ -1402,7 +1247,15 @@ public final class ChartMapper {
         return d >= Integer.MIN_VALUE && d <= Integer.MAX_VALUE ? (long) (int) d : NO_INT;
     }
 
-    private static String text(JsonParser p, JsonToken v) throws IOException {
+    /** @return a JSON flag: {@code true} or a non-zero number; anything else is false (and skipped). */
+    static boolean flag(JsonParser p, JsonToken v) throws IOException {
+        if (v == JsonToken.VALUE_TRUE) return true;
+        if (v == JsonToken.VALUE_NUMBER_INT || v == JsonToken.VALUE_NUMBER_FLOAT) return p.getDoubleValue() != 0.0;
+        if (v == JsonToken.START_OBJECT || v == JsonToken.START_ARRAY) p.skipChildren();
+        return false;
+    }
+
+    static String text(JsonParser p, JsonToken v) throws IOException {
         if (v == JsonToken.VALUE_NULL) return null;
         if (v != null && v.isScalarValue()) return p.getText();
         p.skipChildren();
@@ -1412,204 +1265,33 @@ public final class ChartMapper {
     // ------------------------------------------------------------------ writing
 
     /**
-     * Writes {@code chart} as format v2 JSON (UTF-8, pretty-printed). The stream is flushed but
-     * not closed. Reading the output back yields an equal model (every value is written
-     * explicitly; floats round-trip exactly). The game never writes charts; this is for the
-     * future editor and tools.
+     * Writes {@code chart} as format v5 JSON (UTF-8, {@link ChartFormatV5}) with its song values in a {@code "song"}
+     * object, so reading it back yields an equal model. The stream is flushed but not closed.
      */
     public static void write(Chart chart, OutputStream out) throws IOException {
-        JsonGenerator g = FACTORY.createGenerator(out, JsonEncoding.UTF8);
-        g.disable(JsonGenerator.Feature.AUTO_CLOSE_TARGET);
-        write(chart, g);
-    }
-
-    /** @return {@code chart} as format v2 JSON text (see {@link #write(Chart, OutputStream)}). */
-    public static String toJson(Chart chart) {
-        StringWriter sw = new StringWriter(1 << 16);
-        try {
-            write(chart, FACTORY.createGenerator(sw));
-        } catch (IOException e) {
-            throw new IllegalStateException(e); // StringWriter does not throw
-        }
-        return sw.toString();
-    }
-
-    private static void write(Chart chart, JsonGenerator g) throws IOException {
-        g.useDefaultPrettyPrinter();
-        g.writeStartObject();
-        g.writeNumberField("formatVersion", FORMAT_VERSION);
-        g.writeStringField("title", chart.title());
-        g.writeStringField("artist", chart.artist());
-        g.writeStringField("illustrator", chart.illustrator());
-        g.writeStringField("charter", chart.charter());
-        g.writeNumberField("bpm", chart.bpm());
-        float[] changeBeats = chart.bpmListBeats(), changeBpms = chart.bpmListValues();
-        if (changeBeats.length > 1) {
-            g.writeArrayFieldStart("bpmList");
-            for (int i = 0; i < changeBeats.length; i++) {
-                g.writeStartObject();
-                g.writeNumberField("beat", changeBeats[i]);
-                g.writeNumberField("bpm", changeBpms[i]);
-                g.writeEndObject();
-            }
-            g.writeEndArray();
-        }
-        if (chart.offsetMs() != 0f) g.writeNumberField("offsetMs", chart.offsetMs());
-        String constant = chart.chartConstant();
-        if (constant != null) {
-            g.writeFieldName("chartConstant");
-            if (JSON_NUMBER.matcher(constant).matches()) g.writeNumber(constant);
-            else g.writeString(constant);
-        }
-        g.writeStringField("level", chart.level());
-        if (!chart.unlimitedLanes()) g.writeNumberField("laneCount", chart.laneLimit());
-
-        g.writeArrayFieldStart("lanes");
-        for (Lane lane : chart.lanes()) {
-            if (lane.implicit()) continue; // added by the loader for the lane mode, not authored
-            g.writeStartObject();
-            g.writeNumberField("id", lane.id());
-            g.writeNumberField("width", lane.baseWidth());
-            g.writeNumberField("opacity", lane.baseOpacity());
-            writeEvents(g, "widthEvents", lane.widthEvents());
-            writeEvents(g, "opacityEvents", lane.opacityEvents());
-            Events ins = lane.insert();
-            if (ins != null) {
-                g.writeObjectFieldStart("insert");
-                g.writeNumberField("startTime", ins.startTime());
-                g.writeNumberField("endTime", ins.endTime());
-                g.writeNumberField("initial", ins.initialValue());
-                g.writeNumberField("final", ins.finalValue());
-                g.writeNumberField("exponent", ins.exponent());
-                g.writeEndObject();
-            }
-            Events del = lane.deletion();
-            if (del != null) {
-                g.writeObjectFieldStart("delete");
-                g.writeNumberField("startTime", del.startTime());
-                g.writeNumberField("endTime", del.endTime());
-                g.writeNumberField("initial", del.initialValue());
-                g.writeNumberField("final", del.finalValue());
-                g.writeNumberField("exponent", del.exponent());
-                g.writeEndObject();
-            }
-            g.writeEndObject();
-        }
-        g.writeEndArray();
-
-        g.writeArrayFieldStart("notes");
-        for (Note n : chart.notes()) {
-            g.writeStartObject();
-            g.writeStringField("type", n.type().json);
-            g.writeStringField("line", n.line().json);
-            if (n.type().inLane()) g.writeNumberField("lane", n.laneId());
-            g.writeNumberField("appearance", n.appearance());
-            g.writeNumberField("judgement", n.judgement());
-            if (n.type() == NoteType.HOLD || n.duration() > 0f) g.writeNumberField("duration", n.duration());
-            g.writeNumberField("height", n.height());
-            writeEvents(g, "MovementEvents", n.movementEvents());
-            writeEvents(g, "RotationEvents", n.rotationEvents());
-            writeEvents(g, "DisappearEvents", n.disappearEvents());
-            if (!n.heightEvents().isEmpty()) writeEvents(g, "HeightEvents", n.heightEvents());
-            writeTrails(g, n.trails());
-            writeGlitches(g, n.glitches());
-            if (n.hasPivot()) {
-                g.writeArrayFieldStart("pivot");
-                g.writeNumber(n.pivotX());
-                g.writeNumber(n.pivotY());
-                g.writeEndArray();
-            }
-            g.writeEndObject();
-        }
-        g.writeEndArray();
-
-        JudgementLine l = chart.lineEvents();
-        g.writeObjectFieldStart("LineEvents");
-        g.writeNumberField("upperJudgementLine", l.upperBase());
-        g.writeNumberField("lowerJudgementLine", l.lowerBase());
-        writeEvents(g, "upperEvents", l.upperEvents());
-        writeEvents(g, "lowerEvents", l.lowerEvents());
-        if (l.laneScaleBase() != 1f) g.writeNumberField("laneScale", l.laneScaleBase());
-        if (!l.laneScaleEvents().isEmpty()) writeEvents(g, "laneScaleEvents", l.laneScaleEvents());
-        if (l.cameraFrameBase() != 0f) g.writeNumberField("cameraFrame", l.cameraFrameBase());
-        if (!l.cameraFrameEvents().isEmpty()) writeEvents(g, "cameraFrameEvents", l.cameraFrameEvents());
-        g.writeEndObject();
-
-        g.writeEndObject();
-        g.flush();
+        write(chart, out, true);
     }
 
     /**
-     * Writes a note's trail segments: nothing for none, one object for one segment (the form
-     * before 2026-10-14), an array of objects for more.
+     * Writes {@code chart} as format v5 JSON (UTF-8). The stream is flushed but not closed.
+     *
+     * @param withSong also write the song values; false for a chart file in its song folder, whose song values
+     *                 belong in {@code song.json} ({@link SongInfo#mergeInto})
      */
-    private static void writeTrails(JsonGenerator g, List<NoteTrail> trails) throws IOException {
-        if (trails.isEmpty()) return;
-        g.writeFieldName(TRAIL_KEY);
-        if (trails.size() == 1) {
-            writeTrail(g, trails.get(0));
-            return;
-        }
-        g.writeStartArray();
-        for (NoteTrail t : trails) writeTrail(g, t);
-        g.writeEndArray();
+    public static void write(Chart chart, OutputStream out, boolean withSong) throws IOException {
+        JsonGenerator g = FACTORY.createGenerator(out, JsonEncoding.UTF8);
+        g.disable(JsonGenerator.Feature.AUTO_CLOSE_TARGET);
+        ChartFormatV5.write(chart, g, null, withSong);
     }
 
-    /** Writes one trail object (sanitised values; from / to only when bounded). */
-    private static void writeTrail(JsonGenerator g, NoteTrail t) throws IOException {
-        g.writeStartObject();
-        g.writeNumberField("length", t.length());
-        g.writeNumberField("density", t.density());
-        g.writeNumberField("alpha", t.alpha());
-        g.writeNumberField("fade", t.fade());
-        g.writeStringField("mode", t.mode().json);
-        if (t.hasFrom()) g.writeNumberField("from", t.from());
-        if (t.hasTo()) g.writeNumberField("to", t.to());
-        g.writeEndObject();
+    /** @return {@code chart} as format v5 JSON text with its song values (see {@link #write(Chart, OutputStream)}) */
+    public static String toJson(Chart chart) {
+        return toJson(chart, true);
     }
 
-    /** Writes a note's glitch segments like its trails: nothing, one object, or an array. */
-    private static void writeGlitches(JsonGenerator g, List<NoteGlitch> glitches) throws IOException {
-        if (glitches.isEmpty()) return;
-        g.writeFieldName(GLITCH_KEY);
-        if (glitches.size() == 1) {
-            writeGlitch(g, glitches.get(0));
-            return;
-        }
-        g.writeStartArray();
-        for (NoteGlitch x : glitches) writeGlitch(g, x);
-        g.writeEndArray();
-    }
-
-    /** Writes one glitch object (sanitised values; from / to only when bounded). */
-    private static void writeGlitch(JsonGenerator g, NoteGlitch x) throws IOException {
-        g.writeStartObject();
-        if (x.hasFrom()) g.writeNumberField("from", x.from());
-        if (x.hasTo()) g.writeNumberField("to", x.to());
-        g.writeNumberField("intensity", x.intensity());
-        if (x.intensityEnd() != x.intensity()) g.writeNumberField("intensityEnd", x.intensityEnd());
-        if (x.exponent() != 1f) g.writeNumberField("exponent", x.exponent());
-        g.writeNumberField("rate", x.rate());
-        g.writeNumberField("split", x.split());
-        g.writeNumberField("slice", x.slice());
-        g.writeNumberField("flicker", x.flicker());
-        g.writeEndObject();
-    }
-
-    private static void writeEvents(JsonGenerator g, String field, List<Events> events) throws IOException {
-        g.writeArrayFieldStart(field);
-        for (int i = 0; i < events.size(); i++) {
-            Events e = events.get(i);
-            g.writeStartObject();
-            if (e.type() != null) g.writeStringField("type", e.type().name());
-            g.writeNumberField("startTime", e.startTime());
-            g.writeNumberField("endTime", e.endTime());
-            g.writeNumberField("initial", e.initialValue());
-            g.writeNumberField("final", e.finalValue());
-            g.writeNumberField("exponent", e.exponent());
-            g.writeEndObject();
-        }
-        g.writeEndArray();
+    /** @return {@code chart} as format v5 JSON text (see {@link #write(Chart, OutputStream, boolean)}) */
+    public static String toJson(Chart chart, boolean withSong) {
+        return ChartFormatV5.toJson(chart, null, withSong);
     }
 
     // ------------------------------------------------------------------ song folder files

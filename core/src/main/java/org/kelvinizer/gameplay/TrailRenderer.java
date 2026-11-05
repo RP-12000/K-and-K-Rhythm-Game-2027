@@ -231,12 +231,12 @@ final class TrailRenderer {
      * A note draws its trails when one of them has visible copies; of the TIDE drops of a group
      * (same line and beat) only the first member with such a trail does, as only one head is drawn
      * for the group. A TIDE STREAM has its own band, so it always draws its own trails (band, tail
-     * and head).
+     * and head); so does a decorative TIDE ({@link Note#fake()}), drawn on its own.
      */
     private boolean eligible(int i) {
         Note n = notes[i];
         if (!showsTrail(n)) return false;
-        if (n.type() != NoteType.UNIVERSAL || n.isTideStream()) return true;
+        if (n.type() != NoteType.UNIVERSAL || n.isTideStream() || n.fake()) return true;
         for (int j = i - 1; j >= 0; j--) {
             Note p = notes[j];
             if (p.type() != NoteType.UNIVERSAL || p.line() != n.line() || p.judgement() != n.judgement()) break;
@@ -296,6 +296,7 @@ final class TrailRenderer {
             if (showFrom[c] > beat || stillLevel[c]) continue;
             int i = trailed[c];
             Note n = notes[i];
+            if (n.fake() && beat >= n.endBeat()) continue;
             int outcome = TrailPlan.outcomeOf(e.noteState(i));
             NoteTrail t = seg[c];
             if (TrailPlan.noCopies(n, t, outcome)) continue;
@@ -389,6 +390,7 @@ final class TrailRenderer {
     private boolean finished(GameEngine e, int c, float beat) {
         int i = trailed[c];
         Note n = notes[i];
+        if (n.fake()) return beat >= n.endBeat(); // a decoration and its copies are gone at its end
         NoteTrail t = seg[c];
         int outcome = TrailPlan.outcomeOf(e.noteState(i));
         if (outcome == TrailPlan.LIVE) return false;
@@ -417,8 +419,9 @@ final class TrailRenderer {
             case HOLD: return NoteRenderer.HOLD_QUADS;
             case MINE: return n.isLaneMine() ? NoteRenderer.LANE_MINE_COPY_QUADS : NoteRenderer.MINE_QUADS;
             case UNIVERSAL:
+            case TIDE_MINE:
                 return NoteShapes.t4Quads(geo.patternLanes(), n.isUpper())
-                    + (n.isTideStream() ? NoteRenderer.BAND_QUADS : 0);
+                    + (n.hasTideBand() ? NoteRenderer.BAND_QUADS : 0);
             default: return NoteRenderer.TAP_QUADS;
         }
     }
@@ -453,7 +456,8 @@ final class TrailRenderer {
                 int q;
                 switch (n.type()) {
                     case MINE: q = copyMine(e, i, n, k, j, stride, s, beat); break;
-                    case UNIVERSAL: q = copyTide(e, i, n, k, j, stride, s, beat); break;
+                    case UNIVERSAL:
+                    case TIDE_MINE: q = copyTide(e, i, n, k, j, stride, s, beat); break;
                     default: q = copyLane(e, i, n, k, j, stride, s, beat); break;
                 }
                 if (q > 0) {
@@ -496,7 +500,8 @@ final class TrailRenderer {
                 if (NoteRenderer.offScreen(up, g.y, Math.max(painter.mineHeight(), tail) + pad, near)) return 0f;
                 break;
             }
-            case UNIVERSAL: {
+            case UNIVERSAL:
+            case TIDE_MINE: {
                 float far = Math.max(painter.tideReach(), Math.min(g.tail, NoteRenderer.MAX_TAIL_DRAW));
                 // as the live TIDE: a turned one crosses the screen slanted and is not culled
                 boolean turned = NoteShapes.turned(g.rot - (up ? 180f : 0f));
@@ -529,12 +534,14 @@ final class TrailRenderer {
     private boolean place(Note n, NoteTrail.Mode mode, float s, float beat, LaneLayout frame, float lineY) {
         TrailGeometry g = geo;
         if (!g.place(n, mode, s, beat, frame, lineY)) return false;
-        if (n.type() == NoteType.UNIVERSAL) return true;
+        if (!n.type().inLane()) return true;
         boolean mine = n.type() == NoteType.MINE;
         float ref = mine ? NoteRenderer.MINE_H : NoteRenderer.NOTE_H;
         float h = mine ? painter.mineHeight() : painter.noteHeight();
-        g.x += NoteShapes.pivotShiftX(g.pos, ref, h, g.rot, n.isUpper(), n.pivotX(), n.pivotY());
-        g.y += NoteShapes.pivotShiftY(g.pos, ref, h, g.rot, n.isUpper(), n.pivotX(), n.pivotY());
+        float bx = g.x + n.offsetXAt(g.lookBeat) * Field.kx();
+        float x = NoteShapes.anchorX(n, g.lookBeat, bx, g.y, g.pos, ref, h, g.rot);
+        g.y = NoteShapes.anchorY(n, g.lookBeat, bx, g.y, g.pos, ref, h, g.rot);
+        g.x = x;
         return true;
     }
 
@@ -555,11 +562,12 @@ final class TrailRenderer {
         float w = painter.headWidth(g.laneWidth);
         float h = painter.noteHeight();
         float a = TrailPlan.copyAlpha(seg[cNote[k]], j, stride, opacity, cLive[k]);
-        Color base = up ? Theme.SKY_SIG : Theme.GROUND_SIG;
+        Color base = up ? Theme.SKY_SIG : Theme.GROUND_NOTE;
         float headMul = 1f;
         float ribHead = NoteShapes.ribbonHeadAlpha(false);
         float ribTail = NoteShapes.ribbonTailAlpha(false);
         boolean lost = false;
+        if (!hold && cOutcome[k] != TrailPlan.HIT) a *= NoteRenderer.lateFade(e, n); // fades with its DROP
         float age = missAge(e, i, cOutcome[k], s);
         if (age >= 0f) {
             lost = true;
@@ -618,8 +626,9 @@ final class TrailRenderer {
         if (opacity <= 0f) return 0;
         TrailGeometry g = geo;
         boolean up = n.isUpper();
-        boolean stream = n.isTideStream();
+        boolean stream = n.hasTideBand();
         float a = TrailPlan.copyAlpha(seg[cNote[k]], j, stride, opacity, cLive[k]);
+        if (!stream && cOutcome[k] != TrailPlan.HIT) a *= NoteRenderer.lateFade(e, n); // fades with its TIDE
         float age = missAge(e, i, cOutcome[k], s);
         boolean lost = age >= 0f;
         float grey = 0f;
@@ -642,13 +651,17 @@ final class TrailRenderer {
         bx1 = painter.tideHi(bx0, bx1);
         bx0 = t0;
         int q = 0;
+        painter.mineTint = n.isTideMine();
         if (stream) {
             float tail = Math.min(g.tail, NoteRenderer.MAX_TAIL_DRAW);
             q += painter.paintTideBand(bx0, bx1, g.y, tail, up, 1f, grey, Float.NaN, painter.tideReach(), a);
             q += painter.paintTideCap(bx0, bx1, g.y, tail, up, grey, a);
         }
         float seconds = (float) (chart.beatToMs(s) / 1000.0);
+        painter.wavePhase = n.waveSpeed() * s;
         q += painter.paintTideT4(x0, x1, g.y, up, grey, 0f, a, g.layout, seconds, false);
+        painter.wavePhase = 0f;
+        painter.mineTint = false;
         if (turned) painter.tideTurnEnd();
         return q;
     }

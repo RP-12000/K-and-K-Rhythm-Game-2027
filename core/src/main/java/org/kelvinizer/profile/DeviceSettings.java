@@ -42,11 +42,11 @@ public class DeviceSettings {
     /** Schema version of device.json. */
     public int schemaVersion = 1;
     /** Music volume 0..1 (menu, preview, result, songs). */
-    public float musicVolume = 0.8f;
+    public float musicVolume = 0.5f;
     /** Hit-sound volume 0..1. */
-    public float sfxVolume = 0.8f;
+    public float sfxVolume = 0.5f;
     /** UI sound volume 0..1 (P2, hidden until UI SFX exist). */
-    public float uiVolume = 0.6f;
+    public float uiVolume = 0.5f;
     /** Per-output audio offsets in ms (+ = the player hears audio late). */
     public Outputs outputs = new Outputs();
     /** Active output: {@link #OUTPUT_SPEAKER}, {@link #OUTPUT_WIRED}, {@link #OUTPUT_BT}. */

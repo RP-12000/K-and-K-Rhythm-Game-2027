@@ -12,8 +12,10 @@ import org.kelvinizer.profile.DeviceSettings;
 import org.kelvinizer.profile.Profile;
 import org.kelvinizer.profile.Depth;
 import org.kelvinizer.profile.Grades;
+import org.kelvinizer.profile.NameWidth;
 import org.kelvinizer.screens.shell.ShellFormat;
 import org.kelvinizer.ui.Avatar;
+import org.kelvinizer.ui.Fonts;
 import org.kelvinizer.ui.Theme;
 
 import java.util.ArrayList;
@@ -40,7 +42,8 @@ public final class ResultModel {
     /** Score digits (DESIGN §18.2: 9, so {@code 100,010,812} fits when the bonuses pass 100 M). */
     public static final int SCORE_DIGITS = 9;
     /** Score cells: 9 digits + 2 group commas. */
-    public static final int SCORE_CELLS = SCORE_DIGITS + (SCORE_DIGITS - 1) / 3;
+    /** Minus (scores read negative, Kelvin 2026-11-01), digits and group commas. */
+    public static final int SCORE_CELLS = 1 + SCORE_DIGITS + (SCORE_DIGITS - 1) / 3;
 
     // ------------------------------------------------------------------ flags
     /** Autoplay run (nothing recorded). */
@@ -112,6 +115,10 @@ public final class ResultModel {
      * to the base exactly) and the PERFECT bonus.
      */
     public String breakdownChain = "", breakdownAccuracy = "", breakdownPerfect = "";
+    /** What the touched mines added to the (negative) score, {@code +n}; empty when the chart has no mines. */
+    public String breakdownMines = "";
+    /** The breakdown total of a score below 0 (shown positive, {@code +263,286}); empty otherwise. */
+    public String breakdownTotalPlus = "";
     /** Grade string ("R+".."F") or null (tutorial). */
     public String grade;
     /** Grade letter without "+" ("SS" for "SS+", "R" for R+). */
@@ -166,7 +173,14 @@ public final class ResultModel {
     public int shellsGained;
     /** {@code +93} (the chip draws the shell icon after it). */
     public String shellsText = "";
-    /** Itemised shell rows (label, value) for the popover; null entries are skipped. */
+    /** Pearls held (shown beside the shells; nothing gives them yet, Kelvin 2026-10-30 20:20). */
+    public long pearls;
+    /** The pearl capsule's breakdown: its whole count when the capsule reads 9,999+. */
+    public final List<String> pearlRows = new ArrayList<>(), pearlRowValues = new ArrayList<>();
+    /**
+     * Itemised shell rows (label, value) for the popover; null entries are skipped. A count over 9,999 (the capsule
+     * reads 9,999+) leads with the whole count.
+     */
     public final List<String> shellRows = new ArrayList<>();
     /** Values of {@link #shellRows}. */
     public final List<String> shellRowValues = new ArrayList<>();
@@ -238,8 +252,9 @@ public final class ResultModel {
         }
         previousBest = o.previousBest();
         bestDiff = score - previousBest;
-        bestText = group(previousBest);
-        bestDiffText = (bestDiff >= 0 ? "+" : "-") + group(Math.abs(bestDiff));
+        // scores read negative (Kelvin 2026-11-01): a better score is a lower one
+        bestText = group(-previousBest);
+        bestDiffText = (bestDiff > 0 ? "-" : "+") + group(Math.abs(bestDiff));
         firstPlay = recorded && !tutorial && o.isFirstPlay();
         newBest = recorded && !tutorial && o.isNewBest();
         noImprovement = recorded && !tutorial && !firstPlay && !newBest;
@@ -274,9 +289,11 @@ public final class ResultModel {
         // the accuracy part is the rest of the base, so the two parts add up to it exactly
         // (floor(chain) + floor(accuracy) may be one short of floor(chain + accuracy))
         long accPart = Math.max(0L, baseScore - chainPart);
-        breakdownChain = groupLong(chainPart);
-        breakdownAccuracy = groupLong(accPart);
-        breakdownPerfect = "+" + group(perfect);
+        breakdownChain = groupLong(-chainPart);
+        breakdownAccuracy = groupLong(-accPart);
+        breakdownPerfect = group(-perfect);
+        breakdownMines = minesTotal > 0 ? "+" + group(r.minePenalty()) : "";
+        breakdownTotalPlus = score < 0 ? "+" + group(-score) : "";
         minesText = minesTouched + " / " + minesTotal;
         int mean = Math.round(meanOffset);
         meanText = (mean > 0 ? "+" : (mean < 0 ? "–" : "±")) + Math.abs(mean) + " ms";
@@ -284,7 +301,14 @@ public final class ResultModel {
         allResonance = r.allResonance();
 
         // player frame and shell capsule ----------------------------------------------------
-        name = p != null && p.name != null ? p.name : "";
+        name = NameWidth.clip(p != null && p.name != null ? p.name : "");
+        pearls = p != null ? Math.max(0L, p.pearls) : 0L;
+        pearlRows.clear();
+        pearlRowValues.clear();
+        if (pearls > Fonts.SHOWN_MAX) {
+            pearlRows.add(zh ? "已攒珍珠" : "PEARLS SAVED");
+            pearlRowValues.add(groupLong(pearls));
+        }
         if (p != null && p.avatar != null) {
             AvatarSpec a = p.avatar;
             avatar.set(a.seed, a.shape, a.pattern, a.palette, a.glyph, a.frame,
@@ -299,6 +323,10 @@ public final class ResultModel {
         hasShells = !autoplay && shellsGained > 0;
         shellRows.clear();
         shellRowValues.clear();
+        if (shellsAfter > Fonts.SHOWN_MAX) {
+            shellRows.add(zh ? "已攒贝壳" : "SHELLS SAVED");
+            shellRowValues.add(groupLong(shellsAfter));
+        }
         ShellBreakdown e = o.shellBreakdown();
         addShellRow(zh ? "基础" : "BASE", e.base);
         addShellRow(zh ? "首次下潜" : "FIRST DIVE", e.firstPlay);
@@ -355,13 +383,18 @@ public final class ResultModel {
 
     /**
      * Fills {@link #scoreChars}, {@link #scoreLead} and {@link #scoreLockIndex} for a score drawn
-     * as {@link #SCORE_DIGITS} grouped digits ({@code 098,123,456}, {@code 100,000,812}).
+     * as a sign and {@link #SCORE_DIGITS} grouped digits ({@code -098,123,456}, {@code -100,000,812}; a score
+     * below 0, mines having taken more than the run earned, reads positive: {@code +000,263,286}).
      */
     void fillScoreCells(int value) {
-        int v = Math.max(0, value);
+        int v = Math.abs(value);
         int sig = 1;
         for (int t = v; t >= 10; t /= 10) sig++;
-        int cell = 0;
+        // the sign: dim like a leading zero while the score is 0, locked from the start
+        scoreChars[0] = value < 0 ? '+' : '-';
+        scoreLead[0] = v == 0;
+        scoreLockIndex[0] = -1;
+        int cell = 1;
         for (int j = 0; j < SCORE_DIGITS; j++) {
             boolean lead = j < SCORE_DIGITS - sig;
             if (j > 0 && (SCORE_DIGITS - j) % 3 == 0) {
@@ -397,13 +430,13 @@ public final class ResultModel {
 
     private static String group(int v) {
         StringBuilder sb = new StringBuilder(12);
-        org.kelvinizer.ui.Fonts.appendGrouped(sb, v);
+        Fonts.appendGrouped(sb, v);
         return sb.toString();
     }
 
     private static String groupLong(long v) {
         StringBuilder sb = new StringBuilder(14);
-        org.kelvinizer.ui.Fonts.appendGrouped(sb, v);
+        Fonts.appendGrouped(sb, v);
         return sb.toString();
     }
 }

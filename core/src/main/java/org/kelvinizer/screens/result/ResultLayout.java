@@ -67,6 +67,8 @@ public final class ResultLayout {
      * band (a panel 84 high from 40 before).
      */
     public float frameX, frameY, frameH;
+    /** Top of the depth crest's avatar (Kelvin 2026-10-30, picture topleft8: 26 under the blueprint's top). */
+    public float crestTop;
     /** Shell capsule: right x, centre y, height. */
     public float capsuleRight, capsuleY, capsuleH;
 
@@ -147,6 +149,7 @@ public final class ResultLayout {
         frameX = sl;
         frameH = 100f * s;
         frameY = ty(132f);
+        crestTop = ty(26f);
         capsuleRight = sr;
         capsuleY = ty(82f);
         capsuleH = 44f * s;

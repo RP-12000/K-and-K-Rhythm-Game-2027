@@ -9,7 +9,7 @@
     {
       "id": "c2", "title": "TWILIGHT", "titleZh": "暮光层", "subtitle": "Chapter II",
       "depthMeters": 200, "depthBottom": 1000, "uncharted": false,
-      "songs": ["Song 4", "Song 5", "Song 6"]
+      "songs": ["Song 4", "Song 5", "Aleph-0"]
     },
     {
       "id": "c3", "title": "MIDNIGHT", "titleZh": "午夜层", "subtitle": "Chapter III",

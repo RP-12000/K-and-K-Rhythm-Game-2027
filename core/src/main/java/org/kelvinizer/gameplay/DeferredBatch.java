@@ -64,6 +64,17 @@ final class DeferredBatch implements Batch {
         packed = real.getPackedColor();
     }
 
+    /**
+     * Draws everything recorded since {@link #start} like {@link #replay()} but keeps it, so it can be drawn once
+     * more (the HUD beneath the notes, outside and then inside a veil).
+     */
+    void replayKeep() {
+        if (target == null) return;
+        for (int g = 0; g < groups; g++) {
+            if (lengths[g] > 0) target.draw(textures[g], vertices[g], 0, lengths[g]);
+        }
+    }
+
     /** Draws everything recorded since {@link #start} into the real batch, one call per texture, and stops. */
     void replay() {
         if (target == null) return;

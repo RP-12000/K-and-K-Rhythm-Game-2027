@@ -15,6 +15,7 @@ import org.kelvinizer.audio.Mp3Info;
 import org.kelvinizer.audio.WavDurationUtil;
 import org.kelvinizer.elements.Chart;
 import org.kelvinizer.elements.ChartMapper;
+import org.kelvinizer.elements.SongInfo;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -231,6 +232,7 @@ public final class SongLibrary implements Disposable {
         SongMeta song = new SongMeta(id, folder);
         ChartHeaderReader.Header display = null;
         int displayRank = Integer.MAX_VALUE;
+        SongInfo info = SongInfo.in(folder); // the song values of v5 charts
         for (Difficulty d : Difficulty.values()) {
             FileHandle f = folder.child(d.fileName());
             if (files != null ? !containsIgnoreCase(files, d.fileName()) : !f.exists()) continue;
@@ -249,7 +251,7 @@ public final class SongLibrary implements Disposable {
             song.constantBase[i] = ConstantLabel.base(h.chartConstant);
             song.constantMark[i] = ConstantLabel.mark(h.chartConstant);
             song.constants[i] = parseConstant(h.chartConstant);
-            song.chartTitles[i] = h.title;
+            song.chartTitles[i] = h.format >= 5 && info != null ? info.title : h.title;
             song.charters[i] = h.charter;
             // Display metadata: SHALLOW first, then SURFACE, then whatever exists.
             int rank = d == Difficulty.SHALLOW ? 0 : d == Difficulty.SURFACE ? 1 : 2 + i;
@@ -259,13 +261,23 @@ public final class SongLibrary implements Disposable {
             }
         }
         if (display == null) return null;
-        song.title = nonEmpty(display.title, id);
-        song.artist = nonEmpty(display.artist, "");
-        song.illustrator = nonEmpty(display.illustrator, "");
         song.charter = nonEmpty(display.charter, "");
-        song.bpm = display.bpm;
-        song.bpmMin = display.bpmMin;
-        song.bpmMax = display.bpmMax;
+        if (display.format >= 5 && info != null) {
+            float[] range = info.bpmRange();
+            song.title = nonEmpty(info.title, id);
+            song.artist = nonEmpty(info.artist, "");
+            song.illustrator = nonEmpty(info.illustrator, "");
+            song.bpm = info.bpm > 0f ? info.bpm : 0f;
+            song.bpmMin = range[0];
+            song.bpmMax = range[1];
+        } else {
+            song.title = nonEmpty(display.title, id);
+            song.artist = nonEmpty(display.artist, "");
+            song.illustrator = nonEmpty(display.illustrator, "");
+            song.bpm = display.bpm;
+            song.bpmMin = display.bpmMin;
+            song.bpmMax = display.bpmMax;
+        }
 
         song.music = pickMusic(folder, id, files);
         song.jacket = pickNamedOrFirst(folder, files, "jacket", IMAGE_EXT, "bg");
@@ -479,7 +491,7 @@ public final class SongLibrary implements Disposable {
      * incomplete (it samples black) unless {@code GL_OES_texture_npot} is present. Desktop GL
      * and GLES 3 handle NPOT mipmaps.
      */
-    static boolean canMipmap(int width, int height) {
+    public static boolean canMipmap(int width, int height) {
         if (MathUtils.isPowerOfTwo(width) && MathUtils.isPowerOfTwo(height)) return true;
         if (Gdx.app == null || Gdx.graphics == null) return false;
         if (Gdx.app.getType() == Application.ApplicationType.Desktop) return true;

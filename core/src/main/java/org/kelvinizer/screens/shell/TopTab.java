@@ -173,7 +173,7 @@ public final class TopTab extends ProfileTab {
             fonts.draw(b, Fonts.Role.UI_LABEL, 14f, r.local, tx + cw + 14f, cy - 20f, Align.left | Fonts.VCENTER,
                 Theme.AUTO, a);
         }
-        fonts.drawDigits(b, Fonts.Role.NUMBER, 24f, r.score, 9, true, scoreR + dx, cy, Align.right | Fonts.VCENTER,
+        fonts.drawScore(b, Fonts.Role.NUMBER, 24f, r.score, 9, true, scoreR + dx, cy, Align.right | Fonts.VCENTER,
             Theme.INK1, Theme.LEADING_ZERO, a);
         // the NUMBER digit face has no "m": the unit is UI text after the number
         float uw = fonts.draw(b, Fonts.Role.UI, 18f, "m", rhoR + dx, cy - 3f, Align.right | Fonts.VCENTER,

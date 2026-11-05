@@ -9,6 +9,7 @@ import com.badlogic.gdx.input.NativeInputConfiguration;
 import com.badlogic.gdx.input.TextInputWrapper;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.utils.Align;
+import org.kelvinizer.profile.NameWidth;
 
 /**
  * 文字输入框（新建或改名潜水员、地图上的搜索等）：手机上弹出系统输入对话框，桌面上直接在框内编辑。
@@ -91,6 +92,7 @@ public class TextField extends Pressable {
     private CharSequence label, placeholder;
     private Mode mode = Mode.AUTO;
     private int maxLength = DEFAULT_MAX_LENGTH;
+    private float widthLimit = Float.MAX_VALUE;
     private boolean allowEmpty;
     private Listener listener;
     private Fonts.Role role = Fonts.Role.UI;
@@ -162,6 +164,15 @@ public class TextField extends Pressable {
         return this;
     }
 
+    /**
+     * Widest value in {@link NameWidth} units (player names: {@link NameWidth#MAX_UNITS}); typing past it shakes,
+     * longer text is cut. Unlimited by default.
+     */
+    public TextField setWidthLimit(float units) {
+        widthLimit = units;
+        return this;
+    }
+
     /** Allows committing an empty value (default false: empty is rejected with a shake). */
     public TextField setAllowEmpty(boolean allow) {
         allowEmpty = allow;
@@ -184,7 +195,7 @@ public class TextField extends Pressable {
 
     /** Sets the committed value (sanitised to the max length; no listener call; ends editing). */
     public TextField setText(CharSequence text) {
-        committed = sanitize(text, maxLength);
+        committed = fit(sanitize(text, maxLength));
         value.setLength(0);
         value.append(committed);
         editing = false;
@@ -274,7 +285,7 @@ public class TextField extends Pressable {
      * the reject feedback) when it is empty.
      */
     public boolean submit(CharSequence raw) {
-        String s = sanitize(raw, maxLength);
+        String s = fit(sanitize(raw, maxLength));
         boolean ok = allowEmpty || !s.isEmpty();
         if (!ok) {
             reject();
@@ -434,8 +445,14 @@ public class TextField extends Pressable {
             || Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT));
     }
 
+    /** {@code s} cut to {@link #widthLimit}. */
+    private String fit(String s) {
+        return widthLimit < Float.MAX_VALUE ? NameWidth.cut(s, widthLimit).trim() : s;
+    }
+
     private void insert(char c) {
-        if (codePointLength(edit) >= maxLength || edit.length() >= BUFFER - 2) {
+        if (codePointLength(edit) >= maxLength || edit.length() >= BUFFER - 2
+            || NameWidth.units(edit) + NameWidth.of(c) > widthLimit) {
             shake();
             return;
         }
@@ -454,6 +471,7 @@ public class TextField extends Pressable {
             i += Character.charCount(cp);
             if (cp == '\n' || cp == '\r' || cp == '\t') cp = ' ';
             if (Character.isISOControl(cp) || Character.getType(cp) == Character.FORMAT) continue;
+            if (NameWidth.units(edit) + NameWidth.of(cp) > widthLimit) break;
             int n = Character.charCount(cp);
             if (n == 1) {
                 edit.insert(caret, (char) cp);

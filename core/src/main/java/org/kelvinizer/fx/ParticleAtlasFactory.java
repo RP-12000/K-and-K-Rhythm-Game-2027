@@ -17,7 +17,7 @@ import org.kelvinizer.ui.Draw;
  * gameplay scene and the additive block stays one batch.
  *
  * <p>The {@code .p} files in {@code assets/ParticleEffects/} name atlas regions directly as their
- * image paths ({@code ring_soft}, {@code ring_thin}, {@code soft_dot}, {@code streak}). They are
+ * image paths (the LOST mark's {@code streak}). They are
  * standard libGDX particle-editor files and can still be opened there (point the editor's image
  * directory at PNG exports of those regions).
  *
@@ -71,18 +71,6 @@ final class ParticleAtlasFactory {
         if (emitter == null) return;
         emitter.getTint().setColors(new float[] {c.r, c.g, c.b});
         emitter.getTint().setTimeline(new float[] {0f});
-    }
-
-    /** Sets a two-colour tint gradient over the particle life on {@code emitter} (no-op when null). */
-    static void tint(ParticleEmitter emitter, Color from, Color to) {
-        if (emitter == null) return;
-        emitter.getTint().setColors(gradient(from, to));
-        emitter.getTint().setTimeline(new float[] {0f, 1f});
-    }
-
-    /** Tint colours {from.rgb, to.rgb} for a two-key timeline {0, 1}. */
-    static float[] gradient(Color from, Color to) {
-        return new float[] {from.r, from.g, from.b, to.r, to.g, to.b};
     }
 
     private static void negate(ParticleEmitter.RangedNumericValue v) {

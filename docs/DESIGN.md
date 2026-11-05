@@ -19,7 +19,7 @@
    - Glitch faces (Mokoto Mark / Mark 2 / outline, Rubik Glitch) appear only at cap ≥ 40, and only for single words, numbers or letters. The one exception is the judgement word: cap 32, because it is read by face and colour.
    - Gameplay numbers you read mid-song never glitch.
 2. **Two signals.**
-   - **Ground = cyan `#4FD8FF`.** Used for the ground line, ground notes, K₁ and the lower curtain panel.
+   - **Ground = cyan `#4FD8FF`.** Used for the ground line, K₁ and the lower curtain panel. Ground notes (DROP / STREAM bodies, hold ribbons, trail copies, note glows, the calibration and hit-point keys) use the deeper blue `groundNote` `#2F80FF` since 2026-10-27, so they stand apart from the teal ground TIDE.
    - **Sky = near-white `#F2F7FF`.** Used for the sky line, sky notes, K₂ and the upper curtain panel.
    - These hues are fixed on every screen and every depth. They are never re-tinted per layer.
 3. **Sonar is the interaction language.**
@@ -145,6 +145,7 @@ Priority tags:
 | `stroke` | `#FFFFFF @ 0.14` | hairlines, panel borders |
 | `scrim` | `#02040F @ 0.65` | modal dim (pause uses 0.70) |
 | `groundSig` | `#4FD8FF` | ground signal (see §0.1) |
+| `groundNote` | `#2F80FF` | ground notes (see §0.1) |
 | `skySig` | `#F2F7FF` | sky signal |
 | `seam` | `#0A1033` | curtain seam line |
 | `glitchC` / `glitchM` | `#00E5FF` / `#FF2E88` | RGB-split copies (≤ 0.35 α on text), tear bars (≤ 0.25 α) |
@@ -154,7 +155,7 @@ Priority tags:
 | `auto` | `#9CF5B0` | autoplay tint |
 | `btnTop` / `btnBot` | `#6FE3FF` / `#36B9E8` | primary button gradient; label `#04142B` |
 
-Gameplay note tokens live with the notes: `mine` `#FF3344`, `mineCore` `#2A0610` and `tide` `#8CFFD9` (§5.15); `mineLost` `#FF2A3D`, the red LOST word of a touched mine (§5.6); `skyTide` = 0.7·`skySig` + 0.3·`tide` (≈ `#D3F9F4`) and, until 2026-10-22, the sky TIDE STREAM head gradient `skyTideHeadDim` `#808EA0` → `skyTideHeadBright` `#ECF4FC` (§21.6, removed with the head bar, §24.54); the ground T4 wave `tideWave` `#1FBF98`, `tideWaveCrest` `#C8FFF0`, `tideWaveBase` `#EAFFF8` (§5.15). In code they are the `Theme` constants of the same names in capitals (`MINE_LOST`, `SKY_TIDE`, `TIDE_WAVE`, …).
+Gameplay note tokens live with the notes: `mine` `#FF3344`, `mineCore` `#2A0610` and `tide` `#8CFFD9` (§5.15); `mineLost` `#FF2A3D`, the red LOST word of a touched mine (§5.6); `skyTide` = 0.7·`skySig` + 0.3·`tide` (≈ `#D3F9F4`) and, until 2026-10-22, the sky TIDE STREAM head gradient `skyTideHeadDim` `#808EA0` → `skyTideHeadBright` `#ECF4FC` (§21.6, removed with the head bar, §24.54); until 2026-11-01 the ground T4 wave `tideWave` `#62D2B7` (`#1FBF98` until 2026-10-27), `tideWaveCrest` `#C8FFF0`, `tideWaveBase` `#EAFFF8` (§5.15; removed with the band, the wave is one `tide` line since). In code they are the `Theme` constants of the same names in capitals (`MINE_LOST`, `SKY_TIDE`, …).
 
 **Judgements.** Each judgement has its own colour *and* its own glyph face, so it reads without colour.
 
@@ -195,7 +196,7 @@ Gameplay note tokens live with the notes: `mine` `#FF3344`, `mineCore` `#2A0610`
 **Fonts shipped:**
 - the five existing glitch TTFs
 - **Chakra Petch** 400 / 600 / 700 (OFL)
-- **Noto Sans SC Medium** GB2312 subset plus ς, ー and the rest of the kana block (OFL), incremental
+- **Noto Sans SC Medium** GB2312 subset plus ς, ー, the rest of the kana block, JIS level-1 kanji and ❀ ✿ (OFL), incremental
 
 **Role mapping** follows the ARCHITECTURE `Fonts.Role` enum, plus one requested role, `UI_LABEL` (Appendix A).
 
@@ -542,7 +543,7 @@ The game visibly darkens as the player improves.
 - **Base.** Same shader without caustics; `u_bright = 0.70`; shafts × 0.35; grain .03; vignette fixed at .55. Then the **background dim** scrim (`#02040F @ backgroundDim`, default 0.35).
 - **Jacket wash.**
   - At load, downscale the jacket to a 16×16 Pixmap and make it a Texture (Linear). It is owned by GameplayScreen and recreated per song.
-  - Draw it full-screen, cover-cropped, at α .12. That gives a free "blurred jacket aura". With the song's `jacket16x9` framing, that part of it covers the screen (CHART_FORMAT §12.1).
+  - Draw it full-screen, cover-cropped, at α .12. That gives a free "blurred jacket aura". With the song's `jacket16x9` framing, that part of it covers the screen (CHART_FORMAT_v4 §12.1).
 - **Beat pulse.** `u_pulse` goes 1 → 0 over 200 ms on each beat (chart BPM).
 - **Bar ping.** Every 4 beats, `ping(960, 540, 700, 1.2, accent, 0.06, 1)`.
 - **Combo life** [P1]. Bio-motes: 0 while combo < 10, ramping linearly to 24 at combo ≥ 100. On a combo break they scatter outward and dim over 500 ms.
@@ -591,7 +592,7 @@ The manifest is `assets/Charts/index.json`, written by FOUNDATION. Refinements a
 | tutorial | Introduction | — | the LAUNCH POINT buoy |
 
 - **Songs per layer:** target 4, minimum 3, maximum 6.
-- **Optional per-song fields:** `previewStartMs`, `previewEndMs`, `map: {nudgeX, nudgeY}`; the song folder's `song.json` takes the same keys and wins (CHART_FORMAT §12.2).
+- **Optional per-song fields:** `previewStartMs`, `previewEndMs`, `map: {nudgeX, nudgeY}`; the song folder's `song.json` takes the same keys and wins (CHART_FORMAT_v4 §12.2).
 - **Unlisted folders** go into **Singles** (§16): new test songs appear there without editing the manifest.
 
 ### 3.2 World layout [P0]
@@ -1206,7 +1207,7 @@ y1080 ┌───────────────────────�
 ### 5.8 Notes [P0]
 
 - **Drawing.** `note_9p` NinePatch with rotation `currentAngle` (+180° for sky notes, so the leading edge faces the line).
-- **Pivot (Kelvin 2026-10-16 13:50, 13:52, approved 14:15; CHART_FORMAT §6.1.1).** A note turns about its pivot: `Note.pivotX/Y`, in reference units from its origin in its own frame (+y away from its line; a sky note's frame is turned 180° with it), stretched by `kx`/`ky` but not by note size. Origin: the centre of a DROP or MINE, of a STREAM head, of a LANE MINE's leading 32 units (its base; the column left out), of a TIDE STREAM head bar; for a TIDE, the middle of the on-screen part of its bar, halfway up the 18-unit bar. Default = the origin (charts without `pivot` turn about the centre); `(0, −20)` (a MINE or LANE MINE `(0, −16)`) is the old turn about the leading edge, exact at note size 1.0 on 16:9. `NoteShapes.pivotShiftX/Y` place lane notes and mines, trail copies and `EdgeEntry` follow. TIDE and TIDE STREAM turn too (`NoteRenderer.tideTurn`: one transform about the pivot), drawn as if infinitely long: the bar is stretched by `1/cos` (|cos| ≥ 0.2) so that, turned, it still crosses the window, each lane's pearls and wave staying above that lane; a turned band takes no part in the sky/ground overlap knock-out.
+- **Pivot (Kelvin 2026-10-16 13:50, 13:52, approved 14:15; CHART_FORMAT_v4 §6.1.1).** A note turns about its pivot: `Note.pivotX/Y`, in reference units from its origin in its own frame (+y away from its line; a sky note's frame is turned 180° with it), stretched by `kx`/`ky` but not by note size. Origin: the centre of a DROP or MINE, of a STREAM head, of a LANE MINE's leading 32 units (its base; the column left out), of a TIDE STREAM head bar; for a TIDE, the middle of the on-screen part of its bar, halfway up the 18-unit bar. Default = the origin (charts without `pivot` turn about the centre); `(0, −20)` (a MINE or LANE MINE `(0, −16)`) is the old turn about the leading edge, exact at note size 1.0 on 16:9. `NoteShapes.pivotShiftX/Y` place lane notes and mines, trail copies and `EdgeEntry` follow. TIDE and TIDE STREAM turn too (`NoteRenderer.tideTurn`: one transform about the pivot), drawn as if infinitely long: the bar is stretched by `1/cos` (|cos| ≥ 0.2) so that, turned, it still crosses the window, each lane's pearls and wave staying above that lane; a turned band takes no part in the sky/ground overlap knock-out.
 - **Size.** `laneWidth × 5/6 × min(noteSize, 1.15)` × `40 × noteSize`, where `noteSize` is the Settings value (0.8–1.3, default 1.0). At default that is 200×40.
 - **Anchor (Kelvin 2026-10-13: a row of sky keys and a row of ground keys at the same distance from their lines must line up at any note size and screen ratio).** A chart distance is measured to the near edge of the reference body (note size 1.0, 16:9; 40 tall, a MINE 32). Away from the line the drawn body is centred on that reference body's centre after the playfield stretch, so a DROP, STREAM head, MINE or LANE MINE moves by `refH/2·k − h/2` along its own axis (`k` = `ky` along the travel, `kx` across); within 300 units of the line this eases back (smoothstep), so the near edge still touches the line at the judgement time. Nothing moves at note size 1.0 on a 16:9 screen; TIDE notes are not affected. `NoteShapes.centreShiftX/Y`; trail copies follow.
 - **VISUAL HIT POINT 目押校准 (Kelvin 2026-10-20 03:20, §24.29).** `Settings.hitPointPx` (−100..+100, default 0 since 2026-10-20 22:37, §24.44; 20 before) is the distance from a TAP or HOLD key's midline to its line at the judgement time, in units of note size 1.0: 0 puts the line through the key's middle (「有些人目押的时候习惯等判定线横穿音符的时候判定」), so at the default the midline is what travels the approach to the line; 20 is the near edge on the line, as before the setting existed. Every note is drawn `(20 − hitPointPx) × noteSize` further along its path (`NoteRenderer.hitShift`, taken off `drawPos`): DROPs, STREAMs (a held head stays that far past the line), MINEs, LANE MINEs, TIDEs and TIDE STREAMs alike, with their trail copies (`TrailGeometry.setShift`) and the tutorial's TIDE caption, so every note still reaches its own hit point at the same moment as the others. Drawing only: judging, sounds and the song clock are untouched. Set on VISUAL (§9.2) or measured on its own screen (§9.7).
@@ -1220,7 +1221,7 @@ y1080 ┌───────────────────────�
   - DROP and STREAM heads (TIDE STREAM heads too until 2026-10-22; since then they are lit like their line's TIDE below, §24.54): a solid border reaching 8 beyond the body and starting 3 inside its edge, plus a soft halo 40 wide. That is about half the old high-opacity glow's border, which reached 16 (「边框再加粗一点，大概相当于之前原版亮度变化中的边框的一半粗」). Ground notes use white `SYNC_HIGHLIGHT` #FFFFFF, border α .9 and halo .6. Sky notes are white, so they use the deep gold `SYNC_HIGHLIGHT_SKY` #FF8000, border 1.0 and halo .3, which stays gold beside a white body (14:41: 「除了天键的用金色以外其他的都用白色高亮吧」).
   - MINE and LANE MINE heads: the same frame in `MINE_HIGHLIGHT` #FF8A80 at 30 % strength (「红区的sync弄得很暗就行了」; 14:48 「水雷保留浅红色」).
   - Sky TIDE: a ring 6 beyond each pearl and a halo 28, in the sky gold. Ground TIDE: a white border 8 and halo 40 along the wave's crest.
-  - The outline takes the note's shown opacity, so it fades and flashes with the note (「opacity变化的时候要注意边框和note要一起变透明度」; flashing above 1: CHART_FORMAT §6.1).
+  - The outline takes the note's shown opacity, so it fades and flashes with the note (「opacity变化的时候要注意边框和note要一起变透明度」; flashing above 1: CHART_FORMAT_v4 §6.1).
 - **Holds.**
   - Head: drawn as a tap note.
   - Body (**as built, §21.7**): ribbon 82 % of the lane on the ground line and 56 % on the sky line, line colour fading head → tail (α .42 → .16; held .62 → .30), bright sides (ground up to 8 px, a quarter of the ribbon when narrower; sky 6 px), a 3 px tail cap in the ribbon's own colour at α .8. Where a ground ribbon overlaps a sky ribbon of the same lane, the ground fill leaves a hole under the sky ribbon. Length comes from the model (`Note.tailHeightAt`: the default rule, or `HeightEvents`, §20.1). **Replaced:** ribbon α .35 / held α .60 and the equal-width sky ribbon.
@@ -1230,6 +1231,9 @@ y1080 ┌───────────────────────�
 - **No glitch on any note before it is judged.**
 
 ### 5.9 Hit effects (FX) [P0]
+
+> **Superseded for DROP and lane STREAM by the round splash of 2026-10-26** (the block at the end of this section). Items 1–7, 9 and 12 below, the `resonance` / `echo` / `hold` burst recipes and the water-ring rules of §20.5 describe the effects up to 0.1.0-beta.1 and are kept for the record; the LOST mark (item 8), the mine shock (item 10), the auto-drop (item 11) and the quality levels are unchanged.
+
 
 **Loading and pools:**
 - Load with `ParticleEffect.load(file, atlas)` using the shared `Draw` atlas (regions `ring_soft`, `soft_dot`, `streak`). Keep the prototypes and dispose them.
@@ -1276,6 +1280,35 @@ y1080 ┌───────────────────────�
 10. **Mine shock** is drawn by gameplay's `FeedbackLayer` in the same additive block, at every quality level (FX's duplicate `HitFx.mineShock` was removed at integration): one `ring_soft` tinted `mine`, r 30 → 150 over 220 ms `pow2Out`, α .7 → 0 (as §5.15), at every MINE touch and every LANE MINE contact. **Replaced:** the TIDE sweep (two bars running from the touch x to the window ends). A TIDE hit has no point effect at all; its effect is the tide wash of §19.2 (`gameplay/TideWash`, normal block A), which never calls `HitFx`.
 11. **Auto-drop:** ignores the first 1 s after `clear()` (`AUTO_DROP_WARMUP_SEC`; song-start hitches never count), then averages consecutive 3 s windows of frames with delta > 0 against 55 fps. It is **not re-armed** in the same session if the player sets High again. `Main` persists LOW and `particlesAutoDropped` without a toast; nothing else shows it (the result screen's notice and `consumeAutoDropNotice()` went on 2026-10-19).
 12. **Water rings (as built 2026-10-12, §20.5):** DROP and STREAM heads add the water rings to the bursts above (`fx/WaterRings`, one quad per ring, drawn by `HitFx` in the same additive block, no new draw call). `HitFx.tap` adds them to a DROP's burst (and to every other caller's tap: Settings live preview, calibration, the tutorial's grade demos); `HitFx.ripple` plays them alone for a STREAM head, whose burst is the hold stream. A completed lane STREAM still gets the seal (item 6); a TIDE STREAM end gets no seal. The hold stream rate has one source, `HitFx.holdRate(quality)` (22 / 12 / 0 per s), which the TIDE STREAM light bands share (§20.3). Rings have their own budget (5 ring quads per RESONANCE hit at High, about 30 live in the worst case; a RESONANCE set steps down to the Low pair, then to ring 0, when more than `RING_GUARD` = 60 rings are alive). The FX-lab worst case (12 taps/s + 4 streams + chords) is particles < 100 plus up to 33 ring quads.
+
+**Round splash (as built 2026-10-26; replaces the DROP and lane STREAM effects above).** Players found DROP and STREAM hits too weak (Kelvin 2026-10-25 14:43 「有反馈说drop和hold的判定不够明显」); she picked the water splash of the design thread's mock-ups (13:15 「水花，但是圆形的，不要椭圆」), approved the numbers at 13:41 and refined the two forms at 14:11 / 14:12. `fx/Splash` draws it, `fx/SplashForm` holds every number that differs between RESONANCE and ECHO, and `fx/WaterRings` draws the circles. The form is the judgement of the DROP, or of the STREAM's head, and a STREAM keeps its head's form to the end (13:15 「如果是resonance打中长条就一直以resonance的形式出现后面的打击特效」). Lengths are world units at 1920×1080 (the effects are not stretched with the playfield).
+
+| | RESONANCE | ECHO |
+|---|---|---|
+| colour | `resonance` | `echo` |
+| brightness `ka` (multiplies every α) | 1.0 | 0.6 |
+| size `sz` (flash, circles, held light) | 1.0 | 0.7 |
+| white share (the white dots) | 1.0 | 0.5 |
+| white in a drop's core | 0.55 | 0.30 |
+| throws drops at all | yes | **no** (14:12 「echo就只是波纹，不要水滴打击」) |
+| circles of a **DROP** | **three**, the same circles as an ECHO's (r 147 / 105 / 73.5), light blue (15:39 「resonance的打击也加上3个圆环，和echo一样，但是淡蓝色」) | **three**, r 210 / 150 / 105 × sz, 0.09 s apart (「echo就是三个紫色圆圈，象征echo」) |
+| circles of a STREAM head or release | two, r 210 and 150 × sz, 0.09 s apart | one, r 210 × sz |
+| drops at a hit / head | 16 | — |
+| drops at a completed release | 20 | — |
+| launch speed, hit (world/s) | 553–1148 | — |
+| launch speed, release | 595–1233 | — |
+| drop radius | 8–13.5 | — |
+| held fountain | 46/s, speed 480–960, radius 6.5–10.5 | — |
+| held ripple | every 1/4 beat at the current tempo, r 150, life 0.50 s, stroke 4.5 | every 3/4 beat, r 100, life 0.45 s, stroke 3.5 |
+
+1. **Round flash**, 0.20 s, at the hit point: with p = t / 0.20 and s = (0.6 + 0.55 · `pow2Out`(p)) · big · sz, a white soft dot of quad size 150 · s at α ka · white · (1 − p)^1.5 and one in the form colour of quad size 300 · s at α 0.55 · ka · (1 − p). The dots are the atlas's `gauss_dot` (σ = a fifth of its size).
+2. **Circles** (`WaterRings`, perfect circles: 「圆形的，不要椭圆」): r 0 → R by `pow2Out` over 0.52 s, α ka · (1 − p), stroke 6, each drawn as a line plus a glow copy at 0.35.
+3. **Drops** are thrown away from the line (up on the ground line, down on the sky line), angle 20–160°, start offset ± 26 along the line, gravity 3600 world/s²; a drop ends when it falls back to the height it was born at and fades over the last quarter of its flight. Each is a core dot of quad size 2.2 r (white mixed into the form colour), a halo of 6 r at α 0.35, and three trail copies 10 / 20 / 30 ms behind at α × .55 / .30 / .15 and size × .85 / .70 / .55.
+4. **Held STREAM**, from the head to the release: a flickering light at the note's base (white quad 120 · sz at α 0.80 · ka · white · f, colour quad 230 · sz at α 0.45 · ka · f, f(t) = 0.88 + 0.12 · sin(2π · 12 t) · sin(2π · 3.1 t + 1)), the fountain (RESONANCE only; births evenly spaced, each jittered inside its slot; angle 65–115°, offset ± 30, α 0.95 · ka) and the ripples of the table, each centred where the base was at its birth, at α 0.8 · ka · (1 − p).
+5. **Release.** A completed STREAM ends with the splash at 1.2 × (positions and sizes) and the release drops, at the base as it is drawn at the STREAM's end beat (Kelvin 2026-10-31 15:03: not back on the line in its lane once its movement events are over). An early release only stops the emission; live drops and circles finish and there is no release splash.
+6. **The base rule** (13:25 「如果hold击打后base发生了位移，则大细粒子效果始终生成在note的base」): every effect of a STREAM is born at the note's base as drawn at that moment — `NoteRenderer.effectPoint`, the point of the key that crosses the line at the judgement, which follows the lane, the line, the note's own position after the head and its turn. The light follows it every frame; each fountain drop and each ripple starts where the base is at its birth and then runs on its own. Drops are always thrown away from the note's line, even when the base is off it or turned. A DROP's splash stays at its hit point.
+7. **Quality.** High as above; Low halves the drops and the fountain rate, drops a RESONANCE's second circle (an ECHO DROP keeps all three: they are its whole effect) and leaves out the drop trails; Off nothing. The old particle budget guard is gone: a busy worst case (12 RESONANCE hits/s plus 4 held streams, bases moving) peaks at about 160 live drops and 820 quads from one texture in the one additive block.
+8. **Unchanged:** TIDE and TIDE STREAM effects (§19.2; the light bands keep `HitFx.holdRate`, 22 / 12 per s), the touch contact ring, the line ripple of `hitFeedback`, the LOST ×, the judgement word and the mine effects. `assets/ParticleEffects/resonance.p`, `echo.p` and `hold.p` are no longer loaded (only `lost.p` is).
 
 ### 5.10 Lane touch feedback [P0]
 
@@ -1350,11 +1383,16 @@ t = 0 is when the DIVE open completes. The run begins with a **3.3 s pre-roll** 
 
 ### 5.14 Hit sound slot (reserved, not configured) [P0]
 
-- **Files.** `audio.hitSound()` loads `assets/Sounds/hit.(ogg|wav)` if present. Optional variants: `hit_echo.*` (played for ECHO instead of `hit`), `hold_end.*` (a completed STREAM), and `mine.*` (a touched MINE, §5.15; a mine never plays `hit`). All four load together; the owner-facing description is `assets/Sounds/README.txt` and `docs/ASSET_SLOTS.md`.
-- **Priming.** Primed at load with a volume-0 play, to avoid the SoundPool first-play delay. Gameplay calls `hitSound()` in `begin()` while the DIVE covers the screen, so the first judgement never waits for a load.
+- **Files.** `audio.hitSound()` loads `assets/Sounds/hit.(wav|ogg)` if present (the `.wav` first since 2026-10-26: the phone's own output reads 16-bit PCM WAV only). Optional variants: `hit_echo.*` (played for ECHO instead of `hit`), `hold_end.*` (a completed STREAM), and `mine.*` (a touched MINE, §5.15; a mine never plays `hit`). All four load together; the owner-facing description is `assets/Sounds/README.txt` and `docs/ASSET_SLOTS.md`.
+- **Priming.** Primed at load with a volume-0 play, to avoid the SoundPool first-play delay (libGDX `Sound` only). Gameplay calls `hitSound()` in `begin()` while the DIVE covers the screen, so the first judgement never waits for a load.
 - **When it plays.** `playHit(j)` is called **inside the input handler** right after judgement, not on the next frame.
   - Mode **On judgement** (default) or **On any zone tap**.
   - Volume: `sfxVolume`.
+- **Timing on phones (2026-10-26, Kelvin 16:03 「但是我要谱面，音乐，和打击音效都完美吻合。」, 16:12 「然后多押的打击音效不齐」).** On Android 8.0+ hit sounds do not go through SoundPool but through the game's own low-latency output (`HitOutput`, `HitMixer`, `android/AndroidHitOutput`), which is always running and places each hit at the frame heard at a given instant.
+  - A judged tap sounds at the moment of the touch (its event time; already past, so at once), never held for the note (Kelvin 16:56 「如果打击到了音符，不用等音乐响起再响而是直接根据手指点击的时候响」).
+  - Hits of one sound within 20 ms play once: the fingers of a chord give one sound.
+  - Autoplay hands each note's hit (mines excepted) to the output 150 ms ahead, heard at the note's time; a pause drops those not yet heard and the resume queues them again from the pause point.
+  - Older phones and the desktop keep the old way (play at judgement).
 - **Absent files.** Silent when missing. The Settings slider shows "NO HIT SOUND INSTALLED" and is disabled.
 
 
@@ -1366,7 +1404,7 @@ Model and judging rules are in ARCHITECTURE §13. Visual rules:
 - Every lane visual is multiplied by the lane's `opacity`. A lane at opacity 0 still exists and is still playable; only its furniture disappears.
 - Notes in a lane use the lane's current screen width in the §5.8 size rule (`laneWidth × 5/6 × …`), so notes in a narrowing lane narrow with it.
 
-**Names.** Shown in the tutorial, result stats and the future editor. Owner's choice (2026-10-11), all from `NoteType`: DROP 水滴 (tap), STREAM 水流 (hold), MINE 水雷 (mine), TIDE 潮汐 (universal); with a duration, TIDE STREAM 潮汐水流 (universal, §19) and LANE MINE 轨道水雷 (mine, §20.2). **Replaced:** "pause-menu legend" (the pause menu has no legend since variant B, §5.12).
+**Names.** Shown in the tutorial, result stats and the future editor. Owner's choice (2026-10-11), all from `NoteType`: DROP 水滴 (tap), STREAM 水流 (hold), MINE 水雷 (mine), TIDE 浪花 (universal); with a duration, TIDE STREAM 潮汐 (universal, §19) and LANE MINE 轨道水雷 (mine, §20.2). **Replaced:** "pause-menu legend" (the pause menu has no legend since variant B, §5.12).
 
 **Mine** (new tokens: `mine` `#FF3344`, `mineCore` `#2A0610`):
 - Body: rounded bar **70 % of lane width** (the touch box), 32 tall × `noteSize`, fill `mineCore @ .92`, 3 px rim `mine`.
@@ -1374,7 +1412,7 @@ Model and judging rules are in ARCHITECTURE §13. Visual rules:
 - **Turning (owner 2026-10-12: mines behave like DROP / STREAM):** a mine turns with its `RotationEvents` (`angleAt`, +180° on the sky line) like a lane note, and its afterimage copies turn with the angle of their own moment (§17.1). **Replaced:** the axis-aligned mine.
 - Pulse: `note_glow` tinted `mine`, α .18 ↔ .34 at 2 Hz (additive block). It never glitches before it passes.
 - Approach warning [P1]: in its last 250 ms, the lane segment of the line glows `mine @ .20` instead of the normal approach glow.
-- **Dangerous window: ±66.67 ms** around its time, the RESONANCE window (owner 2026-10-13 21:55: 「普通水雷生效范围为+-66ms」; `Params.MINE_WINDOW_MS`; ±100 ms on 2026-10-12–13, ARCHITECTURE §13.2).
+- **Dangerous window: ±133.33 ms** around its time, the ECHO window, and only for a **press** (owner 2026-10-31: 「那个地雷我要求是点击才检查判没判定」「现在一个水雷的判定区间改为+-133ms」; `Params.MINE_WINDOW_MS`; ±66.67 ms from 2026-10-13 21:55, ±100 ms on 2026-10-12–13; a finger resting through it never touches it). Where it meets a tap or STREAM head of its lane, the mine loses the note's RESONANCE window and the note's ECHO loses the mine's window (ARCHITECTURE §13.2, CHART_FORMAT_v4 §6.4.2).
 - Passed untouched: fades to α 0 over 120 ms after crossing the line, with no FX and no sound.
 - Touched:
   - a `mine` shock ring at the touch x on the line, r 30 → 150 over 220 ms, α .7 → 0 (one `ring_soft`; quality Off keeps it);
@@ -1384,12 +1422,12 @@ Model and judging rules are in ARCHITECTURE §13. Visual rules:
   - **the red `LOST` word** in `mineLost` (§5.6; owner 2026-10-12 00:42). If the same touch also judges a note, the centre word stays this red LOST (the hit only ticks the meter; §5.6). **Replaced:** "no central judgement word". Still no EARLY/LATE and no hit sound;
   - optional sound slot `assets/Sounds/mine.(ogg|wav)`, reserved like §5.14 and silent when absent; it plays for every MINE touch and every LANE MINE contact, at most once per frame (mines stacked on one spot, kept since 2026-10-22, are touched together and sound once).
 
-**Universal (TIDE 潮汐)** (new token `tide` `#8CFFD9`):
+**Universal (TIDE 浪花)** (new token `tide` `#8CFFD9`):
 - **TIDE drop body: the T4 look (owner 2026-10-12 04:36, 「天键地键tide的改为T4」; numbers from the approved mock-ups).** One shape per group across the **current window** `[left, right]`, inset 12 at each end; `u` = the note size setting; "behind" is the side the note comes from.
   - Sky line, a string of pearls: a 2u thread at α .45, 7u behind the leading edge, carrying 3 beads per lane alternating r 11u / 7u in `skySig`, each over a soft glow (4 bead radii, α .35).
-  - Ground line, a rolling wave: crest at 20u + 9u·sin(π·x / (laneW/2) + 6·t) behind the leading edge (t = song seconds, frozen while paused; phase from the window's left edge with the mean lane width, so it does not jump when lanes resize); fill `tideWave` `#1FBF98` at α .85 in 8 strips per lane, crest line `tideWaveCrest` `#C8FFF0` 3u, leading-edge base line `tideWaveBase` `#EAFFF8` 3u; glow under the wave (64u, α .30) at particle quality High only.
+  - Ground line, a rolling wave: **one wave line since 2026-11-01** (Kelvin 15:46 「把地键的浪花改为一条单个的波浪就行了，简洁一点」, 20:20 「稍微都可以粗一点」): the line runs where the crest was, 20u + 9u·sin(π·x / (laneW/2) − 2π·waves) behind the leading edge (phase from the window's left edge with the mean lane width, so it does not jump when lanes resize; `waves` = the note's `waveSpeed` × beat), in 8 strips per lane; `tide` `#8CFFD9` 6.5u with a soft glow on both sides (gaussian, 2.7 line widths, α .6, particle quality High only); on a multi-press (sync highlight) white 9u with a stronger glow (α .7, always); a tide mine in `mine` red. No fill and no base line any more; the sync pearls of the gold row are strung on the line. Until then: fill `tideWave` `#62D2B7` at α .85, crest line `tideWaveCrest` `#C8FFF0` 3u, base line `tideWaveBase` `#EAFFF8` 3u, glow under the wave 64u at α .30, a white crest highlight on a multi-press.
   - TIDE heads draw **first** in the note pass, so lane notes and mines stay on top of the wave or the pearls (a joint DROP stays visible).
-  - Afterimage copies use T4 at the copy's song time (129 quads per ground copy, 25 per sky copy at 8 lanes).
+  - Afterimage copies use T4 at the copy's song time (64 quads per ground copy since 2026-11-01, 25 per sky copy at 8 lanes).
   - **Replaced** for TIDE drops: the 18-tall bar with the `tide` α .70 → .30 fill, white leading edge and the 10×10 lane-boundary diamonds. A TIDE STREAM head kept that bar until 2026-10-22 (in `tide` on the ground line, the pearl gradient on the sky line, with `glow_v` `tide @ .20` at High quality); since then it is drawn as its line's TIDE drop (§19.1, §24.54).
 - Approach [P1]: in its last 250 ms the whole zone hint of its line brightens toward `tide @ .06`.
 - **Hit (replaced by §19.2):** no point effect at the touch x (no burst, ring, ripple or contact ring); the tide wash floats a band of light off the line and the line swells. **Replaced:** "the normal tap FX of the judgement at the touch x, plus a tide sweep … the line ripple uses A = 6 px".
@@ -1732,10 +1770,10 @@ The extra fields are requested in Appendix A.
 
 | Setting | Default | Scope | Notes |
 |---|---|---|---|
-| Music volume | 80 % | device | `MUSIC VOLUME` / `音乐音量` (MUSIC / 音乐 until 14:29) |
-| Note volume | 80 % | device | `NOTE VOLUME` / `打击音效音量` (`HIT SOUND VOLUME` in English until 2026-10-18 19:52; HIT SOUND / 打击音效 until 14:29), description `ADJUST THE VOLUME OF NOTE SOUND EFFECTS` / `调整音符的打击音效音量` (`ADJUSTS THE NOTES' HIT SOUND VOLUME` until 19:52); disabled, with ` · NONE INSTALLED YET` / ` · 还没有打击音效` added, when no hit sound is installed |
+| Music volume | 50 % | device | `MUSIC VOLUME` / `音乐音量` (MUSIC / 音乐 until 14:29) |
+| Note volume | 50 % | device | `NOTE VOLUME` / `打击音效音量` (`HIT SOUND VOLUME` in English until 2026-10-18 19:52; HIT SOUND / 打击音效 until 14:29), description `ADJUST THE VOLUME OF NOTE SOUND EFFECTS` / `调整音符的打击音效音量` (`ADJUSTS THE NOTES' HIT SOUND VOLUME` until 19:52); disabled, with ` · NONE INSTALLED YET` / ` · 还没有打击音效` added, when no hit sound is installed |
 | ~~Hit sound mode~~ | On judgement | diver | **removed 2026-10-18 14:29** (「打击音效时机（只要判定时的）」): hit sounds play on judgement only; `Settings.sanitize` pins `hitSoundMode` to `HIT_ON_JUDGEMENT` |
-| UI sound volume | 60 % | device | `UI SOUND VOLUME` / `界面音效音量` (Kelvin 2026-10-18 15:17: 「音频那里加一个界面音效音量，和打击特效一样暂时还没有install」), under NOTE VOLUME; description `ADJUSTS THE MENU AND BUTTON SOUNDS · NONE INSTALLED YET` / `调整菜单和按钮的音效音量 · 还没有界面音效`; disabled (dimmed) like NOTE VOLUME, since no UI sounds ship yet; `DeviceSettings.uiVolume`. Hidden until 15:17 |
+| UI sound volume | 50 % | device | `UI SOUND VOLUME` / `界面音效音量` (Kelvin 2026-10-18 15:17: 「音频那里加一个界面音效音量，和打击特效一样暂时还没有install」), under NOTE VOLUME; description `ADJUSTS THE MENU AND BUTTON SOUNDS · NONE INSTALLED YET` / `调整菜单和按钮的音效音量 · 还没有界面音效`; disabled (dimmed) like NOTE VOLUME, since no UI sounds ship yet; `DeviceSettings.uiVolume`. Hidden until 15:17 |
 | ~~Song preview~~ | On | diver | **removed 14:29**: always on (`sanitize` pins `previewOn`) |
 | ~~Menu music~~ | On | diver | **removed 14:29**: always on (`sanitize` pins `menuMusicOn`) |
 
@@ -1785,7 +1823,7 @@ The **visual offset is gone** (Kelvin 2026-10-18 00:24: 「visual offset感觉�
 
 With the one EARLY / LATE ON row (06:03: 「这样保证gameplay也不用往下滚动」) GAMEPLAY has six rows and fits without scrolling (§24.12). JUDGEMENT DISPLAY moved to VISUAL and the NOTE GUIDE to the end of OTHER on 2026-10-18 03:25 (§24.8); the NOTE GUIDE left Settings on 05:14 (§24.11). LIVE COUNTERS has no row since 04:06 (「游玩里的实时计数取消掉，我从来没看到过这个在哪里」): the counters only show in the band layout (§5.2), which no landscape screen uses since the field stretches; `Settings.liveCounters` stays for old saves. LANGUAGE moved to the top of OTHER on 04:34 (「语言塞进其他里面」).
 
-**NOTE GUIDE 音符图鉴** (owner decisions 2026-10-12; replaces the pause-menu legend of §5.12, §19.3 and §20.2). **Not shown since 2026-10-18 05:14** (Kelvin: 「把音符图鉴那一部分删了」, §24.11): no page adds the row any more; `NoteGuide` and `NoteGuideRow` were removed from the code in 0.1.0-beta.1. The rest of this block describes it as it was built. A display-only row (`screens/shell/NoteGuideRow` + `gameplay/NoteGuide`): the last row of GAMEPLAY until 2026-10-18 03:25, the last row of OTHER since. A dashed-outline panel titled `NOTE GUIDE` + `音符图鉴`, right-aligned subtitle `EVERY NOTE TYPE AND HOW TO PLAY IT`. Two columns of three rows: DROP 水滴, STREAM 水流, MINE 水雷 | TIDE 潮汐, TIDE STREAM 潮汐水流, LANE MINE 轨道水雷. Each row: a static miniature drawn by the game's own note painters at the current look (ground DROP head; short ground STREAM; plain mine at rotation 0; T4 ground wave over one lane at a fixed phase; TIDE STREAM head and band; short LANE MINE column with stripes and head cap), the name (EN, plus zh with Language = 中文), and the rule:
+**NOTE GUIDE 音符图鉴** (owner decisions 2026-10-12; replaces the pause-menu legend of §5.12, §19.3 and §20.2). **Not shown since 2026-10-18 05:14** (Kelvin: 「把音符图鉴那一部分删了」, §24.11): no page adds the row any more; `NoteGuide` and `NoteGuideRow` were removed from the code in 0.1.0-beta.1. The rest of this block describes it as it was built. A display-only row (`screens/shell/NoteGuideRow` + `gameplay/NoteGuide`): the last row of GAMEPLAY until 2026-10-18 03:25, the last row of OTHER since. A dashed-outline panel titled `NOTE GUIDE` + `音符图鉴`, right-aligned subtitle `EVERY NOTE TYPE AND HOW TO PLAY IT`. Two columns of three rows: DROP 水滴, STREAM 水流, MINE 水雷 | TIDE 浪花, TIDE STREAM 潮汐, LANE MINE 轨道水雷. Each row: a static miniature drawn by the game's own note painters at the current look (ground DROP head; short ground STREAM; plain mine at rotation 0; T4 ground wave over one lane at a fixed phase; TIDE STREAM head and band; short LANE MINE column with stripes and head cap), the name (EN, plus zh with Language = 中文), and the rule:
 
 | Note | 中文 rule | EN rule |
 |---|---|---|
@@ -1909,7 +1947,7 @@ Kelvin 2026-10-20 03:20: 「下面的校准会单独弹出来一个界面」 (§
 | — | Chorus | — | 152–182 | TIDEs at 152 and 156; TIDE + DROP at 160 (ground, lane −2) and 164 (sky, lane +2), one tap for both; a ground STREAM 168–174 (lane −2) and a sky one 176–182 (lane +2) under DROPs |
 | L8 | MINEs | 176.5–190, right-edge plate over lanes +3 / +4 | 184–190 | `DON'T TOUCH: / THEY BREAK / YOUR COMBO, / NOT YOUR SCORE`; mines at 185 (+2), 187 (+1), 188 (−1), 189 (+1) between ground DROPs; the demo mine left of the heading (lane +3) is touched by a ghost finger every 1.6 s (its red LOST shows above the demo mine, not in the centre, because real notes are playing) and is gone before the first mine appears (183) |
 | L8b | LANE MINEs | 190–200, left-edge plate over lanes −4 / −3 | 192–200 | `THEY CLOSE / A WHOLE LANE. / STAY OUT / WHILE IT'S RED`; a 4-beat LANE MINE in ground lane −2 (192–196), then one in sky lane +2 (196–200), DROPs beside them; each closed lane's outline (over its line's zone) pulses from when its lane mine appears until its block ends |
-| L12 | TIDE as the line | 200.5–214, left plate over lanes −4..−2 | 202–214 | `A TIDE CAN BE THE LINE` / `TAP AS NOTES LAND ON IT: THEY JUMP TO THE LINE` (潮汐也能当判定线 / 音符碰到潮汐时就点，它会瞬移到判定线上); three ground TIDEs appear 300 above the line, each with a DROP in lane +1 that lands on it, and both jump to the line on that beat (202, 204, 206); then three sky TIDEs 300 under the sky line with DROPs in lane −1 (210, 212, 214); one tap judges each pair (owner 2026-10-16) |
+| L12 | TIDE as the line | 200.5–214, left plate over lanes −4..−2 | 202–214 | `A TIDE CAN BE THE LINE` / `TAP AS NOTES LAND ON IT: THEY JUMP TO THE LINE` (浪花也能当判定线 / 音符碰到浪花时就点，它会瞬移到判定线上); three ground TIDEs appear 300 above the line, each with a DROP in lane +1 that lands on it, and both jump to the line on that beat (202, 204, 206); then three sky TIDEs 300 under the sky line with DROPs in lane −1 (210, 212, 214); one tap judges each pair (owner 2026-10-16) |
 | ~~L10~~ | ~~More to discover~~ | removed 2026-10-20 (gallery p.26: 「删了」, §24.42); was 216.5–222, left plate over lanes −4..−2 | — | was `AFTERIMAGES, / MOVING NOTES — / YOU'LL MEET THEM IN SONGS` (only mentioned) |
 | E | Outro | dialogue 224–248 (empty placeholders since 2026-10-21, §24.51) | 216–252 | a ground TIDE STREAM 216–236 under DROPs and STREAMs; his quote on a plate over lanes −3..−1 (224–236), hers over lanes +2 / +3 (230–237); mines in lanes +1 and +4 every half beat 232–239.5; the soul line (238) and the last line (240.5) over the closing chords 240–247.5; `K & K` 248–251 (the HUD combo gives way under it, §24.52) |
 
@@ -2115,7 +2153,7 @@ EXP  = round(base) + bonuses
 
 > **Superseded 2026-10-17 by §23** (shells, depth and fifteen grades); kept for history.
 
-> Mines (§5.15): grade is score-based, so a touched mine never lowers the grade; it only removes the FULL COMBO / ALL RESONANCE badges, because it breaks combo. FULL COMBO = `maxCombo == x` **and no mine touched**: a MINE or LANE MINE touched before the first note or after the last one also removes both badges (`ScoreKeeper.isFullCombo()`), although it only resets an empty or finished combo.
+> Mines (§5.15): grade is score-based; since 2026-11-01 a touched mine costs 10,000 of the score (ARCHITECTURE §18), so it can lower the grade. It also removes the FULL COMBO / ALL RESONANCE badges, because it breaks combo. FULL COMBO = `maxCombo == x` **and no mine touched**: a MINE or LANE MINE touched before the first note or after the last one also removes both badges (`ScoreKeeper.isFullCombo()`), although it only resets an empty or finished combo.
 
 ECHO weight is **0.65** (Params), so with N = 1,693 notes each ECHO costs about 2,067 points and each LOST about 5,907.
 
@@ -2261,6 +2299,7 @@ Kelvin 21:58 / 22:14 (circled preview) / 22:39, approved 22:43 (preview v2). Map
 - **Secret songs** (special unlock, flow TBD): a song spot or a pack marked `secret`. `hidden`: not shown at all; `glitch`: a disc of re-rolling noise cells with a dashed grey rim, a garbled shimmering name and a `??` chip; a tap only flickers it (no card), and the filters, TAB, card prev / next and long-press skip it. The profile flags `reveal:<song id>` and `reveal:pack:<title>` lift it.
 - **ALL SONGS packs**: SINGLES, MAIN STORY, SIDE and COLLAB as separate groups; the `APPEARS HERE ONCE CHAPTERS OPEN` and `COMING SOON` captions are gone.
 - **SINGLES layout (Kelvin 2026-10-17 16:46: 「singles地图要重拍。我想对于singles一点进去坐标为（0，0）开始，也就是从屏幕正中心，四周都有曲子」)**: `singles.json` starts on its rise spot at (0, 0), so the camera opens with (0, 0) at the screen centre, the level name on it (`titleAt` [0, 30]). The songs sit round it on a hex lattice 540 wide with rows 380 apart, sized for a 4:3 tablet (Kelvin 17:21: 「地图编排贴近4：3的平板一点，手机可以再四处拖动没关系，然后可以间隔在大一点再排开一点」): on 1920 × 1440 every hole and label shows at the start, clear of the badge and the lens control; on 16:9 and wider screens the top and bottom rows run to the screen edges and the rest is a drag away. (The first cut, 560 × 200, fitted a 16:9 screen.) A ring of six (Song 1 top left, then clockwise Song 2, Song 3, Song 4, Song 5, Song 6), marsh mally top right and ICS4U bottom right outside it, with paths round the ring and to the outer two. Songs placed nowhere (`collect`, today Aleph-0) take the free lattice points nearest the start (MAP_FORMAT §1), so Aleph-0 lands top left. The bottom-left outer point stays free for the next one. Collect distances count a step up or down as 4/3 of a step sideways, so the four outer corners fill before anything spills off a 4:3 screen.
+- **SINGLES scattered (Kelvin 2026-10-31 14:20: 「把地图里的那个解锁链去掉，这些曲子随机一点散落在各个地方」; 14:23: 「免费的改为Dash from my Eyes」)**: no `requires`, `clearScore` or `links` any more; the seven songs sit at fixed, uneven points round the start (0, 0) instead of a lattice. Three show in the opening view on every aspect: Dash from my eyes (free, nearest the start so the arrival ring is on it, its label clear of the lens control), 氷点 and Aleph-0. Devouring Loop, Confusion, My Soul and Memoria Plūviæ are a drag away or in the overview. The light `pools` follow the songs.
 
 ---
 
@@ -2293,7 +2332,7 @@ Model, chart keys and lifetime rules are in ARCHITECTURE §17. The owner's words
 Formula, streak rules and migration are in ARCHITECTURE §18: `score = 100,000,000 · (r + 0.55e)/t + 10,000 · m_r/t + r_p` (owner, 2026-10-14). This section overrides the score parts of §5.5, §6, §11 and §12.
 
 ### 18.1 Gameplay HUD
-- Score: **9 digits**, grouped, leading zeros dim (`000,000,000`); eased and popped as in §5.5. It only ever rises.
+- Score: **9 digits**, grouped, leading zeros dim (`000,000,000`); eased and popped as in §5.5. Since 2026-11-01 it reads negative (`-098,123,456`, the minus dim while the score is 0) and a touched mine moves it back towards 0; early in a run a mine can carry it past 0 (19:50 「允许正数」): it then reads positive (`+000,010,000` for a mine before the first hit) until the hits outweigh the mines.
 - Combo (centre) = consecutive RESONANCE + ECHO, as before. The resonance chain is not shown in the HUD.
 - Accuracy uses ECHO weight 0.55.
 - [P1] PERFECT glint: a RESONANCE with `|Δt| ≤ 33 ms` draws a 2 px white line under the central word, sweeping left → right in 90 ms. No new word.
@@ -2319,7 +2358,7 @@ Formula, streak rules and migration are in ARCHITECTURE §18: `score = 100,000,0
 | **B** | 82,000,000 | ≈ 85–90 % RESONANCE |
 | **C** | 70,000,000 | |
 | **D** | < 70,000,000 | |
-- Grades use `min(score, 99,999,999)` unless PURE, so the PERFECT bonus never lifts a grade. A touched mine never lowers the grade; it removes the FULL COMBO / ALL RESONANCE badges (combo breaks), wherever in the run it is touched.
+- Grades use `min(score, 99,999,999)` unless PURE, so the PERFECT bonus never lifts a grade. A touched mine costs 10,000 of the score (since 2026-11-01) and removes the FULL COMBO / ALL RESONANCE badges (combo breaks), wherever in the run it is touched.
 - Badges: FULL COMBO = `maxCombo == x` **and no mine touched** (`ScoreKeeper.isFullCombo()`: `totalNotes > 0 && maxCombo >= totalNotes && minesTouched == 0`, 2026-10-12; a mine touched before the first note or after the last one resets only an empty or finished combo, so the mine condition is explicit); ALL RESONANCE = PURE and FULL COMBO.
 - The ≈ ECHO/LOST-allowed columns of §12 no longer apply (one ECHO also cuts the chain, so its cost depends on where it lands).
 
@@ -2361,7 +2400,7 @@ Rules are in ARCHITECTURE §19. This section overrides the TIDE "Hit" bullet of 
 - **Layering:** the band draws **beneath** lane notes and mines, so a lane note crossing it stays crisp. Above the lane field.
 - **While held:** the head pins to the line (like a hold), band α × 1.6, and the tide level of §19.2 stays up.
 - **Broken:** desaturates to `#6C7899 @ .30` over 200 ms, like a hold.
-- **Names:** `TIDE STREAM 潮汐水流` in the tutorial and result stats. (**Replaced:** "the pause legend".)
+- **Names:** `TIDE STREAM 潮汐` in the tutorial and result stats. (**Replaced:** "the pause legend".)
 
 ### 19.2 Tide band and wash (the TIDE hit effect) — v3, owner review 2026-10-11 22:40
 History: 21:14 asked for a tide that brightens the screen and then darkens; 22:12 corrected it to a band of light that floats up **as a whole** (no circular ripple at the finger; that ripple moved to DROP/STREAM, §20.5); 22:40, after the mock-up video: the band was **too crisp**, and **no band may appear while the tide pulls back** — the pull-back is only the fading feel of receding water. Mock-up videos: `preview/` A1/A2 (v2).
@@ -2372,7 +2411,7 @@ History: 21:14 asked for a tide that brightens the screen and then darkens; 22:1
 - **Darken:** while the water recedes, a veil (`#02040F`, normal blend), strongest on the hit half and about half as strong on the far half, peaks at α .16 at 480 ms and is gone by 850 ms.
 - **Line:** the hit line swells as a whole (glow in the hit colour, 4 px lift) and settles over 320 ms, instead of the point ripple of §5.7.
 - **Layering, several at once, LOST, `reduceFlashing`:** beneath notes, the judgement word and the HUD, above the backdrop and lane field; one effect per line per frame/group (a new one on the same line restarts it); both lines at once float toward each other; LOST plays nothing; `reduceFlashing`: α × 0.5, no veil, travel at most 30 %. Particle quality Off keeps the rise and recede (no dissolve widening, no line swell).
-- **TIDE STREAM (`潮汐水流`):** the head hit plays the rise/recede above. While held, **soft** thin bands (Gaussian σ ≈ 9, additive α .13, no hard edge) keep lifting off the line and floating away at a **fixed** rate equal to the STREAM hold particles (22/s High, 12/s Low, 0 Off), each travelling 25 % of the gap in 600 ms and dimming as it goes; the clock starts at the head judgement and ignores finger swaps (§20.3). The low tide level (12 % of the gap, α .12, breathing) stays under them. Completion: one rise/recede at 30 % travel (no veil). Break: the level drains to the line over 150 ms with a brief veil (α .12); emission stops.
+- **TIDE STREAM (`潮汐`):** the head hit plays the rise/recede above. While held, **soft** thin bands (Gaussian σ ≈ 9, additive α .13, no hard edge) keep lifting off the line and floating away at a **fixed** rate equal to the STREAM hold particles (22/s High, 12/s Low, 0 Off), each travelling 25 % of the gap in 600 ms and dimming as it goes; the clock starts at the head judgement and ignores finger swaps (§20.3). The low tide level (12 % of the gap, α .12, breathing) stays under them. Completion: one rise/recede at 30 % travel (no veil). Break: the level drains to the line over 150 ms with a brief veil (α .12); emission stops.
 - **As built 2026-10-12 (`gameplay/TideWash`).** Built to the numbers above, with these decisions:
   - **No contact ring either:** a judged TIDE hit draws no §5.10 contact ring or brackets at the finger (§5.10); only the judgement word, EARLY/LATE and the hit sound remain at the touch.
   - **Blend.** Drawn in normal block A (after the lane field, before the HUD shapes), not additively: an additive pass beneath the notes would cost a blend switch (two more draw calls a frame). Colour c at α is drawn as `FIELD + c / ADD_GAIN` at α × `ADD_GAIN` (`FIELD` `#0B1A35`, the measured field colour under the gap; `ADD_GAIN` 1.3), which adds exactly c × α over `FIELD` and stays within a few percent of it over the field's other dark blues. A band lying on the lifted water or the level has its α divided by (1 − the α beneath its centre), so the stack adds up as the additive design does.
@@ -2384,7 +2423,7 @@ History: 21:14 asked for a tide that brightens the screen and then darkens; 22:1
 
 ### 19.3 Holding rules in the UI
 - Tutorial (STREAM lesson): add `KEEP THE SAME FINGER DOWN UNTIL THE STREAM ENDS` / `同一根手指按到底，中途不能换手`.
-- Tutorial (TIDE lesson): one TIDE STREAM with `TIDE STREAMS: KEEP ANY FINGER ON THE LINE UNTIL IT ENDS — YOU MAY SWAP FINGERS` / `潮汐水流：一直有手指按在这条判定线上直到它结束，可以换手指`.
+- Tutorial (TIDE lesson): one TIDE STREAM with `TIDE STREAMS: KEEP ANY FINGER ON THE LINE UNTIL IT ENDS — YOU MAY SWAP FINGERS` / `潮汐：一直有手指按在这条判定线上直到它结束，可以换手指`.
 - **Replaced 2026-10-12:** "Pause legend: the TIDE STREAM row reads `any finger on the line`; the STREAM row reads `same finger to the end`." The pause menu has no legend (§5.12, variant B). The rules lived in the Settings NOTE GUIDE (§9.2, gone since 2026-10-18): STREAM `HOLD WITH THE SAME FINGER TO THE END` / 按住，同一根手指按到结尾; TIDE STREAM `KEEP ANY FINGER ON THE LINE` / 任意手指按在线上就算.
 - **As built (tutorial v3, §10.2):** the STREAM lesson L3 says `KEEP THE SAME FINGER DOWN UNTIL THE STREAM ENDS` / `同一根手指按到底，中途不能换手`; the TIDE STREAM lesson L7 says `KEEP ANY FINGER ON THE LINE — SWAPPING IS FINE` / `这条线上一直有手指按着就行，可以换手指`.
 
@@ -2396,7 +2435,7 @@ Rules are in ARCHITECTURE §20.
 ### 20.1 Growing bars
 - A STREAM, TIDE STREAM or LANE MINE whose `HeightEvents` make it longer while it is held simply draws the longer body; the head stays pinned on the line, the tail cap keeps moving away. No other change in look.
 - At the note's end the remaining body fades with the normal completion (120 ms) or break look, from whatever length it has.
-- **As built 2026-10-12:** `HeightEvents` (event type `Height`) are read on STREAMs, TIDE STREAMs and LANE MINEs in v2 charts only; on other notes and in v1 charts they are ignored and counted (`LoadReport.heightEventsIgnored()`). Values clamp at 0. Without them a LANE MINE's column shrinks linearly from `height` to 0 over its duration after the judgement, like a hold. Examples: `docs/CHART_FORMAT.md` §4.1.
+- **As built 2026-10-12:** `HeightEvents` (event type `Height`) are read on STREAMs, TIDE STREAMs and LANE MINEs in v2 charts only; on other notes and in v1 charts they are ignored and counted (`LoadReport.heightEventsIgnored()`). Values clamp at 0. Without them a LANE MINE's column shrinks linearly from `height` to 0 over its duration after the judgement, like a hold. Examples: `docs/CHART_FORMAT_v4.md` §4.1.
 
 ### 20.2 LANE MINE (轨道水雷)
 - **Body:** a hazard column filling the lane's current width (inset 6 each side) from head to tail: fill `mineCore @ .85`; diagonal hazard stripes in `mine` α .35 (45°, period 24, stripe width 10) drifting toward the line at 40 /s of song time; 3 px `mine` rims on both sides with 6×6 studs every 64 units; a head cap drawn as the normal MINE body (§5.15) and a 3 px `mine` tail cap. The column is drawn in the band layer of block B (beneath trails, lane notes and mines); the head cap with the notes.
@@ -2417,10 +2456,11 @@ Rules are in ARCHITECTURE §20.
 - **Now (owner's chart, 2026-10-17, §10.2):** L8b `LANE MINES` / `轨道水雷` sits on a left plate (190–200) beside a LANE MINE in ground lane −2 (192–196) and one in sky lane +2 (196–200), each closed lane outlined while it shows; the TIDE + DROP joints (160, 164 and the six L12 pairs) have no caption of their own. The v3 lessons below are history.
 - **Done in tutorial v3 (2026-10-12, §10.2)**, with the v3 wording:
   - LANE MINE: lesson L8b, a side plate `LANE MINES` / `轨道水雷`, `THEY CLOSE A WHOLE LANE. STAY OUT WHILE IT'S RED` / `它会封住整条轨道，变红的时候别碰`, beside a 4-beat LANE MINE in ground lane +3 (193–197). **Replaced:** `LANE MINES CLOSE A WHOLE LANE — STAY OUT WHILE IT IS RED` / `轨道水雷会封住整条轨道，变红的时候别碰`.
-  - Joint TIDE (now P0): lesson L6 `TIDE + DROP` / `潮汐 + 水滴`, `ONE TAP ON THE DROP TAKES BOTH` / `打中水滴，同一拍的潮汐一起算`, with joint pairs at 160 (ground) and 163 (sky). **Replaced:** `A TIDE ON THE SAME BEAT AS A NOTE IS TAKEN WITH THAT NOTE` / `和音符同一拍的潮汐，打中音符就一起算`.
+  - Joint TIDE (now P0): lesson L6 `TIDE + DROP` / `浪花 + 水滴`, `ONE TAP ON THE DROP TAKES BOTH` / `打中水滴，同一拍的浪花一起算`, with joint pairs at 160 (ground) and 163 (sky). **Replaced:** `A TIDE ON THE SAME BEAT AS A NOTE IS TAKEN WITH THAT NOTE` / `和音符同一拍的浪花，打中音符就一起算`.
 - A growing bar is not taught (it is a charting effect).
 
 ### 20.5 Water ripples for DROP and STREAM (owner 2026-10-11 22:12)
+> **Superseded 2026-10-26** by the round splash (§5.9 "Round splash"), which draws the circles of a DROP, a STREAM head, a held STREAM and a release. `fx/WaterRings` survives as the generic circle layer; the numbers below are the 2026-10-12 build.
 The circular "water ripple spreading from one point" goes to DROP and STREAM, combined with their existing hit FX (§5.9 as tuned: bursts, rings, sparks stay).
 - **DROP / STREAM head hit, RESONANCE (revised by the owner 2026-10-11 22:52: "bigger difference from ECHO; five rings, thicker"):** at the hit point on the line, **five** concentric water rings expand, staggered 65 ms apart: ring k (k = 0..4) starts at 65·k ms and grows r 0 → (160 − 20k) over 480 ms; each about **4–5 px** thick (soft-edged, `ring` rather than `ring_thin`), `resonance` colour, α .62 → 0 (`pow2Out` radius, linear fade), with a very slight wobble (radius ± 2 at 18 Hz) so they read as water rather than UI rings.
 - **ECHO (unchanged, owner: "echo is fine"):** one thin ring (2 px `ring_thin`), `echo` violet, r 0 → 100 over 420 ms, α .55 → 0. LOST: none. (As built the ECHO ring is drawn from the `ring_water` levels too, see below; `ring_thin` itself is unchanged for the particles.)
@@ -2481,7 +2521,7 @@ Each decision below is written into the section named in the last column; this t
 | Build (accepted): P is not a pause key; the keyboard's Pause key pauses | `PauseControl.pausesAtOnce` | §5.12 |
 | Pause menu variant B: no panel, RETRY / RESUME / QUIT with zh sublabels (00:58, 23:35) | `PauseMenu` | §5.12 |
 | The note legend leaves the pause menu and becomes the Settings NOTE GUIDE 音符图鉴 (mock-up P13 v2), with no GROWING and no AFTERIMAGE entry | `gameplay/NoteGuide` and `screens/shell/NoteGuideRow` (not shown since 2026-10-18, removed in 0.1.0-beta.1) | §5.12, §5.15, §9.2, §17.3, §19.1, §19.3, §20.2 |
-| Mines dangerous within ±66.67 ms; LANE MINEs block from T | `Params.MINE_WINDOW_MS`, `Params.LANE_MINE_LEAD_MS` | §5.15, ARCHITECTURE §13.2, §20 |
+| Mines touched by a press within ±133.33 ms; LANE MINEs block from T | `Params.MINE_WINDOW_MS`, `Params.LANE_MINE_LEAD_MS` | §5.15, ARCHITECTURE §13.2, §20 |
 | A touched mine shows a red LOST (00:42) | `Theme.MINE_LOST`, `GameplayHud.mineWord`, `FeedbackLayer.mineWord` | §5.6, §5.15 |
 | Build: the red word stays when the same touch also judges a note; FULL COMBO and ALL RESONANCE need no mine touched anywhere in the run | `GameplayHud.judgement`, `ScoreKeeper.isFullCombo()` | §5.6, §5.13, §12, §18.3, ARCHITECTURE §13.2, §18 |
 | Build: the tutorial's pause label follows Settings → PAUSE INPUT (hold / double tap / tap), and the double-tap demo plays only in double-tap mode; a SKIP during the resume countdown no longer lets the song resume behind the result | `IntroductionGuidelines(boolean zh, int pauseMode)` (generated from `PAUSE_LABELS`), `IntroductionScreen`, `GameplayScreen.finishNow()` | §10.1, §10.2 |
@@ -2519,9 +2559,9 @@ Replaces §8.6, §11 and the grade tables of §12 / §18.3–18.5.
 - There is no level: no LV, EXP bar or LEVEL UP anywhere. The map badge shows a gold shell pill with the count and the depth below the name (no bar since 14:10, §23.4). The result strip counts the shells from before to after; the `+N 🐚` chip opens the breakdown (no title since 2026-10-18 17:22, SHELLS THIS DIVE until then; its rows and TOTAL follow the language, §24.16). The Profile header's first row is `SHELLS` with the count.
 
 ### 23.2 Buying singles
-- A song must be bought when no story level places it (any level except `hub`, `grid` and `collect` routes) and the diver does not own it. Today that is Aleph-0, collected into SINGLES.
+- A song must be bought when no story level places it (any level except `hub`, `grid` and `collect` routes) and the diver does not own it. Today those are the singles on SINGLES except Dash from my eyes, which is free (`"price": 0`, since 2026-10-31; Aleph-0 before). A song the profile has played (a real game, not autoplay) counts as owned (`Profile.owns`), so a free song that later gets a price stays open for whoever played it.
 - Price: the spot's `price`, else the `collect` level's `price`, else 300 (MAP_FORMAT §1, §2).
-- For sale: the hole shows a gold dashed rim and a shell icon, the label line the price (map and ALL SONGS). The card shows difficulties and constants; AUTO is disabled; DESCEND becomes a gold `HOLD TO BUY 🐚 300` plate that fills left to right over 0.6 s while held and buys on completion (no dialog, no refund). Short of shells it is grey, `NEED 🐚 120 MORE`, and a press shakes it. A purchase toasts `BOUGHT · title`; the hole turns into a normal song hole. Owned ids live in `Profile.ownedSongs`.
+- For sale: the hole shows a gold dashed rim and a shell icon, the label line the price (map and ALL SONGS). The card shows difficulties and constants; AUTO is hidden and DESCEND becomes a gold `HOLD TO BUY 🐚 300` plate over the whole action row (Kelvin 2026-10-30) that fills left to right over 0.6 s while held and buys on completion (no dialog, no refund). Short of shells it is grey, `NEED 🐚 120 MORE`, and a press shakes it. A purchase toasts `BOUGHT · title`; the hole turns into a normal song hole. Owned ids live in `Profile.ownedSongs`.
 
 ### 23.3 Depth (`profile/Depth`)
 - **Since 14:10, corrected 15:22** (Kelvin 14:10: 「把计算规则改简单一点：分数系统取消掉。每张谱的深度改为40*(定数+max（0，（分数-96M）/2M））^2」; 15:22: 「哦哦错了，定数公式是40*max(0，定数+（分数-96M）/2M））^2」): chart depth = 40 m × max(0, c + bonus)², bonus = (min(score, 100,000,000) − 96,000,000) / 2,000,000. So 96,000,000 counts exactly 40 × c², 100,000,000 and above add 2 to the constant, and lower scores take from it (−3 at 90,000,000, −18 at 60,000,000) down to a depth of 0. ~~14:10 as first built: the bonus was max(0, …), so any finished run counted at least 40 × c².~~ ~~05:38: 40 m × c² × f(score), f piecewise linear (0 up to 60 M, 0.5 at 90 M, 1 at 96 M, 1.2 at 98 M, 1.5 at 100 M).~~
@@ -2607,7 +2647,7 @@ The DIVE without cover art (RETRY, the tutorial) shows nothing on the closed wal
 「然后现在gameplay点击英文转中文除了底下的note guide发生了变化其他的一个都没变。除了选歌界面上的英文不变其他的都要变。」
 - `ui/Lang`: `Lang.of(en, zh)` is a text that reads the language each time it is drawn, so switching LANGUAGE in Settings changes every screen at once (set from `Settings.language` in `Main.applySettings()`); `Lang.t` picks a string for text built per frame, `Lang.list` builds option lists. CJK glyphs come from the Noto Sans SC fallback and are warmed while a transition covers the screen.
 - In 中文: welcome, first run, Settings and its licences page, calibration, the profile screen, the tutorial captions, the transition credits (音乐 / 谱面 / 曲绘; 谱师 since 20:45), toasts and notices, the NOTE GUIDE (Chinese only). From this round until 16:41–16:45 also the result screen, the gameplay HUD (自动演示, 连击, 早 / 晚, 长按跳过) and the pause menu (继续 / 重开 / 退出, Chinese only); these are English in both languages again (§24.15), except the pause menu and the result screen's RETRY / CONTINUE, offset sheet and shell breakdown, which follow the language again since 17:22 (§24.16), and its score breakdown and the expanded trace's PEAK / MEAN since 20:34 (§24.17). The transition credits read 音乐 / 谱师 / 曲绘 since 20:45 (谱面 before).
-- Stays English: the map song select (Kelvin's words), song titles and artists, difficulty names (SURFACE, SHALLOW, DEEP, ABYSS), the DST 10 tab's `DST 10`, `DEEPEST 10` and `OVERFLOW` (00:37 「这两部分的英语可以不用」), the licence texts, and the glitch-font words on the playfield: the judgements RESONANCE / ECHO / LOST and the end banner (CLEAR / FULL COMBO / ALL RESONANCE). Rubik Glitch has no Chinese glyphs; Kelvin chose to keep them English (02:22, decision card on the preview). Since 16:41–16:45 the whole dive and the result screen too (§24.15).
+- Stays English: the map song select (Kelvin's words), song titles and artists, difficulty names (SHALLOW, MEDIUM, DEEP, ABYSS since 2026-10-27; SURFACE, SHALLOW, DEEP, ABYSS before), the DST 10 tab's `DST 10`, `DEEPEST 10` and `OVERFLOW` (00:37 「这两部分的英语可以不用」), the licence texts, and the glitch-font words on the playfield: the judgements RESONANCE / ECHO / LOST and the end banner (CLEAR / FULL COMBO / ALL RESONANCE). Rubik Glitch has no Chinese glyphs; Kelvin chose to keep them English (02:22, decision card on the preview). Since 16:41–16:45 the whole dive and the result screen too (§24.15).
 
 ### 24.3 DIVERS (PLAYER since 02:27): tap only switches (00:34)
 「然后这里只允许切换diver，现在点击diver那个标签卡还可以编辑，我不要」
@@ -3083,6 +3123,26 @@ Asked at 17:45: 「底部tide和蓝键叠在一起时很难看清蓝键在哪里
 - **Unchanged:** judging; the pivot and the turn (still about the middle of the notional 18-unit bar, §5.8 pivot).
 - **Code:** `NoteRenderer.paintTide`, `tideQuads`, `barPearls`, `NoteShapes.barPearlQuads` and `Theme.SKY_TIDE_HEAD_DIM` / `SKY_TIDE_HEAD_BRIGHT` removed; `NoteRenderer.tideReach()` is the T4 reach for every TIDE head.
 - **Charter:** its preview compiles the game's renderer, so it shows the new heads once rebuilt.
+
+### 24.55 One finger per TIDE STREAM (Kelvin 2026-10-23 15:03)
+Asked at 15:03: 「对于tide stream，如果有多个tide stream叠在一起，则每一个tide stream都需要一根手指按住。比如说一开始是一个地线tide stream，后面又加进来一个，前一个没结束。此时地线tide stream就有两个，地线上就始终得用两根手指（可以换手）」.
+
+- **Rule:** N TIDE STREAMs running on one line need N fingers in its zone (or keys of its row) the whole time. Which finger is which does not matter, so swapping stays free; the two lines count separately; a finger holding a lane STREAM still counts. Short of fingers, a stream in its last 250 ms lets go first (that completes it), then the later head. Judging details: ARCHITECTURE §19, CHART_FORMAT_v4 §6.5.
+- **Look:** unchanged. A stream left without a finger draws as not held (no brighter band), as in any lapse.
+- **Tutorial:** unchanged. Its TIDE STREAMs never overlap on one line, so 「这半屏一直有手指按着就行，可以换手指」 still holds.
+
+### 24.56 Veils (漩涡 VEIL) and distortion (Kelvin 2026-10-23 15:58–17:01)
+Asked at 15:58 for 「一个遮挡判定区间的功能」. Shaped over five mock-ups (16:09–16:47): 「光网可以，圆形的那种也保留。颜色稍微深一点，按键经过时distorted。」, 「水幕本身如果时圆形就用圆形，多边形就光网，然后不一定要限制在某些轨道内，这些是自由的。以及能支持类似的移动，旋转和透明度，glitch（不需要残影）」, 「水幕碰到不断连击，但是如果在水幕内按住了，则需要抬起手才能消除无效判定效果」, 「圆形要concentric的圆，一圈一圈的」, 「平常状态下自动有distroted 效果，但整体轮廓可见，判定区间还是那种多边形和圆形」, 「不用清晰标出真正挡住的范围」, 「distortion更多一点」. The glitch mark: 16:47, 16:55 「太大了，缩一倍」「直径跟按键宽度一样」. The distortion parameter: 16:57 「那个水幕加一个distortion参数，这个参数也同步加到所有的按键里面」. Both approved at 17:01.
+
+- **Rule:** a finger whose touch-down lands inside a showing veil judges nothing until it lifts, also after it slides out; the touch itself breaks no combo. Notes keep their timing. Details: ARCHITECTURE §22, CHART_FORMAT_v4 §6.10.
+- **Shapes:** free in the reference frame, not tied to a lane or a line. A circle shows concentric rings drifting outward; a polygon (3–16 points) a flowing caustic net. Fill `#0E2C8C` at .55 (thinner over bright pixels, so notes under the water keep their colour), pattern lines `#62AAF4`, a soft inner edge glow and a crisp thin outline `#80C2FA`. On a stretched screen the centre and the shape both stretch with the field (x by kx, y by ky, like every other chart event since 2026-11-04; a circle becomes the field's ellipse, a full-screen curtain covers the screen).
+- **Water:** the drawn outline always wobbles (two sine layers of 9 and 3.5 units, a 6 s loop) and what is under it is bent (rings: a radial ripple up to 6.5 units; net: up to 9.75 units each way). The blocking area stays the exact circle or polygon and is not drawn. Next to a judgement line the bending fades so the line never shows a ghost in the water.
+- **Layers:** over the lane field, notes and afterimages. The judgement line strokes stay crisp above the water, as do hit effects, the corner HUD and touch marks; the HUD drawn beneath the notes (combo, judgement word, timing meter) is drawn again above the most prominent veil.
+- **Motion:** centre, rotation and opacity by events (opacity 0 = off); glitch segments tear the water only (rows slide and dim, red and blue part, as a note's glitch, CHART_FORMAT_v4 §6.9); no afterimages.
+- **Distortion** (CHART_FORMAT_v4 §6.11): segments like glitch. 0 still, 1 the veil's own wobble, 2 double. A veil is 1 outside its segments and the strength scales both the wobble and the bending; a note is 0 and bends as a whole in its own frame (head, body, glows, sync pearls and frames; TIDE pearls and wave), look only. Afterimages and hit effects never bend.
+- **Glitch mark:** every finger that went down in a veil gets it, whether SHOW TOUCHES is on or not; with SHOW TOUCHES on that finger shows only this mark. Its diameter is a note's width (the average lane's). It comes up over 0.08 s, follows the finger also after it slides out, and on release widens by a third and fades over 0.25 s like a ring. Inside it the picture is lensed and swirled; rows and blocks tear, red and blue part, and the pattern changes 16 times a second (8, without rows dropping out, under REDUCE FLASHING).
+- **Fallback:** where the shaders do not compile (the veil needs 19 uniform vectors), a veil is a plain tinted disc or outline and the mark a jittering light-blue ring. Blocking is unchanged.
+- **Charter:** its preview compiles the game's renderer, so notes bend there once rebuilt; veils need their own editing (CHART_FORMAT_v4 §11).
 
 ## Appendix A: Contract additions requested from FOUNDATION
 

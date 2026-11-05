@@ -8,7 +8,7 @@ import com.badlogic.gdx.utils.Array;
 
 /**
  * 一种打击特效的对象池：实例创建时就预热，同时存活的不超过 {@link #MAX} 个，游戏中生成、绘制和回收都不分配内存。
- * 池满时，一次性的爆发回收最旧的一个，持续的光点流（按住水流时）拒绝新的。
+ * 池满时，一次性的爆发回收最旧的一个，持续的效果拒绝新的。
  *
  * <p>One pool of pooled copies of a prototype effect plus the list of its live instances
  * (DESIGN §5.9: "initial 8, max 24").
@@ -22,7 +22,7 @@ import com.badlogic.gdx.utils.Array;
  * that creates (once) another warmed instance, up to {@link #MAX}.
  *
  * <p>Live instances are kept oldest first. A full burst pool recycles its oldest instance; a full
- * continuous pool (hold streams) refuses the spawn.
+ * continuous pool refuses the spawn.
  */
 final class FxPool extends ParticleEffectPool {
     /** Instances created when a pool is built, unless the owner asks for more (DESIGN §5.9). */
@@ -164,15 +164,5 @@ final class FxPool extends ParticleEffectPool {
         live[liveCount] = null;
         free(e); // resets the instance and restores the prototype's size / motion
         if (scale != 1f) e.reset(false); // the reset inside free() ran before the sizes were restored
-    }
-
-    /**
-     * Stops a continuous instance's emission now; its live particles finish their life.
-     * ({@link ParticleEmitter#allowCompletion()} also ends the current duration cycle, so the
-     * emitter is done on its next update.)
-     */
-    static void stopEmission(ParticleEffect e) {
-        Array<ParticleEmitter> em = e.getEmitters();
-        for (int i = 0; i < em.size; i++) em.get(i).allowCompletion();
     }
 }

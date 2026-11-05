@@ -1,6 +1,7 @@
 package org.kelvinizer.elements;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -25,8 +26,10 @@ import java.util.List;
  *       rotation events follow.</li>
  *   <li><b>Authored motion is used as written</b> (Kelvin 2026-10-13): beats no movement event
  *       covers are off screen, also just before the judgement, so a note can show its motion
- *       early and be judged later unseen. A missed tap slides on past the line only when a
- *       movement event reaches the judgement (within {@link #APPROACH_PROBE_BEATS}).</li>
+ *       early and be judged later unseen. A missed tap goes on past the line only when a
+ *       movement event reaches the judgement (within {@link #APPROACH_PROBE_BEATS}): it follows its
+ *       events, and after the last one keeps that event's end speed, position and angle alike, like
+ *       inertia (Kelvin 2026-10-27: 「按照最后的事件延续吧，保留速度的那个值」).</li>
  *   <li><b>Default approach</b>: only a note with <b>no</b> movement events moves
  *       {@link #DEFAULT_SPAWN_DISTANCE} → 0 linearly over the {@link #DEFAULT_APPROACH_BEATS}
  *       beats before its judgement (the speed of the shipped charts) and
@@ -43,7 +46,8 @@ import java.util.List;
  *       {@link #pivotY()} in reference units in the note's own frame (a sky note's frame is turned
  *       180° with it), origin (0, 0) = the centre of its head (a hold, TIDE STREAM or LANE MINE:
  *       the centre of its base, the tail left out; a TIDE: the middle of the on-screen part of its
- *       bar), the default. Drawing only.</li>
+ *       bar), the default. A lane note may turn about an absolute point of the screen instead, its
+ *       {@link #orbit()} (公转, Kelvin 2026-10-29), which can move and carries the note with it. Drawing only.</li>
  *   <li>{@link #tailHeightAt}: visible tail length of a hold, TIDE STREAM band or LANE MINE
  *       column: the containing {@code HeightEvents} event's value (ARCHITECTURE §20 "Tail
  *       motion": a bar may keep growing while held), else the default rule ({@code height} until
@@ -64,8 +68,9 @@ import java.util.List;
  * the line and its column (length {@link #tailHeightAt}) follows it.
  *
  * <p>{@link #trails()} are the note's afterimage trail segments (ARCHITECTURE §17; several since
- * 2026-10-14, each with its own window and look) and {@link #glitches()} its glitch segments
- * (CHART_FORMAT §6.9): drawing only, never read by the engine; empty when the chart gives none.
+ * 2026-10-14, each with its own window and look), {@link #glitches()} its glitch segments
+ * (CHART_FORMAT_v4 §6.9) and {@link #distortions()} its distortion segments (§6.11): drawing only, never read by
+ * the engine; empty when the chart gives none.
  * {@link #trail()} is the first trail segment ({@link NoteTrail#NONE} when there is none).
  */
 public final class Note {
@@ -110,6 +115,14 @@ public final class Note {
     private final NoteTrail trail;
     private final List<NoteTrail> trails;
     private final List<NoteGlitch> glitches;
+    private final List<NoteDistortion> distortions;
+    private final float waveSpeed;
+    private final float offsetX;
+    private final List<Events> offsetXEvents;
+    private final float orbitFrom;
+    private final float orbitTo;
+    private final NoteOrbit orbit;
+    private final boolean fake;
 
     // Derived, set once by Chart.
     int index = -1;
@@ -126,7 +139,7 @@ public final class Note {
     /**
      * @param type            note type
      * @param line            judgement line
-     * @param laneId          lane id (0 only for the inserted lane 0, CHART_FORMAT §3.6; ignored and
+     * @param laneId          lane id (0 only for the inserted lane 0, CHART_FORMAT_v4 §3.6; ignored and
      *                        stored as 0 for universal)
      * @param appearance      authored appearance beat (NaN = derive from the events)
      * @param judgement       judgement beat (finite)
@@ -174,7 +187,7 @@ public final class Note {
 
     /**
      * Same as the constructor with {@code HeightEvents} and a trail, with any number of trail
-     * segments and the note's glitch segments (CHART_FORMAT §6.8–§6.9).
+     * segments and the note's glitch segments (CHART_FORMAT_v4 §6.8–§6.9).
      *
      * @param trails   afterimage trail segments (null = none; {@link NoteTrail#NONE} entries and
      *                 nulls are left out)
@@ -201,6 +214,99 @@ public final class Note {
                 float height, List<Events> movementEvents, List<Events> rotationEvents,
                 List<Events> disappearEvents, List<Events> heightEvents, List<NoteTrail> trails,
                 List<NoteGlitch> glitches, float pivotX, float pivotY) {
+        this(type, line, laneId, appearance, judgement, duration, height, movementEvents, rotationEvents,
+            disappearEvents, heightEvents, trails, glitches, pivotX, pivotY, null);
+    }
+
+    /**
+     * Same as the constructor with the rotation pivot, plus the note's distortion segments (CHART_FORMAT_v4 §6.11,
+     * Kelvin 2026-10-23 16:57).
+     *
+     * @param distortions distortion segments (null = none; nulls are left out; kept sorted by {@code from}, stable)
+     */
+    public Note(NoteType type, Line line, int laneId, float appearance, float judgement, float duration,
+                float height, List<Events> movementEvents, List<Events> rotationEvents,
+                List<Events> disappearEvents, List<Events> heightEvents, List<NoteTrail> trails,
+                List<NoteGlitch> glitches, float pivotX, float pivotY, List<NoteDistortion> distortions) {
+        this(type, line, laneId, appearance, judgement, duration, height, movementEvents, rotationEvents,
+            disappearEvents, heightEvents, trails, glitches, pivotX, pivotY, distortions, 0f);
+    }
+
+    /**
+     * Same as the constructor with distortions, plus how fast a TIDE's wave flows sideways (Kelvin 2026-10-28 00:33
+     * 「加一个参数吧，就是可以让这些波动起来的那种」).
+     *
+     * @param waveSpeed waves per beat, positive to the right ({@link #waveSpeed()}; kept only on a TIDE or TIDE
+     *                  STREAM, NaN or infinite → 0)
+     */
+    public Note(NoteType type, Line line, int laneId, float appearance, float judgement, float duration,
+                float height, List<Events> movementEvents, List<Events> rotationEvents,
+                List<Events> disappearEvents, List<Events> heightEvents, List<NoteTrail> trails,
+                List<NoteGlitch> glitches, float pivotX, float pivotY, List<NoteDistortion> distortions,
+                float waveSpeed) {
+        this(type, line, laneId, appearance, judgement, duration, height, movementEvents, rotationEvents,
+            disappearEvents, heightEvents, trails, glitches, pivotX, pivotY, distortions, waveSpeed, 0f);
+    }
+
+    /**
+     * Same as the constructor with a wave speed, plus a sideways shift of a lane note off its lane's centre (Kelvin
+     * 2026-10-28 01:47 「能否修改一下游戏的底层架构来让这种旋转得以实现」: with it and a pivot, any shape of notes turns
+     * about one point).
+     *
+     * @param offsetX reference units to the right on screen ({@link #offsetX()}; lane notes only, NaN or infinite → 0)
+     */
+    public Note(NoteType type, Line line, int laneId, float appearance, float judgement, float duration,
+                float height, List<Events> movementEvents, List<Events> rotationEvents,
+                List<Events> disappearEvents, List<Events> heightEvents, List<NoteTrail> trails,
+                List<NoteGlitch> glitches, float pivotX, float pivotY, List<NoteDistortion> distortions,
+                float waveSpeed, float offsetX) {
+        this(type, line, laneId, appearance, judgement, duration, height, movementEvents, rotationEvents,
+            disappearEvents, heightEvents, trails, glitches, pivotX, pivotY, distortions, waveSpeed, offsetX, null);
+    }
+
+    /**
+     * Same as the constructor with a sideways shift, plus events that move the shift over time (Kelvin 2026-10-28
+     * 02:19: the snowflake slides right and left while it turns).
+     *
+     * @param offsetXEvents sideways shift by beat ({@link #offsetXAt}; lane notes only, null for none)
+     */
+    public Note(NoteType type, Line line, int laneId, float appearance, float judgement, float duration,
+                float height, List<Events> movementEvents, List<Events> rotationEvents,
+                List<Events> disappearEvents, List<Events> heightEvents, List<NoteTrail> trails,
+                List<NoteGlitch> glitches, float pivotX, float pivotY, List<NoteDistortion> distortions,
+                float waveSpeed, float offsetX, List<Events> offsetXEvents) {
+        this(type, line, laneId, appearance, judgement, duration, height, movementEvents, rotationEvents,
+            disappearEvents, heightEvents, trails, glitches, pivotX, pivotY, distortions, waveSpeed, offsetX,
+            offsetXEvents, null);
+    }
+
+    /**
+     * Same as the constructor with sideways shift events, plus an orbit centre (Kelvin 2026-10-29 19:04: the key turns
+     * about an absolute point of the screen, 公转, and moves with it).
+     *
+     * @param orbit the absolute centre the note turns about instead of its pivot ({@link #orbit()}; lane notes only,
+     *              null for none)
+     */
+    public Note(NoteType type, Line line, int laneId, float appearance, float judgement, float duration,
+                float height, List<Events> movementEvents, List<Events> rotationEvents,
+                List<Events> disappearEvents, List<Events> heightEvents, List<NoteTrail> trails,
+                List<NoteGlitch> glitches, float pivotX, float pivotY, List<NoteDistortion> distortions,
+                float waveSpeed, float offsetX, List<Events> offsetXEvents, NoteOrbit orbit) {
+        this(type, line, laneId, appearance, judgement, duration, height, movementEvents, rotationEvents,
+            disappearEvents, heightEvents, trails, glitches, pivotX, pivotY, distortions, waveSpeed, offsetX,
+            offsetXEvents, orbit, false);
+    }
+
+    /**
+     * Same as the constructor with an orbit centre, plus the decoration flag (Kelvin 2026-11-02).
+     *
+     * @param fake a decoration that is only drawn ({@link #fake()}; tap, hold, mine and TIDE only, else ignored)
+     */
+    public Note(NoteType type, Line line, int laneId, float appearance, float judgement, float duration,
+                float height, List<Events> movementEvents, List<Events> rotationEvents,
+                List<Events> disappearEvents, List<Events> heightEvents, List<NoteTrail> trails,
+                List<NoteGlitch> glitches, float pivotX, float pivotY, List<NoteDistortion> distortions,
+                float waveSpeed, float offsetX, List<Events> offsetXEvents, NoteOrbit orbit, boolean fake) {
         if (type == null || line == null) throw new IllegalArgumentException("note type and line are required");
         if (Float.isNaN(judgement) || Float.isInfinite(judgement)) {
             throw new IllegalArgumentException("note judgement must be finite: " + judgement);
@@ -229,19 +335,37 @@ public final class Note {
         if (!this.disappearEvents.isEmpty()) from = Math.min(from, this.disappearEvents.get(0).startTime());
         this.visibleFrom = from;
         this.appearance = Float.isNaN(appearance) || Float.isInfinite(appearance) ? from : appearance;
-        float v = 0f;
-        if (!this.motion.isEmpty()) {
-            Events last = this.motion.get(this.motion.size() - 1);
-            float dt = last.endTime() - last.startTime();
-            if (dt > 0f) v = (last.finalValue() - last.initialValue()) / dt;
-        }
-        this.lastVelocity = v;
-        this.pinnedAngle = isLaneMine() ? Events.calculateValue(this.rotationEvents, this.judgement, 0f) : 0f;
+        this.lastVelocity = atJudgement != null ? endSpeed(atJudgement) : 0f;
+        this.pinnedAngle = isBlockMine() ? Events.calculateValue(this.rotationEvents, this.judgement, 0f) : 0f;
         this.pivotX = finiteOrZero(pivotX);
         this.pivotY = finiteOrZero(pivotY);
         this.trails = visibleTrails(trails);
         this.trail = this.trails.isEmpty() ? NoteTrail.NONE : this.trails.get(0);
         this.glitches = sortedGlitches(glitches);
+        this.distortions = sortedDistortions(distortions);
+        this.waveSpeed = type.inLane() ? 0f : finiteOrZero(waveSpeed);
+        this.offsetX = type.inLane() ? finiteOrZero(offsetX) : 0f;
+        this.offsetXEvents = type.inLane() ? Events.sortedCopy(offsetXEvents) : Collections.<Events>emptyList();
+        this.orbit = type.inLane() ? orbit : null;
+        this.fake = fake && (type.inLane() || type == NoteType.UNIVERSAL);
+        // a radius orbit is in effect from its first event (centre, radius or angle) to its last, or always without one
+        float of = Float.POSITIVE_INFINITY;
+        float ot = Float.NEGATIVE_INFINITY;
+        if (this.orbit != null && this.orbit.polar()) {
+            for (List<Events> l : Arrays.asList(this.orbit.xEvents(), this.orbit.yEvents(), this.orbit.radiusEvents(),
+                this.orbit.angleEvents())) {
+                for (Events e : l) {
+                    of = Math.min(of, e.startTime());
+                    ot = Math.max(ot, e.endTime());
+                }
+            }
+            if (of > ot) {
+                of = Float.NEGATIVE_INFINITY;
+                ot = Float.POSITIVE_INFINITY;
+            }
+        }
+        this.orbitFrom = of;
+        this.orbitTo = ot;
     }
 
     private static float finiteOrZero(float v) {
@@ -262,6 +386,17 @@ public final class Note {
         List<NoteGlitch> out = new ArrayList<>(in.size());
         for (NoteGlitch g : in) {
             if (g != null) out.add(g);
+        }
+        if (out.isEmpty()) return Collections.emptyList();
+        out.sort((a, b) -> Float.compare(a.from(), b.from())); // List.sort is stable
+        return Collections.unmodifiableList(out);
+    }
+
+    private static List<NoteDistortion> sortedDistortions(List<NoteDistortion> in) {
+        if (in == null || in.isEmpty()) return Collections.emptyList();
+        List<NoteDistortion> out = new ArrayList<>(in.size());
+        for (NoteDistortion d : in) {
+            if (d != null) out.add(d);
         }
         if (out.isEmpty()) return Collections.emptyList();
         out.sort((a, b) -> Float.compare(a.from(), b.from())); // List.sort is stable
@@ -329,8 +464,8 @@ public final class Note {
     public float duration() { return duration; }
 
     /**
-     * @return true for a TIDE STREAM (潮汐水流): a universal note with a positive duration, held by
-     *         any finger on its line (ARCHITECTURE §19). A universal note without one is a TIDE drop.
+     * @return true for a TIDE STREAM (潮汐): a universal note with a positive duration, held by
+     *         a finger of its own on its line (ARCHITECTURE §19). A universal note without one is a TIDE drop.
      */
     public boolean isTideStream() { return type == NoteType.UNIVERSAL && duration > 0f; }
 
@@ -341,10 +476,25 @@ public final class Note {
     public boolean isLaneMine() { return type == NoteType.MINE && duration > 0f; }
 
     /**
-     * @return true when the head sticks to the line after the judgement and a tail (hold ribbon,
-     *         TIDE STREAM band, LANE MINE column) follows it: holds, TIDE STREAMs and LANE MINEs
+     * @return true for a TIDE MINE (浪花水雷) or TIDE STREAM MINE (潮汐水雷): a mine over its line's whole zone
+     *         (Kelvin 2026-10-31)
      */
-    public boolean isSustained() { return type == NoteType.HOLD || isTideStream() || isLaneMine(); }
+    public boolean isTideMine() { return type == NoteType.TIDE_MINE; }
+
+    /**
+     * @return true for a mine that blocks over {@code [T, end)} once it reaches the line: a LANE MINE (its lane) or a
+     *         TIDE STREAM MINE (its line's whole zone)
+     */
+    public boolean isBlockMine() { return !type.judged() && duration > 0f; }
+
+    /** @return true for a TIDE STREAM or a TIDE STREAM MINE: a band across the window follows its head. */
+    public boolean hasTideBand() { return !type.inLane() && duration > 0f; }
+
+    /**
+     * @return true when the head sticks to the line after the judgement and a tail (hold ribbon,
+     *         TIDE STREAM band, LANE MINE column) follows it: holds, TIDE STREAMs, LANE MINEs and TIDE STREAM MINEs
+     */
+    public boolean isSustained() { return type == NoteType.HOLD || hasTideBand() || isBlockMine(); }
 
     /**
      * @return the note's English display name (DROP, STREAM, MINE, LANE MINE, TIDE or TIDE STREAM;
@@ -352,7 +502,7 @@ public final class Note {
      */
     public String displayName() { return type.display(duration > 0f); }
 
-    /** @return the note's Chinese display name (水滴, 水流, 水雷, 轨道水雷, 潮汐 or 潮汐水流). */
+    /** @return the note's Chinese display name (水滴, 水流, 水雷, 轨道水雷, 浪花 or 潮汐). */
     public String displayNameZh() { return type.displayZh(duration > 0f); }
     /** @return {@code judgement + duration} in beats. */
     public float endBeat() { return judgement + duration; }
@@ -392,6 +542,67 @@ public final class Note {
      *         none; {@link NoteGlitch#activeAt} picks the one shown). Visual only.
      */
     public List<NoteGlitch> glitches() { return glitches; }
+
+    /**
+     * @return the distortion segments sorted by {@code from} (unmodifiable; empty when the note has none;
+     *         {@link NoteDistortion#strengthAt} with {@link NoteDistortion#NOTE_BASE} gives the strength). Visual
+     *         only.
+     */
+    public List<NoteDistortion> distortions() { return distortions; }
+
+    /**
+     * @return how fast this TIDE's look flows sideways, in waves per beat (positive = to the right, 0 = still): the
+     * ground wave slides and the sky pearl string moves two pearls a wave (Kelvin 2026-10-28 00:33)
+     */
+    public float waveSpeed() { return waveSpeed; }
+
+    /**
+     * @return how far this lane note is drawn right of its lane's centre, in reference units (stretched by kx, the
+     * same on both lines; 0 for a TIDE). It moves the body before it turns about its pivot, which stays measured from
+     * the shifted body. Visual only: the note is still judged in its lane (Kelvin 2026-10-28 01:47).
+     */
+    public float offsetX() { return offsetX; }
+
+    /** @return the events that move {@link #offsetX} over time, sorted (empty for none). */
+    public List<Events> offsetXEvents() { return offsetXEvents; }
+
+    /**
+     * @return the sideways shift at {@code beat}. A note without {@code offsetXEvents} keeps {@link #offsetX} all the
+     * time; with events it takes the value of the event it is in, and 0 (its lane's centre) outside them, so a key
+     * that slides as part of a show falls in its own lane afterwards (Kelvin 2026-10-29 19:04)
+     */
+    public float offsetXAt(float beat) {
+        return offsetXEvents.isEmpty() ? offsetX : Events.calculateValue(offsetXEvents, beat, 0f);
+    }
+
+    /**
+     * @return the absolute centre this lane note turns about, 公转 (Kelvin 2026-10-29 19:04), or null: then it turns
+     * about its pivot ({@link #pivotX()}, {@link #pivotY()}), 自转. With an orbit the pivot is not used.
+     */
+    public NoteOrbit orbit() { return orbit; }
+
+    /**
+     * @return true for a decoration (假键, Kelvin 2026-11-02: snowflakes made of keys, then TIDE shows): drawn like any
+     *         tap, hold, mine, TIDE or TIDE STREAM until its end beat and then gone, but never judged, counted, scored,
+     *         hit or heard, with no sync hint and no lane glow; real notes on its beat do not count it as sharing their
+     *         beat, and a decorative TIDE joins no TIDE group (each is drawn on its own)
+     */
+    public boolean fake() { return fake; }
+
+    /**
+     * @return true when an orbit with a radius and angle places the note at {@code beat} (Kelvin 2026-10-29 20:55):
+     *         from the start of the first of its centre, radius and angle events to the end of the last (always when
+     *         it has none); outside that the note is in its lane and turns about its own centre
+     */
+    public boolean inOrbitSpan(float beat) {
+        return orbit != null && orbit.polar() && beat >= orbitFrom && beat <= orbitTo;
+    }
+
+    /** @return the first beat a radius orbit is in effect ({@link #inOrbitSpan}); +∞ without one, −∞ for always. */
+    public float orbitFrom() { return orbitFrom; }
+
+    /** @return the last beat a radius orbit is in effect ({@link #inOrbitSpan}). */
+    public float orbitTo() { return orbitTo; }
 
     // ------------------------------------------------------------------ derived (set by Chart)
 
@@ -463,8 +674,8 @@ public final class Note {
     public float visibleFrom() { return visibleFrom; }
 
     /**
-     * @return velocity of the last movement event in ref units per beat (0 if none or zero
-     *         length); an unjudged tap past its time keeps sliding at this speed while it fades
+     * @return speed (ref units per beat) at its end of the movement event in effect at the judgement (0 if none or
+     *         zero length): how fast a missed tap leaves the line once that event is over
      */
     public float lastVelocity() { return lastVelocity; }
 
@@ -473,28 +684,63 @@ public final class Note {
      *         for a LANE MINE at or after its judgement beat
      */
     public float positionAt(float beat) {
-        if (beat >= judgement && isLaneMine()) return 0f;
+        if (beat >= judgement && isBlockMine()) return 0f;
         float base = isSustained() && beat > judgement ? 0f : HIDDEN_POSITION;
         return Events.calculateValue(motion, beat, base);
     }
 
     /**
-     * @return the position extrapolated past the judgement beat: the position at the judgement
-     *         (from the last movement event started by then, its final value when it already
-     *         ended) {@code + lastVelocity·(beat − judgement)}: how a missed tap keeps sliding
-     *         through the line; {@link #HIDDEN_POSITION} when no movement reaches the judgement
+     * @return the position past the judgement beat (Kelvin 2026-10-27: a missed note keeps going, like inertia): the
+     *         movement events while one still covers {@code beat}; after the last one ends, its final value moved on
+     *         at the speed it ended with ({@link #continued}); {@link #HIDDEN_POSITION} when no movement reaches the
+     *         judgement
      */
     public float positionPastJudgement(float beat) {
         if (positionAtJudgement == HIDDEN_POSITION) return HIDDEN_POSITION; // judged unseen: stays off screen
-        return positionAtJudgement + lastVelocity * (beat - judgement);
+        return continued(motion, beat, HIDDEN_POSITION);
+    }
+
+    /**
+     * A channel past the judgement: the last event started by {@code beat} while it covers it; once it is over, its
+     * final value plus its end speed times the beats since its end, when it was still running at the judgement
+     * (else {@code base}, as before the judgement).
+     */
+    private float continued(List<Events> events, float beat, float base) {
+        Events e = lastStarted(events, beat);
+        if (e == null) return base;
+        if (beat <= e.endTime()) return e.valueAt(beat);
+        if (e.endTime() < judgement - APPROACH_PROBE_BEATS) return base;
+        // one ending a float rounding before the judgement moves on from the line at the judgement
+        return e.finalValue() + endSpeed(e) * (beat - Math.max(e.endTime(), judgement));
+    }
+
+    /** @return the last event (sorted by start) starting at or before {@code beat}, or null; no allocation */
+    private static Events lastStarted(List<Events> events, float beat) {
+        int lo = 0;
+        int hi = events.size();
+        while (lo < hi) {
+            int mid = (lo + hi) >>> 1;
+            if (events.get(mid).startTime() <= beat) lo = mid + 1;
+            else hi = mid;
+        }
+        return lo > 0 ? events.get(lo - 1) : null;
+    }
+
+    /** @return the eased event's rate of change at its end, per beat: (final − initial) · exponent / length */
+    private static float endSpeed(Events e) {
+        float dt = e.endTime() - e.startTime();
+        if (!(dt > 0f)) return 0f;
+        float v = (e.finalValue() - e.initialValue()) * e.exponent() / dt;
+        return Float.isFinite(v) ? v : 0f;
     }
 
     /**
      * @return rotation in degrees at {@code beat}; a LANE MINE keeps {@code angleAt(judgement)}
-     *         from its judgement beat on
+     *         from its judgement beat on; past the judgement a tap, mine or TIDE keeps turning ({@link #continued})
      */
     public float angleAt(float beat) {
-        if (beat >= judgement && isLaneMine()) return pinnedAngle;
+        if (beat >= judgement && isBlockMine()) return pinnedAngle;
+        if (beat > judgement && !isSustained()) return continued(rotationEvents, beat, 0f); // keeps turning
         return Events.calculateValue(rotationEvents, beat, 0f);
     }
 
@@ -564,6 +810,8 @@ public final class Note {
             + (heightEvents.isEmpty() ? "" : " heights " + heightEvents.size())
             + (trails.isEmpty() ? "" : " " + (trails.size() == 1 ? trail.toString() : trails.size() + " trails"))
             + (glitches.isEmpty() ? "" : " " + glitches.size() + " glitch(es)")
-            + (hasPivot() ? " pivot (" + pivotX + ", " + pivotY + ")" : "");
+            + (distortions.isEmpty() ? "" : " " + distortions.size() + " distortion(s)")
+            + (hasPivot() ? " pivot (" + pivotX + ", " + pivotY + ")" : "")
+            + (orbit != null ? " " + orbit : "") + (fake ? " fake" : "");
     }
 }

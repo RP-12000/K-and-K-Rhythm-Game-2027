@@ -36,6 +36,7 @@ public final class UiKit implements KkServices, Disposable {
     private final TransitionLayer transitions;
     private final Toast toasts;
     private final Avatar avatars;
+    private final DepthCrest crests = new DepthCrest();
     private final ArtCache art = new ArtCache();
     private final OrthographicCamera overlayCamera = new OrthographicCamera();
     private final ExtendViewport overlayViewport = new ExtendViewport(Ui.REF_W, Ui.REF_H, overlayCamera);
@@ -86,6 +87,11 @@ public final class UiKit implements KkServices, Disposable {
     @Override
     public Avatar avatars() {
         return avatars;
+    }
+
+    @Override
+    public DepthCrest crests() {
+        return crests;
     }
 
     @Override
@@ -152,6 +158,7 @@ public final class UiKit implements KkServices, Disposable {
     public void dispose() {
         transitions.dispose();
         avatars.dispose();
+        crests.dispose();
         art.dispose();
         backdrop.dispose();
         fonts.dispose();

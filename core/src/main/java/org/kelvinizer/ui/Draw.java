@@ -46,6 +46,11 @@ public final class Draw implements Disposable {
         CHIP_STROKE2_9P = "chip_stroke2_9p", ROUND_LG_9P = "round_lg_9p",
         ROUND_LG_STROKE2_9P = "round_lg_stroke2_9p", ROUND_LG_STROKE3_9P = "round_lg_stroke3_9p";
     /**
+     * Gaussian dot of the DROP / STREAM splash (Kelvin 2026-10-26): σ = a fifth of the region's size, faded to 0 at
+     * its edge (2.5 σ), so a dot drawn {@code D} wide is the approved mock-up's soft dot of size {@code D}.
+     */
+    public static final String GAUSS_DOT = "gauss_dot";
+    /**
      * Name prefix of the water-ring regions {@code ring_water0} … {@code ring_water10} (DESIGN §20.5):
      * the same soft ring, {@value #RING_WATER_FWHM} texels thick, at the radii of
      * {@link #ringWaterRadius}. A growing ring picks the level whose radius suits it, so its
@@ -78,7 +83,7 @@ public final class Draw implements Disposable {
     private final ObjectMap<String, TextureRegion> regions = new ObjectMap<>();
 
     private final TextureRegion white, softDot, ringSoft, ringThin, streak, glowV, shaft, noteGlow,
-        holdEdge, vignette, disc, whiteCore;
+        holdEdge, vignette, disc, whiteCore, gaussDot;
     private final TextureRegion[] ringWater = new TextureRegion[RING_WATER_LODS];
     private final NinePatch panel9, panelStroke9, chip9, pill9, note9;
     private final Nine ninePanel, nineChip, nineLarge;
@@ -122,6 +127,7 @@ public final class Draw implements Disposable {
         white = regions.get(WHITE);
         whiteCore = new TextureRegion(white, 1, 1, 2, 2);
         softDot = regions.get(SOFT_DOT);
+        gaussDot = regions.get(GAUSS_DOT);
         ringSoft = regions.get(RING_SOFT);
         ringThin = regions.get(RING_THIN);
         streak = regions.get(STREAK);
@@ -192,6 +198,11 @@ public final class Draw implements Disposable {
     /** {@code soft_dot}: α = (1 − r)². */
     public TextureRegion softDot() {
         return softDot;
+    }
+
+    /** {@code gauss_dot}: α = gaussian of σ = size / 5, faded to 0 at the edge ({@link #GAUSS_DOT}). */
+    public TextureRegion gaussDot() {
+        return gaussDot;
     }
 
     /** Alias of {@link #softDot()} (ARCHITECTURE "glow"). */
@@ -730,7 +741,7 @@ public final class Draw implements Disposable {
     private static final String[] NAMES = {
         WHITE, SOFT_DOT, RING_SOFT, RING_THIN, STREAK, GLOW_V, SHAFT, NOTE_9P, NOTE_GLOW, HOLD_EDGE,
         PANEL_9P, PANEL_STROKE_9P, CHIP_9P, PILL_9P, VIGNETTE, DISC, PANEL_STROKE2_9P, PANEL_STROKE3_9P,
-        CHIP_STROKE2_9P, ROUND_LG_9P, ROUND_LG_STROKE2_9P, ROUND_LG_STROKE3_9P};
+        CHIP_STROKE2_9P, ROUND_LG_9P, ROUND_LG_STROKE2_9P, ROUND_LG_STROKE3_9P, GAUSS_DOT};
 
     /** Per-pixel generator returning RGBA8888 for pixel centre (px, py), py measured downward. */
     private interface Gen {
@@ -743,6 +754,13 @@ public final class Draw implements Disposable {
             float r = radial(px, py, w, h);
             float a = r >= 1f ? 0f : (1f - r) * (1f - r);
             return white(a);
+        });
+        final float gEdge = (float) Math.exp(-3.125); // the gaussian at 2.5 σ, where the dot ends
+        pack(GAUSS_DOT, 64, 64, (px, py, w, h) -> {
+            float r = radial(px, py, w, h);
+            if (r >= 1f) return 0;
+            float g = (float) Math.exp(-3.125f * r * r); // σ = 0.4 of the half-size
+            return white((g - gEdge) / (1f - gEdge));
         });
         pack(RING_SOFT, 128, 128, (px, py, w, h) -> {
             float r = radial(px, py, w, h);

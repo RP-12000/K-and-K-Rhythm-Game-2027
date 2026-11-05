@@ -1149,7 +1149,7 @@ final class MapRenderer {
      * the width.
      */
     float score(Batch b, int value, float cap, float x, float y, int valign, Color c, float a) {
-        return fonts.drawDigits(b, Fonts.Role.NUMBER, cap, R_NUM, Math.max(0, value), 9, true, x, y,
+        return fonts.drawScore(b, Fonts.Role.NUMBER, cap, R_NUM, value, 9, true, x, y,
             Align.left | valign, c, Theme.LEADING_ZERO, a, null);
     }
 
@@ -1227,7 +1227,7 @@ final class MapRenderer {
             glyph.setLength(0);
             glyph.append(ch);
             quads.text(b, font, glyph, x + pen + g.xoffset * d.scaleX - bear0, y, Align.left, cap,
-                i < nl ? leadBits : bits);
+                i < nl && (ch != '-' || nl >= n) ? leadBits : bits);
             prev = g;
         }
     }
@@ -1374,7 +1374,8 @@ final class MapRenderer {
             if (g != null && g.width > 0 && g.height > 0) {
                 float k = 1f;
                 if (roll < 1f) k = Anim.POW3_OUT.apply(MathUtils.clamp(roll * span - 0.35f * i, 0f, 1f));
-                Color col = i < leadChars && lead != null ? lead : c;
+                // a score's minus keeps the main colour unless the whole score is dim (0)
+                Color col = i < leadChars && lead != null && (ch != '-' || leadChars >= n) ? lead : c;
                 b.setColor(col.r, col.g, col.b, col.a * a * k);
                 float gw = g.width * s, gh = g.height * s;
                 float gy = base + (g.yoffset - refY) * s - (1f - k) * cap * 0.8f;
@@ -1541,7 +1542,7 @@ final class MapRenderer {
 
     /** Width of the grid's 9-digit score at the UI digit raster. */
     private float gridScoreW() {
-        if (gridScoreW <= 0f) gridScoreW = fonts.digitsWidth(Fonts.Role.UI, R_UI, 9, true);
+        if (gridScoreW <= 0f) gridScoreW = fonts.scoreWidth(Fonts.Role.UI, R_UI, 9, true);
         return gridScoreW * GridPage.SCORE_CAP * lk / R_UI;
     }
 
@@ -1669,7 +1670,7 @@ final class MapRenderer {
                         Theme.INK3, la);
                 } else if (gridOn && n.played[d]) {
                     // the best score, its leading zeros as ghosts (the grade's pill follows)
-                    fonts.drawDigits(b, Fonts.Role.UI, GridPage.SCORE_CAP * lk, R_UI, n.best[d], 9, true,
+                    fonts.drawScore(b, Fonts.Role.UI, GridPage.SCORE_CAP * lk, R_UI, n.best[d], 9, true,
                         gridRowLeft(x, gridPillW(n.grade[d])), gridRowBase(n), Align.left, Theme.INK1, GHOST, la, null);
                 }
                 continue;

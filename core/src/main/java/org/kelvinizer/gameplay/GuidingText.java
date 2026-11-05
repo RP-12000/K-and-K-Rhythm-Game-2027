@@ -10,7 +10,7 @@ import org.kelvinizer.ui.Theme;
 import org.kelvinizer.ui.Ui;
 
 /**
- * 教学关卡的一条定时字幕：按歌曲拍数淡入淡出，位置可以挂在安全边、判定线、HUD 元素或潮汐叠音上。
+ * 教学关卡的一条定时字幕：按歌曲拍数淡入淡出，位置可以挂在安全边、判定线、HUD 元素或浪花叠音上。
  * 文字为空的字幕是占位：拍点和位置都留着，但什么都不画。
  * One timed tutorial caption (DESIGN §10.2), ported from the pre-redesign
  * {@code screens/GuidingText}: visible from {@code startBeat} to {@code endBeat} with linear fades

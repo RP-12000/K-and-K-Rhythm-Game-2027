@@ -59,10 +59,19 @@ public class Profile {
     public long createdAt;
     /** Time of the last recorded play (ms since epoch, 0 = never). */
     public long lastPlayedAt;
-    /** Avatar parameters (seed, shape, pattern, palette, glyph, frame). */
-    public AvatarSpec avatar = new AvatarSpec();
+    /**
+     * The avatar shown: an {@link AvatarCatalog} id. Since Kelvin 2026-10-30 16:37 every player has the default one;
+     * avatars won later (a song, a map node's reward) are added to {@link #ownedAvatars}.
+     */
+    public String avatarId = AvatarCatalog.DEFAULT;
+    /** Avatar ids won so far (the default is always owned and never listed). */
+    public List<String> ownedAvatars = new ArrayList<>();
+    /** The parameters of {@link #avatarId}'s sigil ({@link ProfileStore} keeps them in step with the catalog). */
+    public AvatarSpec avatar = AvatarCatalog.specOf(AvatarCatalog.DEFAULT);
     /** Shells (贝壳) to spend on singles; earned per play like the former EXP. */
     public long shells;
+    /** Pearls (珍珠), shown beside the shells since Kelvin 2026-10-30 20:20; nothing earns or spends them yet. */
+    public long pearls;
     /**
      * Schema 1 only: the EXP of files from before 2026-10-17, moved 1:1 into {@link #shells} by
      * {@link #migrateToSchema2()} and always 0 afterwards.
@@ -104,6 +113,8 @@ public class Profile {
     public float mapZoom = 1f;
     /** MAIN in chapter mode (every chapter entrance on one layer) instead of story mode (Kelvin 2026-10-16). */
     public boolean mainChapterMode;
+    /** The map's name band is out (Kelvin 2026-10-30 20:20: a tap on the avatar shows or hides it). */
+    public boolean mapNameShown;
     /** Unused since ALL SONGS has one layout (Kelvin 2026-10-19 21:18): kept so that older saves still load. */
     public boolean gridFour;
     /** Unused since ALL SONGS lost its pack box (Kelvin 2026-10-20): kept so that older saves still load. */
@@ -193,9 +204,17 @@ public class Profile {
         return Depth.meters(depth);
     }
 
-    /** @return true when the song was bought (or played before shells existed). */
+    /**
+     * @return true when the song was bought, or has been played (a real game, not autoplay): a song that stops being
+     * free stays open for whoever played it (Kelvin 2026-10-31 made Aleph-0 a 300-shell single)
+     */
     public boolean owns(String songId) {
-        return songId != null && ownedSongs != null && ownedSongs.contains(songId);
+        if (songId == null) return false;
+        if (ownedSongs != null && ownedSongs.contains(songId)) return true;
+        Map<String, ChartRecord> bySong = records != null ? records.get(songId) : null;
+        if (bySong == null) return false;
+        for (ChartRecord r : bySong.values()) if (r != null && r.plays > 0) return true;
+        return false;
     }
 
     /** @return the record for a chart, or null (read-only use; never creates). */
@@ -344,8 +363,10 @@ public class Profile {
         migrateToSchema2();
         migrateToSchema4();
         migrateToSchema5();
-        if (avatar == null) avatar = new AvatarSpec();
-        avatar.sanitize();
+        if (ownedAvatars == null) ownedAvatars = new ArrayList<>();
+        if (!AvatarCatalog.owns(this, avatarId)) avatarId = AvatarCatalog.DEFAULT;
+        avatar = AvatarCatalog.specOf(avatarId);
+        if (pearls < 0L) pearls = 0L;
         if (settings == null) settings = new Settings();
         settings.sanitize();
         if (records == null) records = new LinkedHashMap<>();

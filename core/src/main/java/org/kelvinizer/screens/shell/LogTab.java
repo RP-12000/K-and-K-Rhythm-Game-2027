@@ -98,7 +98,7 @@ public final class LogTab extends ProfileTab {
                     Align.left | Fonts.VCENTER, r.allResonance ? Theme.ALL_RESONANCE : Theme.FULL_COMBO, a);
             }
             fonts.draw(b, Fonts.Role.UI, 20f, r.date, after, cy - 20f, Align.left | Fonts.VCENTER, Theme.INK3, a);
-            fonts.drawDigits(b, Fonts.Role.NUMBER, 24f, r.score, 9, true, scoreR + dx, cy, Align.right | Fonts.VCENTER,
+            fonts.drawScore(b, Fonts.Role.NUMBER, 24f, r.score, 9, true, scoreR + dx, cy, Align.right | Fonts.VCENTER,
                 Theme.INK1, Theme.LEADING_ZERO, a);
             ChartRows.gradePill(b, draw, fonts, r.grade, gradeX + dx, cy, time, a);
         }

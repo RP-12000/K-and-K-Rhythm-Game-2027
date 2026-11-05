@@ -15,7 +15,7 @@
 
 ### 1.1 打击音效：`assets/Sounds/`
 
-目前**不附带**任何音效，这个文件夹只预留文件名。详细规则写在 `assets/Sounds/README.txt`。
+附带 `hit.wav`（Kelvin 自己录的打击音，2026-10-26：单声道 48 kHz 16 位，0.24 s，峰值 −1 dBFS，开头没有静音；原来是 `hit.ogg`，同一个声音，手机的低延迟输出只读 WAV，所以换成 WAV），其余槽位只预留文件名。查找时先 `.wav` 再 `.ogg`。详细规则写在 `assets/Sounds/README.txt`。
 
 | 文件 | 何时播放 | 缺少时 |
 |---|---|---|
@@ -40,7 +40,7 @@
 
 播放方式：在升起（ASCENT）转场遮住画面时加载并静音开始，转场打开时用 1.2 s 淡入到“音乐音量 × 0.8”，循环播放；升级时短暂压低。按 CONTINUE 返回地图时 450 ms 淡出；按 RETRY 立即停止。
 
-`resultMusicStartMs` 只作用于第 1 种（这首歌自己的 `result.*`），对全局音乐和备用音乐无效。写法见 `docs/CHART_FORMAT.md` §12.2。
+`resultMusicStartMs` 只作用于第 1 种（这首歌自己的 `result.*`），对全局音乐和备用音乐无效。写法见 `docs/CHART_FORMAT_v4.md` §12.2。
 
 ### 1.3 菜单音乐
 
@@ -50,7 +50,7 @@
 
 ### 1.4 歌曲音乐和试听
 
-每首歌的音频放在歌曲文件夹里，命名为 `<歌曲 id>.ogg` / `.mp3` / `.wav`（见 §5）。卡片试听使用同一个文件：从 `previewStartMs` 放到 `previewEndMs`（写在歌曲文件夹的 `song.json` 或 manifest 的歌曲条目里，见 `docs/CHART_FORMAT.md` §12.2；默认从时长的 30 % 开始放 20 s；ogg 读不出时长，默认从 0 开始，所以建议为它写上起点），0.6 s 淡入，到终点前 0.8 s 淡出，然后从起点重新开始。起点小于 0 时先静音，等到歌曲开头；终点超过音乐结尾时放完后静音，等到终点，不跳回开头。
+每首歌的音频放在歌曲文件夹里，命名为 `<歌曲 id>.ogg` / `.mp3` / `.wav`（见 §5）。卡片试听使用同一个文件：从 `previewStartMs` 放到 `previewEndMs`（写在歌曲文件夹的 `song.json` 或 manifest 的歌曲条目里，见 `docs/CHART_FORMAT_v4.md` §12.2；默认从时长的 30 % 开始放 20 s；ogg 读不出时长，默认从 0 开始，所以建议为它写上起点），0.6 s 淡入，到终点前 0.8 s 淡出，然后从起点重新开始。起点小于 0 时先静音，等到歌曲开头；终点超过音乐结尾时放完后静音，等到终点，不跳回开头。
 
 校准用的节拍声由程序合成，不需要文件。
 
@@ -77,7 +77,7 @@
 
 ### 2.2 曲绘
 
-`assets/Charts/<歌曲 id>/jacket.png`（或 `.jpg` / `.jpeg`）。没有 `jacket.*` 时，取文件夹里按文件名排序的第一张图片，但跳过 `bg.*`；所以现有歌曲的 `1.png`、`2.png` 等仍然可用。曲绘用于地图节点缩略图、歌曲卡片、游戏画面的颜色底和结算画面。建议用正方形。不是正方形的曲绘可以在谱面编辑器里选 16:9 的区域和圆形的区域（写进歌曲文件夹 `song.json` 的 `jacket16x9` / `jacketCircle`，见 CHART_FORMAT §12）：16:9 的用在歌曲卡片、结算画面和颜色底，圆形的用在地图节点、转场和个人页小图；没选时取图片中间。
+`assets/Charts/<歌曲 id>/jacket.png`（或 `.jpg` / `.jpeg`）。没有 `jacket.*` 时，取文件夹里按文件名排序的第一张图片，但跳过 `bg.*`；所以现有歌曲的 `1.png`、`2.png` 等仍然可用。曲绘用于地图节点缩略图、歌曲卡片、游戏画面的颜色底和结算画面。建议用正方形。不是正方形的曲绘可以在谱面编辑器里选 16:9 的区域和圆形的区域（写进歌曲文件夹 `song.json` 的 `jacket16x9` / `jacketCircle`，见 CHART_FORMAT_v4 §12）：16:9 的用在歌曲卡片、结算画面和颜色底，圆形的用在地图节点、转场和个人页小图；没选时取图片中间。
 
 ---
 
@@ -86,7 +86,7 @@
 | 文件 | 用途（`ui/Fonts.Role`） | 授权 |
 |---|---|---|
 | `ChakraPetch-Regular.ttf`、`ChakraPetch-SemiBold.ttf`、`ChakraPetch-Bold.ttf` | 界面文字 `UI_REGULAR`、`UI`、`UI_LABEL`、`UI_BOLD`；Bold 也用于数字 `NUMBER` | SIL OFL，许可文本 `OFL-ChakraPetch.txt` |
-| `NotoSansSC-Medium.ttf` | 中文 `CJK`（自动用于中文字符） | SIL OFL，许可文本 `OFL-NotoSansSC.txt`。这是裁剪过的子集：GB2312 里的字（含希腊字母和日文假名），加上 Latin-1、界面用到的符号，以及 GB2312 没有的 ς、长音 ー 等 38 个字（2026-10-21）。子集外的字（例如生僻字）显示不出来；需要时换一个更大的子集文件，文件名保持不变 |
+| `NotoSansSC-Medium.ttf` | 中文 `CJK`（自动用于中文字符） | SIL OFL，许可文本 `OFL-NotoSansSC.txt`。这是裁剪过的子集：GB2312 里的字（含希腊字母和日文假名），加上 Latin-1、界面用到的符号，以及 GB2312 没有的 ς、长音 ー 等 38 个字（2026-10-21）、JIS X 0208 第一水准的日文汉字（如 氷、塩）和 ❀ ✿（2026-10-30）。子集外的字（例如生僻字）显示不出来；需要时换一个更大的子集文件，文件名保持不变 |
 | `RubikGlitch-Regular.ttf` | 标题、标志、评级印章、DESCEND、判定字（`DISPLAY`、`DISPLAY_SOFT`、`DISPLAY_OUTLINE`），警告和章节名 `RUBIK` | SIL OFL，许可文本 `OFL-RubikGlitch.txt` |
 
 **不再使用 Mokoto 字体**（2026-10-13，Kelvin 选定）：Mokoto Glitch 是收费字体，文件里写着 “All rights reserved”，不能放进公开仓库。按 DESIGN 附录 C 的预案替换：Rubik Glitch 接管标题、标志、印章、DESCEND 和判定字，Chakra Petch Bold 接管数字。每种用途对应的字体文件只写在 `ui/Fonts.java` 的 `Role` 枚举里。失去的只有三款 Mokoto 字形等宽才能实现的“字形切换”故障效果，其他故障效果（色差、切片、撕裂条）不变。
@@ -99,22 +99,20 @@
 
 | 文件 | 用途 | 发射器名称 |
 |---|---|---|
-| `resonance.p` | RESONANCE 爆发：清晰的声呐环 + 柔光晕 + 白色核心闪光 + 9 条火花（12 个四边形） | `halo`、`ring`、`core`、`sparks` |
-| `echo.p` | ECHO 爆发：环 + 稍后出现的柔和“回声环” + 6 条火花（8 个四边形） | `echo ring`、`ring`、`sparks` |
-| `hold.p` | 按住 STREAM 时持续上升的光点流 | `stream` |
 | `lost.p` | LOST 的红色 ×，四条短线，不移动 | `x 45`、`x 225`、`x 135`、`x 315` |
+
+2026-10-26 起 DROP 和长条的打击特效改成代码直接画的水花（`fx/Splash`，见下），`resonance.p`、`echo.p`、`hold.p` 不再加载；文件暂时留在文件夹里，改特效要改代码，不是改这几个文件。
 
 修改时注意：
 
-* **图片路径不是 PNG 文件**，而是共享图集里由程序生成的区域名：`ring_soft`、`ring_thin`、`soft_dot`、`streak`。请保持这些名字。用粒子编辑器打开时，把编辑器的图片目录指向这些区域导出的 PNG 即可。
+* **图片路径不是 PNG 文件**，而是共享图集里由程序生成的区域名（`lost.p` 用 `streak`）。请保持这些名字。用粒子编辑器打开时，把编辑器的图片目录指向这些区域导出的 PNG 即可。
 * **发射器名称不要改**：代码按名称找到发射器来着色和降级。
 * **颜色在加载时被代码覆盖**：按 `ui/Theme` 的颜色重新着色（RESONANCE、ECHO、地面线 / 天空线颜色、LOST 红色），所以在 `.p` 里改颜色不起作用。改颜色要改 `Theme`。
 * 天空线的特效是加载时把地面版本上下翻转得到的，不需要单独的文件。
-* 低画质会去掉 `core`、`halo`、`echo ring`，火花减半，光点流降到每秒 12 个；关闭画质时没有打击特效。
-* 性能预算：同屏所有打击特效合计不超过 100 个四边形（每秒 12 次打击加 4 条按住的 STREAM）。加大粒子数量可能超出预算；超出时代码会自动把新的爆发降成低画质版，再降成只有一个环。
-* `resonance.p`、`echo.p`、`hold.p` 只用于 DROP / STREAM。TIDE 命中没有点状特效（没有爆发、环和火花）；错过或断开的 TIDE 仍然在窗口中间显示 `lost.p` 的 ×。
-* 下面这些由代码直接绘制，没有 `.p` 文件，改样子要改代码：碰到水雷的冲击环（`gameplay/FeedbackLayer`）；TIDE 的潮水（`gameplay/TideWash`：从线上浮起的光带、退潮和短暂变暗，TIDE STREAM 按住时不断浮起的细光带；判定线本身向场内抬起 4 px 并发光，320 ms 内复原，在 `gameplay/FieldRenderer`）；DROP / STREAM 的水波纹（`fx/WaterRings`，RESONANCE 五个圆环、ECHO 一个细环、按住时的小圆环，用共享图集里程序生成的 `ring_water` 各级圆环）。
-* 水波纹不算在上面的 100 个四边形里，它有自己的上限：同时存在的环估计超过 60 个时，新的 RESONANCE 会少画几个环（`HitFx.RING_GUARD`）。
+* 低画质时水花的水珠和喷泉减半、共鸣少一个圈、水珠没有拖尾；关闭画质时没有打击特效。
+* TIDE 命中没有点状特效；错过或断开的 TIDE 仍然在窗口中间显示 `lost.p` 的 ×。
+* 下面这些由代码直接绘制，没有 `.p` 文件，改样子要改代码：碰到水雷的冲击环（`gameplay/FeedbackLayer`）；TIDE 的潮水（`gameplay/TideWash`：从线上浮起的光带、退潮和短暂变暗，TIDE STREAM 按住时不断浮起的细光带；判定线本身向场内抬起 4 px 并发光，320 ms 内复原，在 `gameplay/FieldRenderer`）；DROP / 长条的水花（`fx/Splash`：圆形闪光、溅起的水珠、按住时 base 上的光和喷泉，用图集里程序生成的 `gauss_dot`；圆波纹在 `fx/WaterRings`，用 `ring_water` 各级圆环。两种样子的全部数字在 `fx/SplashForm`，设计见 DESIGN §5.9「Round splash」）。
+* 水花也是在同一个加法混合段里从同一张贴图画的，不增加 draw call；最忙的情况（每秒 12 次共鸣打击加 4 条按住的长条）约 160 滴水珠、820 个四边形。
 
 ---
 
@@ -125,7 +123,7 @@
 3. 放入谱面：`Surface.json`、`Shallow.json`、`Deep.json`、`Abyss.json` 中至少一个（格式见 `docs/CHART_FORMAT.md`）。歌名、曲师、画师、谱师显示 `Shallow.json` 里的值（没有就用 `Surface.json` 的）。
 4. 放入曲绘 `jacket.png`（正方形）。
 5. 可选：游戏背景 `bg.png`；结算音乐 `result.ogg`。
-6. 在 `assets/Charts/index.json` 某个章节的 `songs` 列表里加上歌曲 id；需要设置试听段（起点和终点）、结算音乐起点或微调地图位置时，改用对象写法（试听段也可以写在歌曲文件夹的 `song.json` 里，见 `docs/CHART_FORMAT.md` §12.2）：
+6. 在 `assets/Charts/index.json` 某个章节的 `songs` 列表里加上歌曲 id；需要设置试听段（起点和终点）、结算音乐起点或微调地图位置时，改用对象写法（试听段也可以写在歌曲文件夹的 `song.json` 里，见 `docs/CHART_FORMAT_v4.md` §12.2）：
 
    ```json
    "songs": [

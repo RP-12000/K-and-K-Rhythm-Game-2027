@@ -103,7 +103,7 @@ final class CardRecord {
         appendScore(bestText, best);
         for (int i = 0; i < bestText.length(); i++) {
             char c = bestText.charAt(i);
-            if (c != '0' && c != ',') break;
+            if (c != '-' && c != '0' && c != ',') break;
             bestLead = i + 1;
         }
         if (best == 0) bestLead = bestText.length();
@@ -149,7 +149,7 @@ final class CardRecord {
                 goal = GOAL_NEXT;
                 goalPrefix = next.max ? "MAX" : "NEXT";
                 Fonts.appendGrouped(goalRest, -next.meters).append(" m AT ");
-                Fonts.appendGrouped(goalRest, next.score);
+                Fonts.appendGrouped(goalRest, -(long) next.score);
             } else {
                 goal = GOAL_MAXED;
                 goalPrefix = "MAXED";
@@ -158,12 +158,13 @@ final class CardRecord {
     }
 
     /**
-     * Appends a score as 9 digits with grouping ({@code 098,123,456}; an all-PERFECT run reads
-     * {@code 100,010,xxx}, DESIGN §18.1). Stored bests are clamped to
-     * {@link ChartRecord#MAX_STORED_SCORE} so nine digits always suffice.
+     * Appends a score as a minus and 9 digits with grouping ({@code -098,123,456}; scores read negative,
+     * Kelvin 2026-11-01; an all-PERFECT run reads {@code -100,010,xxx}, DESIGN §18.1). Stored bests are clamped
+     * to {@link ChartRecord#MAX_STORED_SCORE} so nine digits always suffice.
      */
     static StringBuilder appendScore(StringBuilder sb, int score) {
         int v = Math.max(0, Math.min(ChartRecord.MAX_STORED_SCORE, score));
+        sb.append('-');
         int div = 100_000_000;
         for (int i = 8; i >= 0; i--) {
             sb.append((char) ('0' + (v / div) % 10));

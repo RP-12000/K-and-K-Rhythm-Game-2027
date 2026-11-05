@@ -367,7 +367,7 @@ final class SongCard {
             c.setSelected(i == diff.ordinal(), false, time);
             if (animate) c.rollIn();
         }
-        auto.setVisible(!n.launch);
+        auto.setVisible(!n.launch && !(n.forSale && !n.locked));
         auto.setEnabled(!n.locked && !n.forSale);
         descend.setText(n.launch ? "DIVE IN" : auto.isOn() ? "WATCH" : "DESCEND");
         lockTexts = new String[n.locked ? Math.max(1, n.lockConds.length) : 0];
@@ -577,7 +577,7 @@ final class SongCard {
             float dw = MapStyle.SHEET_DESCEND_W * k, aw = MapStyle.AUTO_W_WIDE * k;
             descend.setBounds(sr - dw, base, dw, actH);
             auto.setBounds(sr - dw - actGap - aw, base, aw, actH);
-            if (content != null && content.launch) {
+            if (content != null && (content.launch || forSale())) {
                 descend.setBounds(sr - dw - actGap - aw, base, dw + actGap + aw, actH);
             }
             float hy = sheetTop - 44f * k;
@@ -638,7 +638,7 @@ final class SongCard {
         goalTop = actionY + actH + (B_NEXT_GAP + B_NEXT_H) * k;
         float autoW = (wide ? MapStyle.AUTO_W_WIDE : MapStyle.AUTO_W) * k;
         auto.setBounds(cx0, actionY, autoW, actH);
-        if (content != null && content.launch) {
+        if (content != null && (content.launch || forSale())) {
             descend.setBounds(cx0, actionY, cw, actH);
         } else {
             descend.setBounds(cx0 + autoW + actGap, actionY, cw - autoW - actGap, actH);
@@ -921,11 +921,15 @@ final class SongCard {
         updateJacket(dt);
         if (content != null) descend.setText(content.launch ? "DIVE IN" : auto.isOn() ? "WATCH" : "DESCEND");
         updateLock(dt);
-        // a single not bought yet: HOLD TO BUY in place of DESCEND, AUTO off (Kelvin 2026-10-17)
-        boolean sale = content != null && content.forSale && !content.locked && !content.launch;
+        // a single not bought yet: HOLD TO BUY in place of DESCEND (Kelvin 2026-10-17), over the whole row with no AUTO
+        // (Kelvin 2026-10-30 「按住购买把下面一整行都占掉」)
+        boolean sale = forSale();
         descend.setBuy(sale, sale ? content.price : 0, profiles.shells(), r.zh);
-        if (content != null && !content.launch) auto.setEnabled(!content.locked && !content.forSale);
-        descend.setAuto(auto.isOn() && content != null && !content.launch);
+        if (content != null && !content.launch) {
+            auto.setEnabled(!content.locked && !content.forSale);
+            auto.setVisible(!sale);
+        }
+        descend.setAuto(auto.isOn() && content != null && !content.launch && !sale);
         descend.setAccent(accent);
         descend.beat = beat;
         layout();
@@ -1227,7 +1231,12 @@ final class SongCard {
 
     /** True while AUTO is on: AUTOPLAY · NOT RECORDED takes NEXT's row. */
     private boolean autoRow() {
-        return auto.isOn() && content != null && !content.launch && !content.locked;
+        return auto.isOn() && content != null && !content.launch && !content.locked && !content.forSale;
+    }
+
+    /** True for a single not bought yet: HOLD TO BUY takes the whole action row. */
+    private boolean forSale() {
+        return content != null && content.forSale && !content.locked && !content.launch;
     }
 
     /** Goal copy gaps: text, 10, ▼ (18), 10, text. */
@@ -1409,7 +1418,7 @@ final class SongCard {
                 rk = rowK(row(520f));
                 if (rk > 0f) drawGoalText(b, sheetColB() + goalTotalW(), row(500f) + dy, ra * rk);
             }
-            if (auto.isOn() && !content.launch && !content.locked) {
+            if (autoRow()) {
                 r.ui(b, "AUTOPLAY · NOT RECORDED", c18, auto.x(), base + (MapStyle.ACTION_H + 18f) * k,
                     Align.left | Fonts.VCENTER, Theme.AUTO, a);
             }

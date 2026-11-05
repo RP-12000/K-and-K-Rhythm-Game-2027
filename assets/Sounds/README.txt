@@ -1,9 +1,9 @@
 K & K - reserved sound-effect slots (assets/Sounds/)
 =====================================================
 
-No sound effects ship with the game. This folder only reserves file names so
-a hit sound can be dropped in later without code changes (DESIGN 5.14, 5.15;
-ARCHITECTURE: AudioService "HIT (reserved)"). Owner docs in Simplified
+The game ships one sound here, hit.wav (Kelvin's own hit sound, 2026-10-26).
+The other names are reserved so sounds can be dropped in later without code
+changes (DESIGN 5.14, 5.15; ARCHITECTURE: AudioService "HIT (reserved)"). Owner docs in Simplified
 Chinese: docs/ASSET_SLOTS.md (section 1.1).
 
 Every slot is optional. When a file is missing the game stays silent for that
@@ -34,8 +34,14 @@ Files
 Rules
 -----
 
-  * Lookup: for each slot, <name>.ogg is tried first, then <name>.wav.
+  * Lookup: for each slot, <name>.wav is tried first, then <name>.ogg.
     The names are lower case and exact.
+  * Phones (Android 8.0 and later): the hit sounds play through the game's
+    own low-latency output, which reads only the .wav (16-bit PCM, any rate,
+    mono or stereo). Each hit is heard at an exact moment there: a tap
+    sounds as it lands, the hits of a chord sound once, and autoplay's
+    hits land on their notes. Without a .wav the slot uses the
+    older, slower SoundPool path.
   * Loading: hit, hit_echo, hold_end and mine are loaded together the first
     time a hit sound is needed, as libGDX Sound objects (fully decoded in
     memory).
@@ -47,8 +53,8 @@ Rules
     nothing is played.
   * Format: keep each file short (under ~0.3 s) and mono. Use 44.1 kHz or
     48 kHz. Trim any leading silence, because silence there adds directly
-    to the perceived latency. Prefer .ogg (smaller); use .wav for the
-    lowest decode cost.
+    to the perceived latency. Use .wav (16-bit PCM) so phones can use
+    their low-latency output.
   * Android: SoundPool limits a decoded sample to about 1 MB, so keep these
     files small.
   * The particle effects (assets/ParticleEffects/*.p) do not depend on these

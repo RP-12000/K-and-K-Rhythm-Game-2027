@@ -113,7 +113,7 @@ public class ResultScreen extends KkScreen<Main> {
      * What {@link #popOpen} shows: the shell breakdown, the score breakdown (DESIGN §18.2 [P1]), EARLY / LATE
      * RESONANCE beside PERFECT or the depth breakdown (round 7).
      */
-    private static final int POP_SHELLS = 0, POP_SCORE = 1, POP_PERFECT = 2, POP_DEPTH = 3;
+    private static final int POP_SHELLS = 0, POP_SCORE = 1, POP_PERFECT = 2, POP_DEPTH = 3, POP_PEARLS = 4;
     /** Which popover {@link #popOpen} shows (one of the {@code POP_} kinds). */
     private int popKind;
     /** Where the score popover points (x of the tap, clamped to the score row). */
@@ -136,7 +136,7 @@ public class ResultScreen extends KkScreen<Main> {
         kit = new ResultKit(game.draw(), game.fonts(), game.glitch());
         score = new ScorePanel(kit);
         stamp = new GradeStamp(kit);
-        hud = new CornerHud(kit, game.avatars());
+        hud = new CornerHud(kit, game.avatars(), game.crests());
         jacket = new JacketBlock(kit);
         stats = new StatsBlock(kit);
         // RETRY / CONTINUE: bodies via drawBody, labels by the screen (shared UI_BOLD raster)
@@ -380,6 +380,7 @@ public class ResultScreen extends KkScreen<Main> {
             q.warm(Fonts.Role.UI_LABEL, 18f, OFFSET_TITLE);
             for (int i = 0; i < model.shellRows.size(); i++) q.warm(Fonts.Role.UI, 18f, model.shellRows.get(i));
             for (int i = 0; i < model.depthRows.size(); i++) q.warm(Fonts.Role.UI, 18f, model.depthRows.get(i));
+            for (int i = 0; i < model.pearlRows.size(); i++) q.warm(Fonts.Role.UI, 18f, model.pearlRows.get(i));
             q.warm(Fonts.Role.UI_BOLD, 18f, SHELLS_TOTAL);
             for (CharSequence label : BREAKDOWN_LABELS) q.warm(Fonts.Role.UI, 18f, label);
             q.warm(Fonts.Role.UI_BOLD, 18f, BREAKDOWN_TOTAL);
@@ -746,9 +747,13 @@ public class ResultScreen extends KkScreen<Main> {
         } else if (popKind == POP_DEPTH) {
             drawRowsPopover(model.depthRows, model.depthRowValues, null, null, depthPopW, hud.depthCenterX(),
                 hud.frameBottom(), accent, Theme.INK1);
+        } else if (popKind == POP_PEARLS) {
+            drawRowsPopover(model.pearlRows, model.pearlRowValues, null, null, 300f, hud.pearlsCenterX(),
+                hud.capsuleBottom(), CornerHud.PEARL_ACCENT, CornerHud.PEARL_ACCENT);
         } else {
-            drawRowsPopover(model.shellRows, model.shellRowValues, SHELLS_TOTAL, model.shellsText, 360f,
-                hud.capsuleCenterX(), hud.capsuleBottom(), Theme.GOLD, Theme.GOLD);
+            // a run that won no shells shows only the whole count (the capsule reads 9,999+), with no total line
+            drawRowsPopover(model.shellRows, model.shellRowValues, model.hasShells ? SHELLS_TOTAL : null,
+                model.shellsText, 360f, hud.capsuleCenterX(), hud.capsuleBottom(), Theme.GOLD, Theme.GOLD);
         }
     }
 
@@ -795,7 +800,7 @@ public class ResultScreen extends KkScreen<Main> {
 
     // English names (Kelvin 2026-10-18 17:26); 中文 ones since 20:34 「中文分别是"准度分"，"共鸣链"，"完美共鸣"，"总计"」
     private static final CharSequence[] BREAKDOWN_LABELS = {Lang.of("ACCURACY SCORE", "准度分"),
-        Lang.of("RESONANCE CHAIN", "共鸣链"), Lang.of("PERFECT RESONANCE", "完美共鸣")};
+        Lang.of("RESONANCE CHAIN", "共鸣链"), Lang.of("PERFECT RESONANCE", "完美共鸣"), Lang.of("MINES", "水雷")};
     private static final CharSequence BREAKDOWN_TOTAL = Lang.of("TOTAL", "总计");
 
     /**
@@ -809,7 +814,9 @@ public class ResultScreen extends KkScreen<Main> {
         if (v <= 0.01f) return;
         float a = Math.min(1f, v);
         TextQueue q = kit.text;
-        float w = 500f, rowH = 38f, h = 21f + 3 * rowH + 50f;
+        // the MINES row only when the chart has mines (Kelvin 2026-11-01: each touched mine adds 10,000)
+        int rows = model.breakdownMines.isEmpty() ? 3 : 4;
+        float w = 500f, rowH = 38f, h = 21f + rows * rowH + 50f;
         float left = score.scoreLeft(model, layout);
         float right = left + score.scoreWidth(model, layout.scoreCap);
         float px0 = Math.max(left, Math.min(right, popScoreX));
@@ -827,18 +834,24 @@ public class ResultScreen extends KkScreen<Main> {
         if (up) kit.triangle(px - 11f, 1f, px + 11f, 1f, px, -10f, accent, 0.5f * a);
         else kit.triangle(px - 11f, -1f, px + 11f, -1f, px, 10f, accent, 0.5f * a);
         float y = by + h - 21f - rowH * 0.5f + 6f;
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < rows; i++) {
             float ry = y - i * rowH;
-            String value = i == 0 ? model.breakdownAccuracy : i == 1 ? model.breakdownChain : model.breakdownPerfect;
+            String value = i == 0 ? model.breakdownAccuracy : i == 1 ? model.breakdownChain
+                : i == 2 ? model.breakdownPerfect : model.breakdownMines;
             q.text(Fonts.Role.UI, 18f, BREAKDOWN_LABELS[i], lx + 22f, ry, Align.left | Fonts.VCENTER,
-                i == 2 ? Theme.RESONANCE : Theme.INK2, a);
+                i == 2 ? Theme.RESONANCE : i == 3 ? Theme.MINE : Theme.INK2, a);
             q.fixed(20f, value, lx + w - 22f, ry, Align.right | Fonts.VCENTER,
-                i == 2 ? Theme.RESONANCE : Theme.INK1, a);
+                i == 2 ? Theme.RESONANCE : i == 3 ? Theme.MINE : Theme.INK1, a);
         }
         float ty = by + 30f;
         game.draw().rect(lx + 22f, ty + 22f, w - 44f, 1f, Theme.STROKE, a);
         q.text(Fonts.Role.UI_BOLD, 18f, BREAKDOWN_TOTAL, lx + 22f, ty, Align.left | Fonts.VCENTER, Theme.INK1, a);
-        q.digits(22f, model.score, true, lx + w - 22f, ty, Align.right | Fonts.VCENTER, Theme.INK1, a);
+        if (model.score < 0) {
+            // mines took more than the run earned: the total reads positive
+            q.fixed(22f, model.breakdownTotalPlus, lx + w - 22f, ty, Align.right | Fonts.VCENTER, Theme.INK1, a);
+        } else {
+            q.digits(22f, -model.score, true, lx + w - 22f, ty, Align.right | Fonts.VCENTER, Theme.INK1, a);
+        }
         kit.pop();
     }
 
@@ -1079,10 +1092,15 @@ public class ResultScreen extends KkScreen<Main> {
         } else if (hitScore(x, y)) {
             popScoreX = x;
             openPopover(POP_SCORE);
-        } else if (!model.depthRows.isEmpty() && hud.hitFrame(x, y, 0f)) {
+        } else if (hud.hitAvatar(x, y)) {
+            hud.toggleName();
+            Haptics.light();
+        } else if (!model.depthRows.isEmpty() && hud.hitFrame(x, y, 8f)) {
             openPopover(POP_DEPTH);
         } else if (!model.shellRows.isEmpty() && hud.hitCapsule(x, y, capGrow)) {
             openPopover(POP_SHELLS);
+        } else if (!model.pearlRows.isEmpty() && hud.hitPearls(x, y, capGrow)) {
+            openPopover(POP_PEARLS);
         } else if (hitPerfect(x, y)) {
             openPopover(POP_PERFECT);
         } else if (hintVisible && x >= hintX0 && x <= hintX1 && y >= hintY0 && y <= Math.min(hintY1, hintSplit())) {

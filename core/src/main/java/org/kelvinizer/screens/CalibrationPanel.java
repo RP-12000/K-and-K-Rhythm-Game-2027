@@ -914,7 +914,7 @@ final class CalibrationPanel {
                 boolean sky = isSky(i);
                 float p = (float) (ahead / VERIFY_TRAVEL_MS);
                 float ny = sky ? SKY_Y - p * (SKY_Y - SKY_SPAWN) : GROUND_Y + p * (GROUND_SPAWN - GROUND_Y);
-                Color c = sky ? Theme.SKY_SIG : Theme.GROUND_SIG;
+                Color c = sky ? Theme.SKY_SIG : Theme.GROUND_NOTE;
                 float na = ahead < 0 ? a * (1f + (float) ahead / Judgement.TIER2_MS) : a;
                 b.setColor(c.r, c.g, c.b, na);
                 note.draw(b, laneX(i) - nw * 0.5f, ny - nh * 0.5f, nw, nh);

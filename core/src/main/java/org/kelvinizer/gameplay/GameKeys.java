@@ -5,7 +5,7 @@ import org.kelvinizer.elements.Line;
 
 /**
  * 桌面键位表：两排各 10 个键分别对应地面线和天空线的 −5..−1、1..5 号轨道，中间的 G/H、T/Y 是插入的 0 号轨，
- * 空格只判定地面线的潮汐。每排的任意键也能判定该线的潮汐，±5 以外的轨道没有默认按键；引擎按这张表把按键换成线和轨道。
+ * 空格只判定地面线的浪花。每排的任意键也能判定该线的浪花，±5 以外的轨道没有默认按键；引擎按这张表把按键换成线和轨道。
  *
  * <p>Desktop key map (ARCHITECTURE §13.2), shared by the engine, the field's held-lane feedback
  * and GameplayScreen's key handling.
@@ -13,7 +13,7 @@ import org.kelvinizer.elements.Line;
  * <ul>
  *   <li>Lower line, lanes −5..−1 = CapsLock, A, S, D, F and 1..5 = J, K, L, ;, '</li>
  *   <li>Upper line, lanes −5..−1 = Tab, Q, W, E, R and 1..5 = U, I, O, P, [</li>
- *   <li>Lane 0 (only exists when the chart inserts it, CHART_FORMAT §3.6): G or H on the lower
+ *   <li>Lane 0 (only exists when the chart inserts it, CHART_FORMAT_v4 §3.6): G or H on the lower
  *       line, T or Y on the upper line. Without a lane 0 these keys take TIDE notes only.</li>
  *   <li>Space: lower-line TIDE notes only. Every key of a row also takes that line's TIDE notes.</li>
  * </ul>

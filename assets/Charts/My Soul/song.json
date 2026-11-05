@@ -1,8 +1,12 @@
 {
-  "jacketCircle" : {
-    "x" : 0.21625,
-    "y" : 0.0,
-    "w" : 0.5625,
-    "h" : 1.0
-  }
+  "title": "Mγ ς0μ1(feat.初音ミク)",
+  "artist": "Chikanya",
+  "illustrator": "❀塩漬けの魚✿",
+  "bpm": 200,
+  "offsetMs": -35,
+  "jacketCircle": {"x": 0.21625, "y": 0.0, "w": 0.5625, "h": 1.0},
+  "previewStartMs": 47965,
+  "previewStartBeat": 160,
+  "previewEndBeat": 224,
+  "previewEndMs": 67165
 }

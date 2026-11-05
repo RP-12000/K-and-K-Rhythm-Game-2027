@@ -66,19 +66,11 @@ final class MapStyle {
 
     // ------------------------------------------------------------------ HUD (§3.9)
     /**
-     * Player block (top left) and shell capsule (top right) heights since the badge was split in two (Kelvin
-     * 2026-10-19 06:28), and the band under the safe top kept for that row (the ALL SONGS grid starts under the
-     * block). Since Kelvin 2026-10-20 03:26 the capsule is drawn at the size of the box marked on the 16:10 map, with a
-     * minimum width so a small shell count no longer shrinks it into the corner. The block has no frame since
-     * 2026-10-20 14:10 (mock-up plan 5): an avatar disc, the name and a depth tag, 100 high from the
-     * top of Settings. Since Kelvin 2026-10-20 15:10 the capsule is smaller (「我感觉贝壳有点太大了，喧宾夺主了」), and
-     * since 15:36 it sits beside the block's depth tag, 46 high. The block is 150 high since 16:05, as tall as its
-     * avatar circle (「把头像圈直径扩大1.5倍我看看」). Since 17:34 the block and the capsule are drawn at 0.75 of these
-     * (and of {@link #CAPSULE_MIN_W}; 「整体等比例缩小到原来的75%」, {@code MapHud.BLOCK_K}).
+     * The capsules under the depth crest (shells and pearls, Kelvin 2026-10-30 20:20, picture topleft8): height and
+     * least width. The shell capsule of 2026-10-19 06:28 was 46 high and 110 wide at least, drawn at 0.75 since
+     * 2026-10-20 17:34 (「整体等比例缩小到原来的75%」); these are about those sizes as drawn.
      */
-    static final float FRAME_H = 150f, CAPSULE_H = 46f, BADGE_H = 120f;
-    /** Minimum width of the shell capsule (Kelvin 2026-10-20 03:26; 110 since 15:36). */
-    static final float CAPSULE_MIN_W = 110f;
+    static final float CAPSULE_H = 36f, CAPSULE_MIN_W = 82.5f;
     /** Lens segments. */
     static final float LENS_SEG_W = 168f, LENS_H = 96f;
 

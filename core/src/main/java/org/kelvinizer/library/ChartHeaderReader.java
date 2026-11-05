@@ -13,7 +13,9 @@ import java.io.InputStream;
  * 读到 {@code notes} 数组时，若标题和定数已知就停下，所以加载曲库很快。
  *
  * <p>Reads only the top-level header fields of a chart JSON with the Jackson streaming API
- * (ARCHITECTURE §8): {@code title, artist, illustrator, charter, bpm, chartConstant, level}.
+ * (ARCHITECTURE §8): {@code title, artist, illustrator, charter, bpm, chartConstant, level} of an old chart, or
+ * {@code format, charter, constant} of a v5 chart, whose song values are in {@code song.json}
+ * ({@link org.kelvinizer.elements.SongInfo}).
  *
  * <p>Parsing stops at the {@code notes} array once the title and constant are known (the
  * shipped charts put every header field first), so a 900 KB chart costs one small read.
@@ -49,6 +51,8 @@ public final class ChartHeaderReader {
         public String level;
         /** True when the chart has a {@code notes} array. */
         public boolean hasNotes;
+        /** The v5 {@code "format"} (0 for an old chart, whose header carries the song values). */
+        public int format;
     }
 
     /**
@@ -82,7 +86,7 @@ public final class ChartHeaderReader {
                 JsonToken v = p.nextToken();
                 if ("notes".equals(name)) {
                     h.hasNotes = v == JsonToken.START_ARRAY;
-                    if (h.title != null && h.chartConstant != null) break;
+                    if ((h.title != null || h.format >= 5) && h.chartConstant != null) break;
                     p.skipChildren();
                     continue;
                 }
@@ -91,7 +95,11 @@ public final class ChartHeaderReader {
                     case "artist": h.artist = text(p, v); break;
                     case "illustrator": h.illustrator = text(p, v); break;
                     case "charter": h.charter = text(p, v); break;
-                    case "chartConstant": h.chartConstant = text(p, v); break;
+                    case "chartConstant":
+                    case "constant": h.chartConstant = text(p, v); break;
+                    case "format":
+                        h.format = v != null && v.isNumeric() ? p.getIntValue() : 0;
+                        break;
                     case "level": h.level = text(p, v); break;
                     case "bpm":
                         if (v == JsonToken.VALUE_NUMBER_FLOAT || v == JsonToken.VALUE_NUMBER_INT) {
@@ -149,6 +157,7 @@ public final class ChartHeaderReader {
     }
 
     private static boolean complete(Header h) {
+        if (h.format >= 5) return h.chartConstant != null;
         return h.title != null && h.chartConstant != null && h.artist != null && h.level != null;
     }
 

@@ -8,6 +8,7 @@ import org.kelvinizer.elements.LaneLayout;
 import org.kelvinizer.elements.Line;
 import org.kelvinizer.elements.Note;
 import org.kelvinizer.elements.NoteType;
+import org.kelvinizer.elements.Veil;
 import org.kelvinizer.play.Judgement;
 import org.kelvinizer.play.PlayResult;
 import org.kelvinizer.play.ScoreKeeper;
@@ -15,7 +16,7 @@ import org.kelvinizer.play.ScoreKeeper;
 import java.util.Arrays;
 
 /**
- * 一局游戏的模型：歌曲时间、输入、判定和计分；纯 Java、不碰 GL，加载后不再分配内存。水雷、轨道水雷和潮汐的联合判定也在这里。
+ * 一局游戏的模型：歌曲时间、输入、判定和计分；纯 Java、不碰 GL，加载后不再分配内存。水雷、轨道水雷和浪花的联合判定也在这里。
  *
  * <p>The gameplay model (ARCHITECTURE §5, §6, §10, §13, §20): song time, input, judging and scoring for
  * one run of a {@link Chart}. Pure Java with no GL, so it runs headless in tests with a fake
@@ -47,6 +48,9 @@ import java.util.Arrays;
  *       earliest unjudged TIDE note of that line. The earliest judgement time wins; on a tie the
  *       smaller |dt|, then lane notes before TIDE, own lane before neighbour, the closer line, and
  *       finally the lower line (only when both lines coincide and everything else is equal).</li>
+ *   <li>Taps / holds stacked on one line, lane and beat (allowed since Kelvin 2026-11-02: 「现在我们要放开这个限制」)
+ *       are separate notes: a press judges one (the earliest pending, file order on a tie), so a stack of n
+ *       takes n fingers; a key press judges one; autoplay judges each.</li>
  *   <li><b>Joint judging</b> (ARCHITECTURE §20, replacing the old "exact tie → the lane note, a
  *       second finger takes the TIDE" rule): when a tap or a lane key judges a lane note (DROP or
  *       STREAM head, own lane or neighbour) on line L at beat b, every unjudged TIDE note of L
@@ -72,27 +76,33 @@ import java.util.Arrays;
  *       breaks a hold; a pointer or key lifted while paused detaches it, and any free pointer on it,
  *       or that lane's key down, within 100 ms after the resume re-grabs it (resuming needs a
  *       lifted finger).</li>
- *   <li><b>TIDE STREAMs are held by coverage, not ownership.</b> The head is judged like a TIDE
- *       drop (any tap in the line's zone at any x; keyboard any key of the line's row, Space for the
- *       lower line). While it runs it is "on" whenever any down pointer is in that line's zone
- *       ({@code |y − lineY| ≤ 480·ky}, {@link Field#zoneHalf}; any x, pointers holding lane STREAMs or
- *       other TIDE STREAMs included) or any key of the row is down. Coverage is evaluated at every input event with
- *       its timestamp (down, drag, up, cancel, key down / up) and once per frame (resting pointers,
- *       moving lines). A lapse longer than {@link #HOLD_LEAVE_MS} that starts before
+ *   <li><b>TIDE STREAMs are held by coverage, one finger each, not by ownership.</b> The head is
+ *       judged like a TIDE drop (any tap in the line's zone at any x; keyboard any key of the line's
+ *       row, Space for the lower line). A line's fingers are its down pointers inside its zone
+ *       ({@code |y − lineY| ≤ 480·ky}, {@link Field#zoneHalf}; any x, pointers holding lane STREAMs
+ *       included) plus the keys of its row that are down. Each running TIDE STREAM needs one of
+ *       them (Kelvin 2026-10-23: two on one line need two fingers the whole time), and which finger
+ *       is which does not matter, so swapping hands is free. When a line has fewer fingers than
+ *       running TIDE STREAMs, the ones in their last {@code HOLD_RELEASE_GRACE_MS} go without first
+ *       (that completes them), then the latest heads (then the highest index). Coverage is
+ *       evaluated at every input event with its timestamp (down, drag, up, cancel, key down / up)
+ *       and once per frame (resting pointers, moving lines). A lapse longer than
+ *       {@link #HOLD_LEAVE_MS} that starts before
  *       {@code end − HOLD_RELEASE_GRACE_MS} breaks it (LOST at the lapse start + 100 ms, also when
  *       the next observation finds it covered again); a lapse that starts at or after that point
  *       completes it at once; reaching the end completes it with the head grade. A pause never
  *       breaks it; after the resume it has {@link #HOLD_LEAVE_MS} to be covered again. It is one note
  *       for score, combo and totals, like a hold. Autoplay completes it.</li>
- *   <li>Mines: touched when, within ±{@link #MINE_WINDOW_MS} of the mine (Kelvin 2026-10-13: the
- *       RESONANCE window, ±66.67 ms; was ±100 ms), a down pointer is in the mine line's zone and inside the central
- *       70 % of the mine lane (checked on down / drag / up with event times and every frame for resting pointers), or
- *       the lane's key is down. Each mine triggers at most once ({@link ScoreKeeper#mineTouched()}:
- *       combo 0, no score change) and emits one {@link GameEvent#MINE}. Autoplay never touches
- *       mines.</li>
+ *   <li>Mines: a MINE is touched only by a press (Kelvin 2026-10-31: 「点击才检查」): a touch-down in the mine
+ *       line's zone inside the central 70 % of the mine lane, or a key-down of the lane's key, within
+ *       ±{@link #MINE_WINDOW_MS} of the mine (the ECHO window, ±133.33 ms; was ±66.67 ms) and outside the windows
+ *       cut from it (below). A finger or key already down, a drag into the mine and a release never touch it, so a
+ *       finger resting through a field of mines touches none of them. Each mine triggers at most once
+ *       ({@link ScoreKeeper#mineTouched()}: combo 0, 10,000 off the score) and emits one
+ *       {@link GameEvent#MINE}. Autoplay never touches mines.</li>
  *   <li><b>LANE MINEs</b> (ARCHITECTURE §20) block their lane on their line over
  *       {@code [T − LANE_MINE_LEAD_MS, end)} = {@code [T, end)}: only once they reach the line
- *       (Kelvin 2026-10-13; was {@code [T − MINE_WINDOW_MS, end)}). Contact = a down pointer in that line's zone inside
+ *       (Kelvin 2026-10-13; was {@code [T − 100 ms, end)}). Contact = a down pointer in that line's zone inside
  *       the central {@link #LANE_MINE_BOX} (80 %) of the lane's current span, or the lane's key down.
  *       Each contact triggers once: a touch-down in the box, a drag entering it, a pointer already
  *       resting in it when the block starts, a key press, or a key already held when it starts; a
@@ -101,13 +111,23 @@ import java.util.Arrays;
  *       {@link ScoreKeeper#laneMineContact()} (combo 0 again; the MINES row counts the lane mine
  *       once). Every contact emits one {@link GameEvent#MINE} with {@link GameEvent#FLAG_LANE_MINE}.
  *       A LANE MINE never judges or consumes a tap; autoplay never touches it.</li>
- *   <li><b>Mine priority</b> (Kelvin 2026-10-14): a tap or STREAM head whose RESONANCE window
- *       {@code [T − TIER1, T + TIER1]} meets the danger span of a MINE ({@code [T − MINE_WINDOW_MS,
- *       T + MINE_WINDOW_MS]}) or LANE MINE ({@code [T, end)}) in its own lane and line is judged
- *       first: the mine sleeps over that window (no contact of any finger or key there; one still
- *       in place when it wakes at {@code T + TIER1} is a contact) and the note has no ECHO (only
- *       RESONANCE inside ±TIER1, LOST at {@code T + TIER1}). TIDE notes are not affected (they can
- *       be hit anywhere on the line).</li>
+ *   <li><b>TIDE MINEs</b> (Kelvin 2026-10-31: the mine forms of the TIDE): a TIDE MINE is a MINE whose touch area is
+ *       its line's whole zone (any x; any key of its line, Space included) and whose window every tap, STREAM head
+ *       and TIDE of its line cuts; a TIDE STREAM MINE is a LANE MINE over that whole zone (any key of its line held
+ *       counts) that every note of its line meets gives way to, with one RESONANCE guard per line.</li>
+ *   <li><b>Mines and taps</b> (Kelvin 2026-10-31): where a MINE's window {@code M = [T_m − MINE_WINDOW_MS,
+ *       T_m + MINE_WINDOW_MS]} meets the ±TIER2 window of a tap or STREAM head in its own lane and line, the
+ *       two are cut apart: the mine's window loses the note's RESONANCE window {@code R = [T − TIER1, T + TIER1]},
+ *       R stays whole, and the note's ECHO window loses M. One press there either touches the mine or judges the
+ *       note, never both; the note is LOST at the end of what is left of its window. TIDE notes are not affected
+ *       (they can be hit anywhere on the line).</li>
+ *   <li><b>LANE MINE priority</b> (Kelvin 2026-10-14): a tap or STREAM head whose RESONANCE window meets the
+ *       block {@code [T, end)} of a LANE MINE in its own lane and line is judged first: the LANE MINE sleeps over
+ *       that window (no contact of any finger or key there; one still in place when it wakes at
+ *       {@code T + TIER1} is a contact) and the note has no ECHO (only RESONANCE inside ±TIER1, LOST at
+ *       {@code T + TIER1}). A RESONANCE on such a note at {@code t} also keeps every LANE MINE in its lane and
+ *       line asleep until {@code t + RESONANCE_GUARD_MS} (150 ms, Kelvin 2026-10-30); a finger or key still in
+ *       place when that ends is a contact. A LOST gives no guard.</li>
  *   <li>Autoplay judges every note RESONANCE with dt 0 at its exact time (deterministic).</li>
  * </ul>
  *
@@ -135,8 +155,8 @@ public final class GameEngine {
     /** Width of a mine's touch box as a fraction of its lane (centred). */
     public static final float MINE_BOX = 0.70f;
     /**
-     * Mine touch window half width (ms; {@link Params#MINE_WINDOW_MS}, ≈ 66.67): a MINE is
-     * dangerous over {@code [T − MINE_WINDOW_MS, T + MINE_WINDOW_MS]}.
+     * Mine touch window half width (ms; {@link Params#MINE_WINDOW_MS}, ≈ 133.33): a press touches a MINE over
+     * {@code [T − MINE_WINDOW_MS, T + MINE_WINDOW_MS]}, less the RESONANCE windows of the notes in its lane.
      */
     public static final float MINE_WINDOW_MS = Params.MINE_WINDOW_MS;
     /**
@@ -144,6 +164,11 @@ public final class GameEngine {
      * 0): it blocks over {@code [T − LANE_MINE_LEAD_MS, end)}, i.e. once it reaches the line.
      */
     public static final float LANE_MINE_LEAD_MS = Params.LANE_MINE_LEAD_MS;
+    /**
+     * RESONANCE guard (ms; {@link Params#RESONANCE_GUARD_MS}, 150): after a RESONANCE at {@code t} on a note a
+     * LANE MINE gives way to, that lane's LANE MINEs sleep over {@code [t, t + RESONANCE_GUARD_MS]}.
+     */
+    public static final float RESONANCE_GUARD_MS = Params.RESONANCE_GUARD_MS;
     /**
      * Width of a LANE MINE's contact box as a fraction of its lane's current span (centred; the
      * whole lane is drawn red, the 10 % margins keep brushes from a neighbouring lane fair).
@@ -208,11 +233,16 @@ public final class GameEngine {
     public static final int INPUT_JUDGED = 3;
     /** Input result: a hold detached by a pause was re-grabbed. */
     public static final int INPUT_REGRAB = 4;
+    /**
+     * Input result: the touch went down inside a veil (ARCHITECTURE §22); the pointer judges nothing until it
+     * lifts ({@link #pointerVeiled}).
+     */
+    public static final int INPUT_VEILED = 5;
 
     private static final int OWNER_NONE = -1;
     private static final int OWNER_AUTO = -2;
     private static final int OWNER_DETACHED = -3;
-    /** A running TIDE STREAM: held by coverage (any pointer in its line's zone, any key of its row). */
+    /** A running TIDE STREAM: held by coverage (one finger in its line's zone or key of its row each). */
     private static final int OWNER_COVER = -4;
     private static final int OWNER_KEY_BASE = -100;
 
@@ -276,16 +306,27 @@ public final class GameEngine {
     private int[] mineKeyMask = new int[0];
     private int[] mineContacts = new int[0];
     private float[] mineContactMs = new float[0];
-    // Mine priority (see the class doc). Per note: its judge window half width (TIER2, or TIER1 when
-    // a mine gives way to it); per mine: the notes it gives way to, shadowNote[shadowFrom .. + shadowLen).
-    private float[] judgeWin = new float[0];
+    // Mines and taps, LANE MINE priority (see the class doc). Per note: how long after its time it can still be
+    // judged (TIER2, less where MINE windows cut its late ECHO, TIER1 when a LANE MINE gives way to it), whether a
+    // LANE MINE gives way to it, and the MINEs that cut its ECHO, cutMine[cutFrom .. + cutLen). Per mine: the notes
+    // whose RESONANCE windows it loses or gives way to, shadowNote[shadowFrom .. + shadowLen).
+    private float[] lateWin = new float[0];
+    private boolean[] noEcho = new boolean[0];
+    private int[] cutFrom = new int[0];
+    private int[] cutLen = new int[0];
+    private int[] cutMine = new int[0];
     private int[] shadowFrom = new int[0];
     private int[] shadowLen = new int[0];
     private int[] shadowNote = new int[0];
+    // RESONANCE guard per line × lane (like laneStream): LANE MINEs there sleep over [guardFrom, guardTo]; NaN = none.
+    private double[] guardFrom = new double[0];
+    private double[] guardTo = new double[0];
 
     // Running holds.
     private int[] active = new int[4];
     private int activeCount;
+    /** One line's running TIDE STREAMs in the order they get fingers ({@link #sortCover}). */
+    private int[] coverOrder = new int[4];
 
     // Pointers.
     private final boolean[] pDown = new boolean[MAX_POINTERS];
@@ -294,6 +335,13 @@ public final class GameEngine {
     private final int[] pHold = new int[MAX_POINTERS];
     private final int[] pLane = new int[MAX_POINTERS];
     private final int[] pLine = new int[MAX_POINTERS];
+    /** Pointers that went down inside a veil: invalid until they lift (ARCHITECTURE §22). */
+    private final boolean[] pVeiled = new boolean[MAX_POINTERS];
+    /** The chart's veils (never null). */
+    private Veil[] veils = new Veil[0];
+    private Veil[] curtains = new Veil[0];
+    /** Visual beat of the last {@link #eventGeometry} (what the player saw at the input event). */
+    private float evBeat;
 
     // Keys.
     private final boolean[] kDown = new boolean[GameKeys.SLOTS];
@@ -375,7 +423,10 @@ public final class GameEngine {
             mineKeyMask = new int[n];
             mineContacts = new int[n];
             mineContactMs = new float[n];
-            judgeWin = new float[n];
+            lateWin = new float[n];
+            noEcho = new boolean[n];
+            cutFrom = new int[n];
+            cutLen = new int[n];
             shadowFrom = new int[n];
             shadowLen = new int[n];
         }
@@ -395,7 +446,11 @@ public final class GameEngine {
         if (laneStream.length < streams) {
             laneStream = new Note[streams][];
             laneCursor = new int[streams];
+            guardFrom = new double[streams + Line.COUNT];
+            guardTo = new double[streams + Line.COUNT];
         }
+        Arrays.fill(guardFrom, 0, streams + Line.COUNT, Double.NaN);
+        Arrays.fill(guardTo, 0, streams + Line.COUNT, Double.NaN);
         for (int l = 0; l < Line.COUNT; l++) {
             Line line = Line.of(l);
             for (int i = 0; i < laneCount; i++) {
@@ -406,20 +461,24 @@ public final class GameEngine {
             uniCursor[l] = 0;
         }
         Note[] allMines = chart.mines();
-        int laneMinesTotal = chart.laneMineCount();
-        if (mines.length < allMines.length - laneMinesTotal) mines = new Note[allMines.length - laneMinesTotal];
-        if (laneMineArr.length < laneMinesTotal) laneMineArr = new Note[laneMinesTotal];
+        int blockTotal = 0;
+        for (Note m : allMines) if (m.isBlockMine()) blockTotal++;
+        if (mines.length < allMines.length - blockTotal) mines = new Note[allMines.length - blockTotal];
+        if (laneMineArr.length < blockTotal) laneMineArr = new Note[blockTotal];
         mineCount = 0;
         laneMineCount = 0;
         for (Note m : allMines) {
-            if (m.isLaneMine()) laneMineArr[laneMineCount++] = m;
+            if (m.isBlockMine()) laneMineArr[laneMineCount++] = m;
             else mines[mineCount++] = m;
         }
         mineLo = 0;
         laneMineLo = 0;
         findShadows(n);
         int holds = Math.max(4, chart.count(NoteType.HOLD) + chart.tideStreamCount());
-        if (active.length < holds) active = new int[holds];
+        if (active.length < holds) {
+            active = new int[holds];
+            coverOrder = new int[holds];
+        }
         activeCount = 0;
 
         frameLayout.setLanes(chart);
@@ -431,10 +490,13 @@ public final class GameEngine {
         }
         for (int p = 0; p < MAX_POINTERS; p++) {
             pDown[p] = false;
+            pVeiled[p] = false;
             pHold[p] = -1;
             pLane[p] = -1;
             pLine[p] = -1;
         }
+        veils = chart.veils();
+        curtains = chart.curtains();
         keeper.reset(chart.totalNotes(), chart.totalMines());
         clearEvents();
         lastJudgement = null;
@@ -512,8 +574,8 @@ public final class GameEngine {
 
     /**
      * Resumes after {@link #pause()}. Detached holds get {@link #HOLD_LEAVE_MS} from now to be
-     * re-grabbed; a running TIDE STREAM that is not covered now gets {@link #HOLD_LEAVE_MS} from now
-     * to be covered again (whatever lapse it had before the pause is forgotten).
+     * re-grabbed; a running TIDE STREAM that has no finger now gets {@link #HOLD_LEAVE_MS} from now
+     * to get one again (whatever lapse it had before the pause is forgotten).
      */
     public void resume() {
         if (phase != Phase.PAUSED) return;
@@ -522,11 +584,13 @@ public final class GameEngine {
         float t = (float) (clock.nowMs() - audioOffsetMs);
         for (int k = 0; k < activeCount; k++) {
             int i = active[k];
-            if (holdOwner[i] == OWNER_DETACHED) {
-                holdOffSince[i] = t;
-            } else if (holdOwner[i] == OWNER_COVER) {
-                holdOffSince[i] = covered(notes[i].line(), frameLowerY, frameUpperY) ? Float.NaN : t;
-            }
+            if (holdOwner[i] == OWNER_DETACHED) holdOffSince[i] = t;
+        }
+        for (int l = 0; l < Line.COUNT; l++) {
+            Line line = Line.of(l);
+            int m = sortCover(line, t);
+            int free = fingers(line, frameLowerY, frameUpperY);
+            for (int r = 0; r < m; r++) holdOffSince[coverOrder[r]] = r < free ? Float.NaN : t;
         }
     }
 
@@ -572,6 +636,7 @@ public final class GameEngine {
     /** Line y and lanes at an input event's visual time, in the world (as {@link #frameGeometry}). */
     private void eventGeometry(double judgeMs) {
         float beat = (float) chart.msToBeat(judgeMs + visualOffsetMs);
+        evBeat = beat;
         JudgementLine je = chart.lineEvents();
         inputLayout.update(beat, Field.x(LaneLayout.VIEW_LEFT), Field.x(LaneLayout.VIEW_RIGHT), Field.kx());
         evLowerY = Field.y(je.lowerAt(beat));
@@ -620,7 +685,7 @@ public final class GameEngine {
 
     private void resolvePointers() {
         for (int p = 0; p < MAX_POINTERS; p++) {
-            if (!pDown[p]) {
+            if (!pDown[p] || pVeiled[p]) {
                 pLane[p] = -1;
                 pLine[p] = -1;
                 continue;
@@ -640,9 +705,9 @@ public final class GameEngine {
             if (o == OWNER_AUTO) {
                 on = true;
             } else if (o == OWNER_COVER) {
-                on = covered(n.line(), frameLowerY, frameUpperY);
+                continue;
             } else if (o >= 0) {
-                on = pDown[o] && onHold(n, pX[o], pY[o], frameLayout, frameLowerY, frameUpperY);
+                on = pDown[o] && !pVeiled[o] && onHold(n, pX[o], pY[o], frameLayout, frameLowerY, frameUpperY);
             } else if (o <= OWNER_KEY_BASE) {
                 on = kDown[OWNER_KEY_BASE - o];
             } else {
@@ -650,6 +715,7 @@ public final class GameEngine {
             }
             stepHold(k, i, on, t);
         }
+        stepCoverage(t, frameLowerY, frameUpperY);
     }
 
     /**
@@ -669,7 +735,8 @@ public final class GameEngine {
     /** A resting pointer that is on a detached hold takes it over. */
     private boolean regrabByPointers(int i, Note n) {
         for (int p = 0; p < MAX_POINTERS; p++) {
-            if (pDown[p] && pHold[p] < 0 && onHold(n, pX[p], pY[p], frameLayout, frameLowerY, frameUpperY)) {
+            if (pDown[p] && !pVeiled[p] && pHold[p] < 0
+                && onHold(n, pX[p], pY[p], frameLayout, frameLowerY, frameUpperY)) {
                 attachHold(i, p, true);
                 return true;
             }
@@ -712,31 +779,75 @@ public final class GameEngine {
     }
 
     /**
-     * Re-evaluates the coverage of every running TIDE STREAM at input time t with the event's line
-     * geometry (called after a pointer or key changed).
+     * Re-evaluates the coverage of every running TIDE STREAM at time t with the given line geometry
+     * (the event's after a pointer or key changed, the frame's once per frame). Per line the
+     * fingers go to the streams in {@link #sortCover} order, one each; a stream that finishes in
+     * this pass (its end reached, or an earlier lapse ran out) passes its finger on to the next.
      */
     private void stepCoverage(double t, float lowerY, float upperY) {
-        for (int k = activeCount - 1; k >= 0; k--) {
-            int i = active[k];
-            if (holdOwner[i] != OWNER_COVER) continue;
-            stepHold(k, i, covered(notes[i].line(), lowerY, upperY), t);
+        for (int l = 0; l < Line.COUNT; l++) {
+            Line line = Line.of(l);
+            int m = sortCover(line, t);
+            if (m == 0) continue;
+            int free = fingers(line, lowerY, upperY);
+            for (int r = 0; r < m; r++) {
+                int i = coverOrder[r];
+                boolean on = free > 0;
+                if (!stepHold(activeSlot(i), i, on, t) && on) free--;
+            }
         }
     }
 
     /**
-     * @return true when {@code line} is covered (ARCHITECTURE §19): a down pointer inside its zone
-     *         at any x (whatever it holds), or any key of its row down (Space counts for the lower
-     *         line)
+     * Puts the running TIDE STREAMs of {@code line} into {@link #coverOrder} in the order they get
+     * fingers at time t: those before their last {@code HOLD_RELEASE_GRACE_MS} first (letting go
+     * of one inside it completes it), earlier heads first, then lower indices.
+     *
+     * @return how many there are
      */
-    private boolean covered(Line line, float lowerY, float upperY) {
+    private int sortCover(Line line, double t) {
+        int m = 0;
+        for (int k = 0; k < activeCount; k++) {
+            int i = active[k];
+            if (holdOwner[i] != OWNER_COVER || notes[i].line() != line) continue;
+            int r = m++;
+            while (r > 0 && coverFirst(i, coverOrder[r - 1], t)) {
+                coverOrder[r] = coverOrder[r - 1];
+                r--;
+            }
+            coverOrder[r] = i;
+        }
+        return m;
+    }
+
+    /** @return true when TIDE STREAM a gets a finger before b at time t (see {@link #sortCover}) */
+    private boolean coverFirst(int a, int b, double t) {
+        // Same float rounding as the lapse start that stepHold compares with the grace.
+        double ft = (float) t;
+        boolean graceA = ft >= notes[a].endMs() - HOLD_RELEASE_GRACE_MS;
+        boolean graceB = ft >= notes[b].endMs() - HOLD_RELEASE_GRACE_MS;
+        if (graceA != graceB) return graceB;
+        double headA = notes[a].judgementMs();
+        double headB = notes[b].judgementMs();
+        if (headA != headB) return headA < headB;
+        return a < b;
+    }
+
+    /**
+     * @return how many fingers {@code line} has (ARCHITECTURE §19): down pointers inside its zone
+     *         at any x (whatever else they hold, but not one that went down inside a veil) plus keys
+     *         of its row down (Space counts for the lower line)
+     */
+    private int fingers(Line line, float lowerY, float upperY) {
         float ly = lineY(line, lowerY, upperY);
+        int count = 0;
         for (int p = 0; p < MAX_POINTERS; p++) {
-            if (pDown[p] && Math.abs(pY[p] - ly) <= Field.zoneHalf()) return true;
+            if (pDown[p] && !pVeiled[p] && Math.abs(pY[p] - ly) <= Field.zoneHalf()) count++;
         }
         for (int s = 0; s < GameKeys.SLOTS; s++) {
-            if (kDown[s] && GameKeys.line(s) == line) return true;
+            if (kDown[s] && GameKeys.line(s) == line) count++;
         }
-        return false;
+        return count;
     }
 
     private void sweep(double sweepT) {
@@ -750,7 +861,7 @@ public final class GameEngine {
                     c++;
                     continue;
                 }
-                if (n.judgementMs() + judgeWin[i] < sweepT) {
+                if (n.judgementMs() + lateWin[i] < sweepT) {
                     loseNote(i);
                     c++;
                     continue;
@@ -758,12 +869,12 @@ public final class GameEngine {
                 break;
             }
             laneCursor[k] = c;
-            // a note with the RESONANCE window only (mine priority) can run out before an earlier one
+            // a note whose window a mine cuts short can run out before an earlier one
             for (int c2 = c + 1; c2 < arr.length; c2++) {
                 Note n = arr[c2];
                 if (n.judgementMs() + TIER1_MS >= sweepT) break;
                 int i = n.index();
-                if (state[i] == STATE_PENDING && n.judgementMs() + judgeWin[i] < sweepT) loseNote(i);
+                if (state[i] == STATE_PENDING && n.judgementMs() + lateWin[i] < sweepT) loseNote(i);
             }
         }
         for (int l = 0; l < Line.COUNT; l++) {
@@ -775,7 +886,7 @@ public final class GameEngine {
                     c++;
                     continue;
                 }
-                if (n.judgementMs() + TIER2_MS < sweepT) {
+                if (n.judgementMs() + lateWin[n.index()] < sweepT) {
                     loseGroup(n);
                     c = n.groupStart() + n.groupSize();
                     continue;
@@ -804,29 +915,6 @@ public final class GameEngine {
             }
             break;
         }
-        if (autoplay) return;
-        for (int k = mineLo; k < mineCount; k++) {
-            Note m = mines[k];
-            double T = m.judgementMs();
-            if (T - MINE_WINDOW_MS > t) break;
-            int i = m.index();
-            if (state[i] != STATE_PENDING || t > T + MINE_WINDOW_MS || asleep(i, t)) continue;
-            for (int p = 0; p < MAX_POINTERS; p++) {
-                if (pDown[p] && onMine(m, pX[p], pY[p], frameLayout, frameLowerY, frameUpperY)) {
-                    touchMine(i, pX[p], pY[p], p, t, frameLayout, frameLowerY, frameUpperY, 0);
-                    break;
-                }
-            }
-            if (state[i] != STATE_PENDING) continue;
-            for (int s = 0; s < GameKeys.SPACE; s++) {
-                if (kDown[s] && kLane[s] == m.laneIndex() && GameKeys.line(s) == m.line()) {
-                    float x = frameLayout.centre(m.laneIndex());
-                    touchMine(i, x, lineY(m.line(), frameLowerY, frameUpperY), PTR_KEY, t, frameLayout,
-                        frameLowerY, frameUpperY, GameEvent.FLAG_KEYBOARD);
-                    break;
-                }
-            }
-        }
     }
 
     private void finish(double t) {
@@ -854,7 +942,8 @@ public final class GameEngine {
     // ================================================================== input
 
     /**
-     * A pointer went down (ARCHITECTURE §10: gameplay notes act on touchDown).
+     * A pointer went down (ARCHITECTURE §10: gameplay notes act on touchDown). One that lands inside a veil
+     * that is showing judges nothing until it lifts (ARCHITECTURE §22): {@link #INPUT_VEILED}.
      *
      * @param pointer pointer id (0..{@link #MAX_POINTERS}−1)
      * @param x       world x (unprojected with the gameplay viewport)
@@ -873,10 +962,16 @@ public final class GameEngine {
         lastInputLane = -1;
         lastInputLine = null;
         lastInputMine = false;
-        if (phase != Phase.RUNNING) return INPUT_IGNORED;
+        if (phase != Phase.RUNNING) {
+            // held through a pause or the start: the veils as they show now decide
+            pVeiled[pointer] = Veils.containsAny(veils, x, y, frameBeat);
+            return INPUT_IGNORED;
+        }
         double t = eventJudgeMs(nanos);
         eventGeometry(t);
         if (!autoplay) stepCoverage(t, evLowerY, evUpperY);
+        pVeiled[pointer] = Veils.containsAny(veils, x, y, evBeat);
+        if (pVeiled[pointer]) return INPUT_VEILED;
         boolean inLower = Math.abs(y - evLowerY) <= Field.zoneHalf();
         boolean inUpper = Math.abs(y - evUpperY) <= Field.zoneHalf();
         int own = inputLayout.indexAtX(x);
@@ -893,7 +988,7 @@ public final class GameEngine {
             return INPUT_EMPTY;
         }
         int minesBefore = mineEvents;
-        checkMinesAt(t, x, y, pointer);
+        checkMinesAt(t, x, y, pointer, true);
         lastInputMine = mineEvents != minesBefore;
         if (regrabAt(pointer, x, y, t)) return INPUT_REGRAB;
 
@@ -907,9 +1002,10 @@ public final class GameEngine {
             if (c >= 0) {
                 consider(c, KIND_OWN, own, dist, t);
             } else if (nb >= 0) {
-                consider(laneCandidate(l, nb, t), KIND_NEIGHBOUR, nb, dist, t);
+                c = laneCandidate(l, nb, t);
+                consider(c, KIND_NEIGHBOUR, nb, dist, t);
             }
-            consider(universalCandidate(l, t), KIND_UNIVERSAL, -1, dist, t);
+            consider(universalCandidate(l, t, c >= 0), KIND_UNIVERSAL, -1, dist, t);
         }
         if (bestNote < 0) {
             emitEmpty(x, zone == Line.UPPER.ordinal() ? evUpperY : evLowerY, own, zone, pointer, t, 0);
@@ -943,6 +1039,12 @@ public final class GameEngine {
         if (g >= 0) judgeGroup(notes[g], j, d, t, pointer, x, ly, x, y, GameEvent.FLAG_JOINT);
     }
 
+    /** @return true when some lane of {@code line} has a pending tap / hold at exactly {@code beat} */
+    private boolean pendingLaneAt(int line, float beat) {
+        for (int lane = 0; lane < laneCount; lane++) if (pendingLaneAt(line, lane, beat) >= 0) return true;
+        return false;
+    }
+
     /**
      * @return a pending tap / hold of {@code lane} on {@code line} whose judgement beat is exactly {@code beat}, or −1
      */
@@ -968,10 +1070,10 @@ public final class GameEngine {
         if (chart == null || pointer < 0 || pointer >= MAX_POINTERS || !pDown[pointer]) return;
         pX[pointer] = x;
         pY[pointer] = y;
-        if (phase != Phase.RUNNING || autoplay) return;
+        if (phase != Phase.RUNNING || autoplay || pVeiled[pointer]) return;
         double t = eventJudgeMs(nanos);
         eventGeometry(t);
-        checkMinesAt(t, x, y, pointer);
+        checkMinesAt(t, x, y, pointer, false);
         int h = pHold[pointer];
         if (h >= 0) {
             int k = activeSlot(h);
@@ -1005,12 +1107,12 @@ public final class GameEngine {
 
     private void release(int pointer, long nanos, boolean checkMines) {
         int h = pHold[pointer];
-        boolean judging = phase == Phase.RUNNING && !autoplay;
+        boolean judging = phase == Phase.RUNNING && !autoplay && !pVeiled[pointer];
         double t = 0.0;
         if (judging) {
             t = eventJudgeMs(nanos);
             eventGeometry(t);
-            if (checkMines) checkMinesAt(t, pX[pointer], pY[pointer], pointer);
+            if (checkMines) checkMinesAt(t, pX[pointer], pY[pointer], pointer, false);
             if (h >= 0) {
                 int k = activeSlot(h);
                 if (k >= 0 && !stepHold(k, h, onHold(notes[h], pX[pointer], pY[pointer], inputLayout,
@@ -1025,6 +1127,7 @@ public final class GameEngine {
             detachHold(h);
         }
         pDown[pointer] = false;
+        pVeiled[pointer] = false;
         pHold[pointer] = -1;
         forgetLaneMinePointer(pointer);
         if (judging) stepCoverage(t, evLowerY, evUpperY);
@@ -1058,7 +1161,7 @@ public final class GameEngine {
             return INPUT_EMPTY;
         }
         stepCoverage(t, evLowerY, evUpperY);
-        if (lane >= 0) checkKeyMines(s, t);
+        checkKeyMines(s, t, true);
         // Re-grab a hold of this key's lane detached by a pause.
         if (lane >= 0) {
             for (int k = 0; k < activeCount; k++) {
@@ -1074,8 +1177,9 @@ public final class GameEngine {
         }
         clearBest();
         int l = line.ordinal();
-        if (lane >= 0 && s != GameKeys.SPACE) consider(laneCandidate(l, lane, t), KIND_OWN, lane, 0f, t);
-        consider(universalCandidate(l, t), KIND_UNIVERSAL, -1, 0f, t);
+        int c = lane >= 0 && s != GameKeys.SPACE ? laneCandidate(l, lane, t) : -1;
+        consider(c, KIND_OWN, lane, 0f, t);
+        consider(universalCandidate(l, t, c >= 0), KIND_UNIVERSAL, -1, 0f, t);
         if (bestNote < 0) {
             emitEmpty(x, ly, lane, l, PTR_KEY, t, GameEvent.FLAG_KEYBOARD);
             return INPUT_EMPTY;
@@ -1094,7 +1198,7 @@ public final class GameEngine {
         if (judging) {
             t = eventJudgeMs(nanos);
             eventGeometry(t);
-            if (kLane[s] >= 0) checkKeyMines(s, t);
+            checkKeyMines(s, t, false);
             if (h >= 0) {
                 int k = activeSlot(h);
                 if (k >= 0 && !stepHold(k, h, true, t)) releaseHold(k, h, t);
@@ -1111,7 +1215,7 @@ public final class GameEngine {
     // ------------------------------------------------------------------ candidates
 
     /**
-     * Earliest pending tap/hold head of (line, lane) inside its judge window (TIER2, or TIER1 by mine priority), or −1.
+     * Earliest pending tap/hold head of (line, lane) whose judge window ({@link #inWindow}) holds t, or −1.
      */
     private int laneCandidate(int line, int lane, double t) {
         if (lane < 0) return -1;
@@ -1122,21 +1226,26 @@ public final class GameEngine {
             double T = n.judgementMs();
             if (T - TIER2_MS > t) break;
             int i = n.index();
-            float w = judgeWin[i];
-            if (state[i] != STATE_PENDING || t - T > w || T - t > w) continue;
+            if (state[i] != STATE_PENDING || !inWindow(i, t)) continue;
             return i;
         }
         return -1;
     }
 
-    /** Earliest pending TIDE note of {@code line} with |dt| ≤ TIER2, or −1. */
-    private int universalCandidate(int line, double t) {
+    /**
+     * Earliest pending TIDE note of {@code line} with |dt| ≤ TIER2, or −1. With {@code laneNote} (the input also
+     * has a tap / STREAM head of this line to judge), a TIDE whose exact beat still has a pending tap / STREAM head
+     * on this line is skipped: it waits to be judged together with that note (ARCHITECTURE §20), so it never takes
+     * an input meant for another note (Kelvin 2026-10-24: a dense TIDE + DROP run lost its DROPs).
+     */
+    private int universalCandidate(int line, double t, boolean laneNote) {
         Note[] arr = uniStream[line];
         for (int c = uniCursor[line]; c < arr.length; c++) {
             Note n = arr[c];
             double T = n.judgementMs();
             if (T - TIER2_MS > t) break;
-            if (state[n.index()] != STATE_PENDING || t - T > TIER2_MS) continue;
+            if (state[n.index()] != STATE_PENDING || !inWindow(n.index(), t)) continue;
+            if (laneNote && pendingLaneAt(line, n.judgement())) continue;
             return n.index();
         }
         return -1;
@@ -1221,6 +1330,7 @@ public final class GameEngine {
         grade[i] = (byte) j.ordinal();
         dt[i] = d;
         resolvedMs[i] = (float) t;
+        if (j == Judgement.RESONANCE && noEcho[i]) guardLane(n, t);
         if (n.type() == NoteType.HOLD) {
             state[i] = STATE_HOLDING;
             active[activeCount++] = i;
@@ -1258,6 +1368,7 @@ public final class GameEngine {
         for (int c = from; c < to; c++) {
             int i = arr[c].index();
             if (state[i] != STATE_PENDING) continue;
+            if (j == Judgement.RESONANCE && noEcho[i]) guardLane(arr[c], t);
             grade[i] = (byte) j.ordinal();
             dt[i] = d;
             resolvedMs[i] = (float) t;
@@ -1458,72 +1569,155 @@ public final class GameEngine {
         return x >= lo && x <= hi;
     }
 
-    // ------------------------------------------------------------------ mine priority
+    // ------------------------------------------------------------------ mines and taps
 
     /**
-     * Mine priority (Kelvin 2026-10-14, see the class doc): finds every tap / STREAM head whose
-     * RESONANCE window meets the danger span of a MINE or LANE MINE in its lane and line, gives it
-     * the RESONANCE window only, and lists it under that mine. Called by {@link #load}; allocates
-     * only for a chart with more such pairs than any before.
+     * Mines and taps (Kelvin 2026-10-31) and LANE MINE priority (Kelvin 2026-10-14), see the class doc: pairs every
+     * MINE with the taps / STREAM heads of its lane and line whose ±TIER2 window meets its window, and every LANE
+     * MINE with those whose RESONANCE window meets its block, then sets how long each note can be judged. Called by
+     * {@link #load}; allocates only for a chart with more such pairs than any before.
      */
     private void findShadows(int n) {
-        Arrays.fill(judgeWin, 0, n, TIER2_MS);
+        Arrays.fill(noEcho, 0, n, false);
+        Arrays.fill(cutLen, 0, n, 0);
         Arrays.fill(shadowLen, 0, n, 0);
         int total = mineCount + laneMineCount;
         for (int pass = 0, pairs = 0; pass < 2; pass++) {
             int at = 0;
             for (int k = 0; k < total; k++) {
                 Note m = k < mineCount ? mines[k] : laneMineArr[k - mineCount];
-                boolean laneMine = m.isLaneMine();
+                boolean laneMine = m.isBlockMine();
                 double lo = laneMine ? m.judgementMs() - LANE_MINE_LEAD_MS : m.judgementMs() - MINE_WINDOW_MS;
                 double hi = laneMine ? m.endMs() : m.judgementMs() + MINE_WINDOW_MS;
+                double w = laneMine ? TIER1_MS : TIER2_MS;
+                boolean tide = m.isTideMine();
                 int lane = m.laneIndex();
-                if (lane < 0 || lane >= laneCount) continue;
+                if (!tide && (lane < 0 || lane >= laneCount)) continue;
                 int mi = m.index();
                 shadowFrom[mi] = at;
-                Note[] arr = laneStream[m.line().ordinal() * laneCount + lane];
-                for (Note u : arr) {
-                    double T = u.judgementMs();
-                    if (T + TIER1_MS < lo) continue;
-                    if (T - TIER1_MS > hi) break;
-                    if (laneMine && T - TIER1_MS >= hi) continue; // a LANE MINE's span is [T, end)
-                    if (pass == 0) {
-                        pairs++;
-                        continue;
+                int l = m.line().ordinal();
+                // a TIDE MINE covers its whole line: the taps / STREAM heads of every lane, then its TIDEs
+                for (int r = tide ? 0 : lane, last = tide ? laneCount : lane; r <= last; r++) {
+                    Note[] arr = r < laneCount ? laneStream[l * laneCount + r] : uniStream[l];
+                    for (Note u : arr) {
+                        double T = u.judgementMs();
+                        if (T + w < lo) continue;
+                        if (T - w > hi) break;
+                        if (laneMine && T - w >= hi) continue; // a LANE MINE's span is [T, end)
+                        int ui = u.index();
+                        if (pass == 0) {
+                            pairs++;
+                            if (!laneMine) cutLen[ui]++;
+                            continue;
+                        }
+                        shadowNote[at++] = ui;
+                        shadowLen[mi]++;
+                        if (laneMine) noEcho[ui] = true;
+                        else cutMine[cutFrom[ui] + cutLen[ui]++] = mi;
                     }
-                    shadowNote[at++] = u.index();
-                    shadowLen[mi]++;
-                    judgeWin[u.index()] = TIER1_MS;
                 }
             }
-            if (pass == 0 && shadowNote.length < pairs) shadowNote = new int[pairs];
+            if (pass == 0) {
+                if (shadowNote.length < pairs) shadowNote = new int[pairs];
+                if (cutMine.length < pairs) cutMine = new int[pairs];
+                for (int i = 0, from = 0; i < n; i++) {
+                    cutFrom[i] = from;
+                    from += cutLen[i];
+                    cutLen[i] = 0;
+                }
+            }
         }
+        for (int i = 0; i < n; i++) lateWin[i] = windowEnd(i);
     }
 
-    /** True while mine i sleeps: t is inside the RESONANCE window of a note it gives way to. */
+    /** How long after its time note i can still be judged: TIER2, less where MINE windows cover its late ECHO. */
+    private float windowEnd(int i) {
+        if (noEcho[i]) return TIER1_MS;
+        double T = notes[i].judgementMs();
+        double e = T + TIER2_MS;
+        for (boolean moved = true; moved && e > T + TIER1_MS; ) {
+            moved = false;
+            for (int k = cutFrom[i], end = k + cutLen[i]; k < end; k++) {
+                double tm = notes[cutMine[k]].judgementMs();
+                if (e > tm - MINE_WINDOW_MS && e <= tm + MINE_WINDOW_MS) {
+                    e = tm - MINE_WINDOW_MS;
+                    moved = true;
+                }
+            }
+        }
+        return (float) Math.max(TIER1_MS, e - T);
+    }
+
+    /**
+     * True when a press at t is inside note i's judge window: its RESONANCE window, or the rest of ±TIER2 outside
+     * the windows of the MINEs that cut it (none when a LANE MINE gives way to the note).
+     */
+    private boolean inWindow(int i, double t) {
+        double d = t - notes[i].judgementMs();
+        if (d >= -TIER1_MS && d <= TIER1_MS) return true;
+        if (noEcho[i] || d < -TIER2_MS || d > TIER2_MS) return false;
+        for (int k = cutFrom[i], e = k + cutLen[i]; k < e; k++) {
+            if (Math.abs(t - notes[cutMine[k]].judgementMs()) <= MINE_WINDOW_MS) return false;
+        }
+        return true;
+    }
+
+    /**
+     * True while mine i is off at t: inside the RESONANCE window of a note it is paired with (cut from a MINE's
+     * window; a LANE MINE sleeps there), or, for a LANE MINE, inside the RESONANCE guard of its lane and line.
+     */
     private boolean asleep(int i, double t) {
         for (int k = shadowFrom[i], e = k + shadowLen[i]; k < e; k++) {
             double T = notes[shadowNote[k]].judgementMs();
             if (t >= T - TIER1_MS && t <= T + TIER1_MS) return true;
         }
-        return false;
+        Note m = notes[i];
+        if (!m.isBlockMine()) return false;
+        int s = Line.COUNT * laneCount + m.line().ordinal(); // a TIDE STREAM MINE: its line's guard
+        if (!m.isTideMine()) {
+            int lane = m.laneIndex();
+            if (lane < 0 || lane >= laneCount) return false;
+            s = m.line().ordinal() * laneCount + lane;
+        }
+        return t >= guardFrom[s] && t <= guardTo[s];
     }
 
-    /** @return note i's judge window half width (ms): TIER2, or TIER1 when a mine gives way to it */
+    /**
+     * RESONANCE guard (Kelvin 2026-10-30): a RESONANCE at t on a note a LANE MINE gives way to keeps its lane's
+     * LANE MINEs asleep until t + RESONANCE_GUARD_MS; a guard still running is extended.
+     */
+    private void guardLane(Note n, double t) {
+        int lane = n.laneIndex();
+        if (lane >= 0 && lane < laneCount) guard(n.line().ordinal() * laneCount + lane, t);
+        guard(Line.COUNT * laneCount + n.line().ordinal(), t); // and its line's TIDE STREAM MINEs
+    }
+
+    private void guard(int s, double t) {
+        if (!(t <= guardTo[s])) guardFrom[s] = t;
+        double end = t + RESONANCE_GUARD_MS;
+        if (!(end <= guardTo[s])) guardTo[s] = end;
+    }
+
+    /**
+     * @return how long after its time note i can still be judged (ms): TIER2, less where MINE windows cut its late
+     *         ECHO, TIER1 when a LANE MINE gives way to it
+     */
     public float judgeWindowMs(int i) {
-        return judgeWin[i];
+        return lateWin[i];
     }
 
     // ------------------------------------------------------------------ mines
 
     private static boolean onMine(Note m, float x, float y, LaneLayout lay, float lowerY, float upperY) {
         if (Math.abs(y - lineY(m.line(), lowerY, upperY)) > Field.zoneHalf()) return false;
+        if (m.isTideMine()) return true; // anywhere in its line's zone, as a TIDE
         int lane = m.laneIndex();
         return Math.abs(x - lay.centre(lane)) <= MINE_BOX * 0.5f * lay.width(lane);
     }
 
-    private void checkMinesAt(double t, float x, float y, int pointer) {
-        for (int k = mineLo; k < mineCount; k++) {
+    /** Mines under a pointer event at t: MINEs only on a press (touch-down), LANE MINEs on every event. */
+    private void checkMinesAt(double t, float x, float y, int pointer, boolean press) {
+        for (int k = mineLo; press && k < mineCount; k++) {
             Note m = mines[k];
             double T = m.judgementMs();
             if (T - MINE_WINDOW_MS > t) break;
@@ -1542,27 +1736,33 @@ public final class GameEngine {
         }
     }
 
-    private void checkKeyMines(int s, double t) {
+    /** Mines of key slot s's lane at t: MINEs only on a press (key-down), LANE MINEs on every event. */
+    private void checkKeyMines(int s, double t, boolean press) {
         int lane = kLane[s];
         Line line = GameKeys.line(s);
-        for (int k = mineLo; k < mineCount; k++) {
+        for (int k = mineLo; press && k < mineCount; k++) {
             Note m = mines[k];
             double T = m.judgementMs();
             if (T - MINE_WINDOW_MS > t) break;
             int i = m.index();
             if (state[i] != STATE_PENDING || t > T + MINE_WINDOW_MS) continue;
-            if (m.laneIndex() == lane && m.line() == line && !asleep(i, t)) {
-                float x = inputLayout.centre(lane);
-                touchMine(i, x, lineY(line, evLowerY, evUpperY), PTR_KEY, t, inputLayout, evLowerY, evUpperY,
-                    GameEvent.FLAG_KEYBOARD);
+            if ((m.isTideMine() || m.laneIndex() == lane) && m.line() == line && !asleep(i, t)) {
+                touchMine(i, keyX(s, inputLayout), lineY(line, evLowerY, evUpperY), PTR_KEY, t, inputLayout,
+                    evLowerY, evUpperY, GameEvent.FLAG_KEYBOARD);
             }
         }
         for (int k = laneMineLo; k < laneMineCount; k++) {
             Note m = laneMineArr[k];
             if (m.judgementMs() - LANE_MINE_LEAD_MS > t) break;
-            if (t >= m.endMs() || m.laneIndex() != lane || m.line() != line) continue;
+            if (t >= m.endMs() || !m.isTideMine() && m.laneIndex() != lane || m.line() != line) continue;
             observeKey(m.index(), s, t, inputLayout, evLowerY, evUpperY);
         }
+    }
+
+    /** Where key slot s plays: its lane's centre, or the window's middle for Space and unmapped keys. */
+    private float keyX(int s, LaneLayout lay) {
+        int lane = kLane[s];
+        return lane >= 0 ? lay.centre(lane) : (lay.windowLeft() + lay.windowRight()) * 0.5f;
     }
 
     // ------------------------------------------------------------------ LANE MINEs
@@ -1573,6 +1773,7 @@ public final class GameEngine {
      */
     private static boolean onLaneMine(Note m, float x, float y, LaneLayout lay, float lowerY, float upperY) {
         if (Math.abs(y - lineY(m.line(), lowerY, upperY)) > Field.zoneHalf()) return false;
+        if (m.isTideMine()) return true; // a TIDE STREAM MINE: its line's whole zone
         int lane = m.laneIndex();
         return Math.abs(x - lay.centre(lane)) <= LANE_MINE_BOX * 0.5f * lay.width(lane);
     }
@@ -1598,12 +1799,14 @@ public final class GameEngine {
             }
             if (autoplay || t >= m.endMs()) continue;
             for (int p = 0; p < MAX_POINTERS; p++) {
-                if (!pDown[p]) continue;
+                if (!pDown[p] || pVeiled[p]) continue;
                 observePointer(i, p, onLaneMine(m, pX[p], pY[p], frameLayout, frameLowerY, frameUpperY), pX[p], pY[p],
                     t, frameLayout, frameLowerY, frameUpperY);
             }
-            for (int s = 0; s < GameKeys.SPACE; s++) {
-                if (kDown[s] && kLane[s] == m.laneIndex() && GameKeys.line(s) == m.line()) {
+            boolean tide = m.isTideMine(); // a TIDE STREAM MINE takes every key of its line
+            for (int s = 0; s < GameKeys.SLOTS; s++) {
+                if (kDown[s] && GameKeys.line(s) == m.line()
+                    && (tide || s < GameKeys.SPACE && kLane[s] == m.laneIndex())) {
                     observeKey(i, s, t, frameLayout, frameLowerY, frameUpperY);
                 }
             }
@@ -1631,7 +1834,7 @@ public final class GameEngine {
         if (asleep(i, t)) return;
         mineKeyMask[i] |= bit;
         Note m = notes[i];
-        float x = lay.centre(m.laneIndex());
+        float x = m.isTideMine() ? keyX(s, lay) : lay.centre(m.laneIndex());
         laneMineContact(i, x, lineY(m.line(), lowerY, upperY), PTR_KEY, t, lay, lowerY, upperY,
             GameEvent.FLAG_KEYBOARD);
     }
@@ -1697,7 +1900,7 @@ public final class GameEngine {
         Note n = notes[i];
         state[i] = STATE_LOST;
         grade[i] = (byte) Judgement.LOST.ordinal();
-        double at = n.judgementMs() + judgeWin[i];
+        double at = n.judgementMs() + lateWin[i];
         resolvedMs[i] = (float) at;
         keeper.record(Judgement.LOST, 0f);
         float x = frameLayout.centre(n.laneIndex());
@@ -1978,14 +2181,14 @@ public final class GameEngine {
 
     /**
      * @return true while hold i runs and its finger (or key, or autoplay) is on it; for a TIDE
-     *         STREAM, while it runs and its line is covered
+     *         STREAM, while it runs and has a finger of its own on its line
      */
     public boolean isHoldHeld(int i) {
         return state[i] == STATE_HOLDING && holdOwner[i] != OWNER_DETACHED && Float.isNaN(holdOffSince[i]);
     }
 
     /**
-     * @return true while a TIDE STREAM of {@code line} runs and is held (its line covered, or
+     * @return true while a TIDE STREAM of {@code line} runs and is held (it has a finger, or
      *         autoplay): the tide level of DESIGN §19.2 stays up
      */
     public boolean tideHeld(Line line) {
@@ -2018,6 +2221,21 @@ public final class GameEngine {
     /** @return true while pointer p is down. */
     public boolean pointerDown(int p) {
         return pDown[p];
+    }
+
+    /** @return true while pointer p is down and went down inside a veil (it judges nothing until it lifts). */
+    public boolean pointerVeiled(int p) {
+        return pDown[p] && pVeiled[p];
+    }
+
+    /** @return the chart's veils, in chart order (never null; do not modify). */
+    public Veil[] veils() {
+        return veils;
+    }
+
+    /** @return the chart's curtains (水帘: blur only, never judged), in chart order (never null; do not modify). */
+    public Veil[] curtains() {
+        return curtains;
     }
 
     /** @return last world x of pointer p. */

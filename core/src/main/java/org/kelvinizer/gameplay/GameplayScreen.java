@@ -8,6 +8,7 @@ import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.math.MathUtils;
 import org.kelvinizer.Main;
 import org.kelvinizer.Params;
+import org.kelvinizer.audio.SongClock;
 import org.kelvinizer.elements.Chart;
 import org.kelvinizer.elements.LaneLayout;
 import org.kelvinizer.elements.Line;
@@ -27,6 +28,8 @@ import org.kelvinizer.ui.KkScreen;
 import org.kelvinizer.ui.Pressable;
 import org.kelvinizer.ui.Theme;
 import org.kelvinizer.ui.Ui;
+
+import java.util.Arrays;
 
 
 /**
@@ -77,6 +80,8 @@ public class GameplayScreen extends KkScreen<Main> {
     public static final float COUNT_STEP_SEC = 1f;
     /** On Android the music runs muted through the resume countdown from this long before the paused time (ms). */
     private static final float COUNT_IN_MS = 3f * COUNT_STEP_SEC * 1000f;
+    /** Autoplay's hit sounds are handed to a timed output this far ahead, so each is heard on its note. */
+    private static final double AUTO_HIT_AHEAD_MS = 150.0;
     /** The chart's opacity factor as the resume countdown starts; it rises evenly to 1 as the count ends. */
     public static final float COUNT_FADE_FROM = 0.05f;
     private static final float ABYSS_PULSE_SEC = 0.40f;
@@ -91,6 +96,10 @@ public class GameplayScreen extends KkScreen<Main> {
     protected Difficulty difficulty;
     /** True for an autoplay run (never recorded). */
     protected boolean autoplay;
+    /** Song times (ms, ascending) autoplay sounds a hit at, when the output can time them; else null. */
+    private double[] autoHitMs;
+    /** The next of {@link #autoHitMs} to hand to the output. */
+    private int autoHitNext;
     /** Seconds since {@link #begin} (screen time, also while paused). */
     protected float time;
     /** Seconds the run has been unpaused since it started (playfield effects; frozen while paused). */
@@ -110,8 +119,12 @@ public class GameplayScreen extends KkScreen<Main> {
     private final FeedbackLayer feedback;
     /** The TIDE hit effect (DESIGN §19.2), block A. */
     private final TideWash tideWash;
-    /** SHOW TOUCHES: a ring under every finger (Kelvin 2026-10-18 19:52). */
+    /** SHOW TOUCHES: a ring under every finger (Kelvin 2026-10-18 19:52); a veiled finger's glitch mark. */
     private final TouchMarks marks;
+    /** The veils over the field and notes, and the glitch mark of a veiled finger (CHART_FORMAT_v4 §6.10). */
+    private final VeilRenderer veilFx;
+    /** The curtains (水帘): blur everything beneath the pause menu, never judged (CHART_FORMAT §6.1). */
+    private final VeilRenderer curtainFx;
     private final GameplayHud hud;
     /** Records HUD-under text (and other text passes) so each font page is one draw call. */
     private final DeferredBatch text = new DeferredBatch();
@@ -128,6 +141,8 @@ public class GameplayScreen extends KkScreen<Main> {
     private float preroll = -1f;
     private boolean resultSent;
     private int[] holdFx = new int[0];
+    /** The base point of the STREAM last asked ({@link #holdBase}). */
+    private final float[] basePt = new float[2];
     /** The faint dot where a touch hits no zone: the tutorial's (players' SHOW TOUCHES draws {@link #marks}). */
     private boolean strayDots;
     private boolean showTouches;
@@ -168,6 +183,8 @@ public class GameplayScreen extends KkScreen<Main> {
         feedback = new FeedbackLayer(game.draw());
         tideWash = new TideWash(game.draw(), field);
         marks = new TouchMarks(game.draw());
+        veilFx = new VeilRenderer(game.draw());
+        curtainFx = new VeilRenderer(game.draw(), true);
         hud = new GameplayHud(game.fonts(), game.draw(), game.glitch(), feedback);
         pauseControl = hud.pause();
         overlay = new RunOverlay(game.fonts(), game.draw(), game.glitch());
@@ -226,9 +243,10 @@ public class GameplayScreen extends KkScreen<Main> {
 
         FileHandle music = song != null && song.music() != null ? song.music() : chart.musicFile();
         float dur = song != null ? song.durationMs() : 0f;
+        engine.clock().setMusicOutput(game.audio() != null ? game.audio().musicOutput() : null);
         if (dur > 0f) engine.clock().load(music, dur);
         else engine.clock().load(music);
-        engine.clock().setVolume(game.audio() != null ? game.audio().musicVolume() : 0.8f);
+        engine.clock().setVolume(game.audio() != null ? game.audio().musicVolume() : 0.5f);
         // decode and prime the optional hit / hold-end / mine sounds while covered (once per
         // session), so the first judgement never waits for a load
         if (game.audio() != null) game.audio().hitSound();
@@ -236,12 +254,18 @@ public class GameplayScreen extends KkScreen<Main> {
         // the playfield fills the screen (Kelvin 16:17): fit the stretch before the engine and the edge entries use it
         Field.fit(Ui.worldW(), Ui.worldH());
         engine.load(chart, autoplay);
+        autoHitMs = autoplay && game.audio() != null && game.audio().timesHits() ? hitTimes(chart) : null;
+        autoHitNext = 0;
         game.hitFx().clear();
 
         String title = song != null ? song.title() : chart.title();
         constText = song != null ? song.constantText(diff) : chart.chartConstant();
         if (constText == null) constText = "";
         field.begin(chart);
+        // compile the veil / curtain shaders and make the capture texture now, while the cover is still closed:
+        // doing it in the first drawn frame stalls long enough to let the song clock run past the first note
+        veilFx.prewarm();
+        curtainFx.prewarm();
         // the note size sets how far a turned body reaches, so which notes slide in (DESIGN §5.4)
         notes.setStyle(settings.noteSizeScale, game.hitFx().quality() == HitFx.QUALITY_HIGH);
         notes.setHitPoint(settings.hitPointPx);
@@ -383,6 +407,7 @@ public class GameplayScreen extends KkScreen<Main> {
     @Override
     protected void onHide() {
         engine.pause();
+        dropQueuedHits();
         recordStartLatency();
         engine.clock().dispose(); // release the music; begin() loads it again
         Backdrop b = game.backdrop();
@@ -407,6 +432,8 @@ public class GameplayScreen extends KkScreen<Main> {
     public void dispose() {
         engine.clock().dispose();
         fade.dispose();
+        veilFx.dispose();
+        curtainFx.dispose();
         disposeSongArt();
         if (defaultArt != null) game.art().release(DEFAULT_ART);
         defaultArt = null;
@@ -450,14 +477,17 @@ public class GameplayScreen extends KkScreen<Main> {
             }
         }
         engine.update();
+        queueAutoHits();
         float runDelta = started && !menuOpen && !engine.isPaused() ? delta : 0f;
         runTime += runDelta;
         if (started) introT += runDelta;
         consumeEvents();
-        if (showTouches) marks.update(engine, time);
+        marks.update(engine, time);
         HitFx fx = game.hitFx();
+        moveHoldFx(); // the held streams' births this update start at their base as drawn now
+        float vb = engine.visualBeat(); // held ripples every 1/4 beat at the tempo now (Kelvin 2026-10-31 15:03)
+        fx.setBeatLength((float) chart.msBetween(vb, vb + 0.25) * 0.004f);
         fx.update(runDelta);
-        moveHoldFx();
         tideWash.update(runDelta, engine, runTime);
         field.update(runDelta, engine);
         hud.update(runDelta, engine, runTime);
@@ -491,13 +521,23 @@ public class GameplayScreen extends KkScreen<Main> {
         field.drawUnder(engine, zoneStrength(), MathUtils.clamp(introT / 0.35f, 0f, 1f));
         tideWash.draw(engine);  // above the lane field, beneath notes, judgement word and HUD
         if (faded) fade.end(batch);
+        // the veils cover the field and the notes (block B); the HUD beneath the notes stays above the most
+        // prominent one: drawn outside it here, inside it again after the veils (CHART_FORMAT_v4 §6.10)
+        boolean veiled = veilFx.prepare(engine.veils(), engine.visualBeat(), runTime, fadeA);
+        boolean curtained = curtainFx.prepare(engine.curtains(), engine.visualBeat(), runTime, fadeA);
+        boolean clipped = veiled && veilFx.clipBegin(batch, false);
         hud.drawUnder(batch, introT, runTime, !menuOpen);
         // ---- HUD-under text (recorded, then one draw call per font page)
         text.start(batch);
         hud.setCentreCover(centreCover());
         hud.drawUnderText(text, engine, runTime, !menuOpen && countdown < 0f);
         feedback.drawText(text, game.fonts(), runTime);
-        text.replay();
+        if (clipped) {
+            text.replayKeep();
+            veilFx.clipEnd(batch);
+        } else {
+            text.replay();
+        }
         // ---- normal block B
         faded = fadeA < 1f && fade.begin(batch, fadeA);
         field.drawLines(engine, runTime, introT);
@@ -505,6 +545,7 @@ public class GameplayScreen extends KkScreen<Main> {
         trails.draw(engine);   // afterimages beneath every live note (ARCHITECTURE §17)
         notes.draw(engine, runTime);
         if (faded) fade.end(batch);
+        if (veiled) drawVeils(clipped);
         overlay.drawBannerScrim(engine.judgeMs(), engine.endMs());
         // ---- additive block (one blend switch)
         int src = batch.getBlendSrcFunc();
@@ -522,7 +563,7 @@ public class GameplayScreen extends KkScreen<Main> {
         fx.draw(batch);
         if (faded) fade.end(batch);
         batch.setBlendFunctionSeparate(src, dst, srcA, dstA);
-        if (showTouches) marks.draw(time); // over the notes and effects, under the HUD
+        marks.draw(batch, veilFx, time, showTouches, glitchMarkRadius()); // over the notes and effects, under the HUD
         // ---- HUD-over
         drawExtras(delta);
         if (countdown >= 0f) overlay.drawResumeCountdown(batch, countdown, time);
@@ -532,12 +573,46 @@ public class GameplayScreen extends KkScreen<Main> {
         // ---- top layer: pause scrim, corner HUD (drawn last), pause buttons; then all their text
         menu.drawScrim(batch);
         hud.drawCorners(batch, engine, introT, runTime, menuOpen, menuOpen ? 0f : pauseControl.holdProgress());
+        if (curtained) { // the curtains blur everything under them but the pause menu (Kelvin 2026-10-31)
+            text.start(batch);
+            hud.drawCornerText(text, introT);
+            text.replay();
+            curtainFx.draw(batch);
+        }
         menu.drawShapes(batch);
         text.start(batch);
-        hud.drawCornerText(text, introT);
+        if (!curtained) hud.drawCornerText(text, introT);
         menu.drawText(text);
         text.replay();
         batch.end();
+    }
+
+    /**
+     * Draws the veils over block B, leaving the judgement line strokes crisp, then the HUD beneath the notes
+     * inside the veil it was kept out of ({@code clipped}).
+     */
+    private void drawVeils(boolean clipped) {
+        LaneLayout lay = engine.layout();
+        float ly = engine.lineY(Line.LOWER), lh = field.strokeHalf(Line.LOWER, runTime);
+        float uy = engine.lineY(Line.UPPER), uh = field.strokeHalf(Line.UPPER, runTime);
+        veilFx.draw(batch, ly, lh, uy, uh, lay.windowLeft(), lay.windowRight());
+        if (!clipped || !veilFx.clipBegin(batch, true)) return;
+        hud.drawUnder(batch, introT, runTime, !menuOpen);
+        text.replay();
+        veilFx.clipEnd(batch);
+    }
+
+    /** @return radius of a veiled finger's glitch mark: half a note's width in the average lane (Kelvin 16:55). */
+    private float glitchMarkRadius() {
+        LaneLayout lay = engine.layout();
+        float sum = 0f;
+        int n = 0;
+        for (int i = 0; i < lay.count(); i++) {
+            if (!lay.active(i)) continue;
+            sum += lay.width(i);
+            n++;
+        }
+        return n > 0 ? 0.5f * notes.headWidth(sum / n) : 64f;
     }
 
     /** Hook for subclasses: per-frame update before drawing (screen delta). */
@@ -627,30 +702,36 @@ public class GameplayScreen extends KkScreen<Main> {
                     if (universal) tideWash.hit(line, ev.judgement == Judgement.RESONANCE, runTime);
                     else contact(line, ly, true, auto); // TIDE: no contact ring at the finger either (§19.2)
                     hud.judgement(ev.judgement, ev.dtMs, ev.x, line, ly, runTime);
-                    if (auto) game.audio().playHit(ev.judgement);
+                    if (auto && autoHitMs == null) game.audio().playHit(ev.judgement);
                     break;
                 }
-                case GameEvent.HOLD_START:
+                case GameEvent.HOLD_START: {
+                    boolean based = ev.note >= 0 && holdBase(ev.note);
+                    float bx = based ? basePt[0] : ev.x, by = based ? basePt[1] : ly;
                     if (ev.note >= 0) {
                         if (holdFx[ev.note] >= 0) fx.holdEnd(holdFx[ev.note], false);
-                        holdFx[ev.note] = fx.holdStart(ev.x, ly, ev.judgement, 1f, sky);
+                        holdFx[ev.note] = fx.holdStart(bx, by, ev.judgement, 1f, sky);
                     }
                     if (!ev.has(GameEvent.FLAG_REGRAB)) {
-                        fx.ripple(ev.x, ly, ev.judgement, 1f); // STREAM head water rings (DESIGN §20.5)
+                        fx.head(bx, by, ev.judgement, 1f, sky); // the head's own splash (LOST heads: nothing)
                         hitFeedback(line, ly, ev.x, false, high);
                         hud.judgement(ev.judgement, ev.dtMs, ev.x, line, ly, runTime);
                     }
                     contact(line, ly, true, auto);
-                    if (auto) game.audio().playHit(ev.judgement);
+                    if (auto && autoHitMs == null) game.audio().playHit(ev.judgement);
                     break;
+                }
                 case GameEvent.HOLD_END: {
                     boolean completed = ev.has(GameEvent.FLAG_COMPLETED);
                     int h = ev.note >= 0 ? holdFx[ev.note] : -1;
                     if (h >= 0) {
-                        fx.holdEnd(h, completed); // a completed hold seals itself (head grade at 80 %)
+                        if (completed && holdEndBase(ev.note)) fx.holdMove(h, basePt[0], basePt[1]);
+                        fx.holdEnd(h, completed); // a completed STREAM ends with its release splash at the base
                         holdFx[ev.note] = -1;
                     } else if (completed && !ev.has(GameEvent.FLAG_TIDE_STREAM)) {
-                        fx.tap(ev.x, ly, ev.judgement, HitFx.SEAL_SCALE, sky); // no stream slot: seal directly
+                        boolean based = ev.note >= 0 && holdEndBase(ev.note);
+                        // no held stream (effects were off at its head, or every slot was busy): the splash alone
+                        fx.release(based ? basePt[0] : ev.x, based ? basePt[1] : ly, ev.judgement, 1f, sky);
                     }
                     if (completed) {
                         game.audio().playHoldEnd(); // optional Sounds/hold_end.* (DESIGN §5.14)
@@ -735,7 +816,7 @@ public class GameplayScreen extends KkScreen<Main> {
     protected void drawNoteDemo(float x, float y, float laneWidth, boolean upper, float alpha) {
         float w = notes.headWidth(laneWidth);
         float h = notes.noteHeight();
-        Color c = upper ? Theme.SKY_SIG : Theme.GROUND_SIG;
+        Color c = upper ? Theme.SKY_SIG : Theme.GROUND_NOTE;
         notes.paintLaneNote(x, y, w, h, upper ? 180f : 0f, c, alpha, 1f, 0f, 0f, 0f, 0f, 0f, false);
         notes.batch().setColor(Color.WHITE);
     }
@@ -765,15 +846,37 @@ public class GameplayScreen extends KkScreen<Main> {
         return pauseControl.contains(x, y);
     }
 
+    /** Moves the effects of every held STREAM to its base as drawn this frame (DESIGN §5.9). */
     private void moveHoldFx() {
         HitFx fx = game.hitFx();
-        LaneLayout lay = engine.layout();
         for (int k = 0; k < engine.activeHoldCount(); k++) {
             int i = engine.activeHold(k);
             if (holdFx[i] < 0) continue; // TIDE STREAMs have no stream FX slot (no HOLD_START)
-            Note n = chart.note(i);
-            fx.holdMove(holdFx[i], lay.centre(n.laneIndex()), engine.lineY(n.line()));
+            if (holdBase(i)) fx.holdMove(holdFx[i], basePt[0], basePt[1]);
         }
+    }
+
+    /**
+     * Puts into {@link #basePt} the point the effects of STREAM {@code note} start from (Kelvin 2026-10-26 13:25:
+     * always at the note's base): its key's hit point as drawn now ({@link NoteRenderer#effectPoint}), or before
+     * its own beat (an early head) where the key lands on the line, as a DROP's splash does.
+     *
+     * @return false when the note is not drawn now (hidden, inactive lane)
+     */
+    private boolean holdBase(int note) {
+        Note n = chart.note(note);
+        return notes.effectPoint(engine, n, Math.max(engine.visualBeat(), n.judgement()), basePt);
+    }
+
+    /**
+     * Like {@link #holdBase}, for the release splash of a completed STREAM: where its base is drawn when the STREAM
+     * ends, never later (Kelvin 2026-10-31 15:03: the end comes after the note's movement events, which would put the
+     * base back on the line in its lane).
+     */
+    private boolean holdEndBase(int note) {
+        Note n = chart.note(note);
+        float beat = Math.min(Math.max(engine.visualBeat(), n.judgement()), n.endBeat());
+        return notes.effectPoint(engine, n, beat, basePt);
     }
 
     // ================================================================== input
@@ -795,17 +898,18 @@ public class GameplayScreen extends KkScreen<Main> {
             return true;
         }
         int r = engine.touchDown(pointer, x, y, ns);
+        marks.down(pointer, x, y, r == GameEngine.INPUT_VEILED, time);
         if (r == GameEngine.INPUT_JUDGED) {
-            game.audio().playHit(engine.lastInputJudgement());
+            game.audio().playHit(engine.lastInputJudgement(), ns);
             if (settings.haptics == Settings.HAPTICS_ALL) Haptics.light();
         } else if (r == GameEngine.INPUT_EMPTY && settings.hitSoundMode == Settings.HIT_ON_ANY_ZONE_TAP) {
             game.audio().playHit(null);
         }
-        // a touch that did nothing in gameplay (outside both zones, an empty zone, or not running) may belong to
-        // a subclass control first (the tutorial's SKIP pill); a touch the pause control would not count (it
-        // judged, re-grabbed, touched a mine or covers a running TIDE STREAM) never reaches it
-        if ((r == GameEngine.INPUT_STRAY || r == GameEngine.INPUT_IGNORED || r == GameEngine.INPUT_EMPTY)
-            && !PauseControl.judges(engine, r, y)) {
+        // a touch that did nothing in gameplay (outside both zones, an empty zone, inside a veil, or not running)
+        // may belong to a subclass control first (the tutorial's SKIP pill); a touch the pause control would not
+        // count (it judged, re-grabbed, touched a mine or covers a running TIDE STREAM) never reaches it
+        if ((r == GameEngine.INPUT_STRAY || r == GameEngine.INPUT_IGNORED || r == GameEngine.INPUT_EMPTY
+            || r == GameEngine.INPUT_VEILED) && !PauseControl.judges(engine, r, y)) {
             if (extraTouchDown(x, y, pointer)) return true;
         }
         // the touch already reached gameplay; now the pause control may count it
@@ -845,9 +949,9 @@ public class GameplayScreen extends KkScreen<Main> {
 
     /**
      * Hook: a touch that did nothing in gameplay ({@code INPUT_STRAY} outside both zones, {@code INPUT_EMPTY} in
-     * a zone with nothing to judge, no mine touched and no running TIDE STREAM covered, {@code INPUT_IGNORED}
-     * while the run is not running), before the pause control sees it; return true to consume it (the pause
-     * control then neither counts nor cancels it).
+     * a zone with nothing to judge, no mine touched and no running TIDE STREAM covered, {@code INPUT_VEILED}
+     * inside a veil, {@code INPUT_IGNORED} while the run is not running), before the pause control sees it; return
+     * true to consume it (the pause control then neither counts nor cancels it).
      */
     protected boolean extraTouchDown(float x, float y, int pointer) {
         return false;
@@ -913,6 +1017,7 @@ public class GameplayScreen extends KkScreen<Main> {
         // nothing is left to play after the end, and quitting from the pause would lose the record (Kelvin 2026-10-17)
         if (chart == null || resultSent || engine.isFinished() || engine.judgeMs() >= engine.endMs()) return;
         engine.pause();
+        dropQueuedHits();
         menuOpen = true;
         countdown = -1f;
         countIn = false;
@@ -937,6 +1042,42 @@ public class GameplayScreen extends KkScreen<Main> {
         countdown = 3f * COUNT_STEP_SEC;
         // on Android the music runs in through the count, unheard, and is in step as it ends (Kelvin 2026-10-21 15:09)
         countIn = engine.startCountIn(COUNT_IN_MS);
+    }
+
+    /** @return the song times (ms, ascending, one per instant) of every note but mines: autoplay's hit sounds */
+    private static double[] hitTimes(Chart chart) {
+        Note[] notes = chart.notes();
+        double[] t = new double[notes.length];
+        int n = 0;
+        for (Note note : notes) if (note.type().judged() && !note.fake()) t[n++] = note.judgementMs();
+        Arrays.sort(t, 0, n);
+        int u = 0;
+        for (int i = 0; i < n; i++) if (u == 0 || t[i] - t[u - 1] >= 1.0) t[u++] = t[i];
+        return Arrays.copyOf(t, u);
+    }
+
+    /**
+     * Autoplay with a timed output: hands each hit sound over {@link #AUTO_HIT_AHEAD_MS} before its note, to be
+     * heard as the music reaches it (the judging, a frame later, plays none). Only while the run's time runs.
+     * Placed on chart time (the clock less the audio offset), the time the notes are judged and drawn on.
+     */
+    private void queueAutoHits() {
+        if (autoHitMs == null || !engine.isRunning()) return;
+        SongClock clock = engine.clock();
+        long now = clock.nanoTime();
+        double t = clock.timeAtNanos(now) - engine.audioOffsetMs();
+        while (autoHitNext < autoHitMs.length && autoHitMs[autoHitNext] <= t + AUTO_HIT_AHEAD_MS) {
+            game.audio().playHit(Judgement.RESONANCE, now + (long) ((autoHitMs[autoHitNext++] - t) * 1e6));
+        }
+    }
+
+    /** The run paused: hit sounds not yet heard are dropped; autoplay's are handed over again after the resume. */
+    private void dropQueuedHits() {
+        if (game.audio() != null) game.audio().cancelTimedHits();
+        if (autoHitMs == null) return;
+        double t = engine.clock().nowMs() - engine.audioOffsetMs();
+        autoHitNext = 0;
+        while (autoHitNext < autoHitMs.length && autoHitMs[autoHitNext] <= t) autoHitNext++;
     }
 
     /**

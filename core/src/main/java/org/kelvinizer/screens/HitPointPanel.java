@@ -565,7 +565,7 @@ final class HitPointPanel {
             if (inCard) na *= MathUtils.clamp((top - y - kh) / 70f, 0f, 1f) * MathUtils.clamp((y - fadeBottom) / 40f,
                 0f, 1f);
             if (na <= 0f) continue;
-            b.setColor(Theme.GROUND_SIG.r, Theme.GROUND_SIG.g, Theme.GROUND_SIG.b, na * a);
+            b.setColor(Theme.GROUND_NOTE.r, Theme.GROUND_NOTE.g, Theme.GROUND_NOTE.b, na * a);
             note.draw(b, laneX(i) - kw * 0.5f, y, kw, kh);
         }
         b.setPackedColor(old);

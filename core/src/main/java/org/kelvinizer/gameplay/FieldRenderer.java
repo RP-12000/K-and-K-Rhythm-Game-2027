@@ -13,7 +13,7 @@ import org.kelvinizer.ui.Draw;
 import org.kelvinizer.ui.Theme;
 
 /**
- * 判定线与轨道区：两条判定线、整高的轨道分隔线、命中涟漪与潮汐命中时整条线的涌起。Judgement lines and
+ * 判定线与轨道区：两条判定线、整高的轨道分隔线、命中涟漪与浪花命中时整条线的涌起。Judgement lines and
  * the lane field (DESIGN §5.7, §5.10 column glow, §5.15 lanes v2, §19.2 line swell, §21.2
  * separators).
  *
@@ -197,6 +197,23 @@ final class FieldRenderer {
         if (t < SWELL_RISE_SEC) return Anim.POW2_OUT.apply(t / SWELL_RISE_SEC);
         float k = 1f - (t - SWELL_RISE_SEC) / (SWELL_SEC - SWELL_RISE_SEC);
         return k * k;
+    }
+
+    /**
+     * @return half the height of the band around {@code line}'s y that its core covers at {@code now} (world units):
+     *         the 2-unit half stroke, a TIDE swell's lift and thickening, the reach of its running ripples and one
+     *         unit of edge; a veil leaves this band as it is, so the line stays crisp above the water
+     *         (CHART_FORMAT_v4 §6.10)
+     */
+    float strokeHalf(Line line, float now) {
+        int l = line.ordinal();
+        float sw = swellEnvelope(l, now);
+        float reach = 0f;
+        for (int k = 0; k < MAX_RIPPLES; k++) {
+            float t = now - ripT[l][k];
+            if (t >= 0f && t < RIPPLE_SEC) reach += Math.abs(ripA[l][k]) * (1f - t / RIPPLE_SEC);
+        }
+        return 2f + (SWELL_LIFT + 0.5f * SWELL_THICKEN) * sw + reach + 1f;
     }
 
     /** Flashes the line segment under a lane: LOST (#FF5C7A @ .40, 200 ms) or mine (@ .45, 220 ms). */

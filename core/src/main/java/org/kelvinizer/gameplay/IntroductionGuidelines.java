@@ -181,7 +181,7 @@ public final class IntroductionGuidelines {
             "从下往上升：点上半屏", 80.5f, 87.5f, 0.5f, 0.5f, -336f, 600f, 30f, Style.BODY, Anchor.SAFE_RIGHT);
 
         // L5 TIDEs: caption 88.5-94, notes 96-104 (first visible 94)
-        add("TIDES", "潮汐", 88.5f, 93.5f, 0.5f, 0.5f, 960f, 711f, 40f, Style.HEADING, Anchor.WORLD);
+        add("TIDES", "浪花", 88.5f, 93.5f, 0.5f, 0.5f, 960f, 711f, 40f, Style.HEADING, Anchor.WORLD);
         add("TAP ANYWHERE IN ITS HALF OF THE SCREEN",
             "在它那半屏的任意位置点", 88.5f, 93.5f, 0.5f, 0.5f, 960f, 600f, 30f, Style.BODY, Anchor.WORLD);
 
@@ -195,7 +195,7 @@ public final class IntroductionGuidelines {
 
         // L7 TIDE STREAMs: caption 120-126.5 (right-half plate while the sky STREAMs in lanes -4 / -2 are held), notes
         // 128.25-150
-        add("TIDE STREAMS", "潮汐水流", TIDE_ZONE_START, 126f, 0.5f, 0.5f, 1440f, 740f, 40f, Style.HEADING,
+        add("TIDE STREAMS", "潮汐", TIDE_ZONE_START, 126f, 0.5f, 0.5f, 1440f, 740f, 40f, Style.HEADING,
             Anchor.WORLD);
         add("KEEP ANY FINGER IN ITS HALF\n— SWAPPING IS FINE",
             "这半屏一直有手指按着就行，可以换手指", 120f, 126f, 0.5f, 0.5f, 1440f, 600f, 30f, Style.BODY,
@@ -214,8 +214,8 @@ public final class IntroductionGuidelines {
         // L8 MINEs: caption 176.5-190 (right-edge plate over lanes +3 / +4, free 174-190), mines 185-189 between the
         // DROPs 184-190; the demo mine sits left of the heading, in lane +3, until 183
         add("MINES", "水雷", MINE_DEMO_START, 189.5f, 0.5f, 0.5f, -175f, 822f, 40f, Style.HEADING, Anchor.SAFE_RIGHT);
-        add("DON'T TOUCH:\nTHEY BREAK\nYOUR COMBO,\nNOT YOUR SCORE",
-            "别碰：\n碰到会断连击，\n但不扣分", 176.5f, 189.5f, 0.5f, 0.5f, -230f, 578f, 30f, Style.BODY,
+        add("DON'T TAP:\nTHEY BREAK\nYOUR COMBO\nAND COST SCORE",
+            "别点：\n点到会断连击，\n还会扣分", 176.5f, 189.5f, 0.5f, 0.5f, -230f, 578f, 30f, Style.BODY,
             Anchor.SAFE_RIGHT);
 
         // L8b LANE MINEs: caption 190-200 (left-edge plate over lanes -4 / -3), lane mines ground -2 192-196 and sky +2
@@ -230,9 +230,9 @@ public final class IntroductionGuidelines {
         // TIDEs hover 300 above the line and DROPs in lane +1 land on them, then sky TIDEs 300 under the sky line with
         // DROPs in lane -1 (Kelvin 2026-10-16)
         add("A TIDE CAN BE THE LINE",
-            "潮汐也能当判定线", 200.5f, 213.5f, 0.5f, 0.5f, 376f, 996f, 40f, Style.HEADING, Anchor.SAFE_LEFT);
+            "浪花也能当判定线", 200.5f, 213.5f, 0.5f, 0.5f, 376f, 996f, 40f, Style.HEADING, Anchor.SAFE_LEFT);
         add("TAP AS NOTES LAND ON IT:\nTHEY JUMP TO THE LINE",
-            "音符碰到潮汐时就点，\n它会瞬移到判定线上", 200.5f, 213.5f, 0.5f, 0.5f, 376f, 867f, 30f, Style.BODY,
+            "音符碰到浪花时就点，\n它会瞬移到判定线上", 200.5f, 213.5f, 0.5f, 0.5f, 376f, 867f, 30f, Style.BODY,
             Anchor.SAFE_LEFT);
 
         // 224-237: dialogue plates, placeholders for new copy (2026-10-21): his over lanes -3..-1 (only the held

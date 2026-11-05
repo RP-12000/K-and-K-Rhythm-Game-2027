@@ -44,13 +44,18 @@ public final class ScorePanel implements TextQueue.Deferred {
         this.k = kit;
     }
 
-    /** Total width of the 11 score cells (9 digits, 2 commas) at {@code cap}. */
+    /** Total width of the score cells (sign, 9 digits, 2 commas) at {@code cap}. */
     public float scoreWidth(ResultModel m, float cap) {
         float w = 0f;
         for (int i = 0; i < ResultModel.SCORE_CELLS; i++) {
-            w += k.fonts.cellWidth(Fonts.Role.NUMBER, cap, m.scoreChars[i]);
+            w += cellWidth(m, i, cap);
         }
         return w;
+    }
+
+    /** Width of score cell {@code i}; the sign cell is a minus wide whichever sign it shows (as Fonts#drawScore). */
+    private float cellWidth(ResultModel m, int i, float cap) {
+        return k.fonts.cellWidth(Fonts.Role.NUMBER, cap, i == 0 ? '-' : m.scoreChars[i]);
     }
 
     /** Left x of the score row (left-aligned over the jacket since round 7). */
@@ -180,7 +185,7 @@ public final class ScorePanel implements TextQueue.Deferred {
         float x = left;
         for (int i = 0; i < ResultModel.SCORE_CELLS; i++) {
             char c = m.scoreChars[i];
-            float w = k.fonts.cellWidth(Fonts.Role.NUMBER, cap, c);
+            float w = cellWidth(m, i, cap);
             int j = m.scoreLockIndex[i];
             float lockT = Choreo.SCORE_T + (j + 1) * Choreo.SCORE_LOCK;
             boolean locked = t >= lockT;
@@ -188,7 +193,7 @@ public final class ScorePanel implements TextQueue.Deferred {
             char shown = c;
             float scale = 1f;
             if (!locked) {
-                if (c != ',') {
+                if (c != ',' && c != '-' && c != '+') {
                     int tick = (int) Math.floor(t * 30f);
                     shown = (char) ('0' + (int) (Anim.hash01(i * 7 + 3, tick) * 9.999f));
                 }
@@ -206,6 +211,8 @@ public final class ScorePanel implements TextQueue.Deferred {
                 }
             }
             if (colored) b.setColor(cell.r, cell.g, cell.b, cell.a * passAlpha);
+            // a plus (the score went above 0) is drawn smaller to fit the minus-wide sign cell
+            if (i == 0 && c == '+') scale *= Math.min(1f, w / k.fonts.cellWidth(Fonts.Role.NUMBER, cap, '+'));
             k.quads.cell(b, font, shown, x, w, base, cap, scale, lo, hi, dx, bands);
             x += w;
         }
@@ -237,7 +244,7 @@ public final class ScorePanel implements TextQueue.Deferred {
                 float cp = Anim.ease(Anim.POW3_OUT, t, Choreo.BEST_T, 0.5f);
                 StringBuilder sb = k.sb;
                 sb.setLength(0);
-                sb.append('+');
+                sb.append('-'); // scores read negative: a new best is deeper
                 // exact: a 100 M-scale diff passes 2^24, where a float count steps by 4 or more
                 Fonts.appendGrouped(sb, Anim.count(0L, m.firstPlay ? 0L : m.bestDiff, cp));
                 boolean showDiff = m.previousBest > 0;

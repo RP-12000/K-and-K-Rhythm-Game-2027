@@ -120,6 +120,14 @@ public final class Field {
         return d * ky;
     }
 
+    /**
+     * @return the uniform scale {@code √(kx·ky)} the note glitch and distortion cut their cells with; veils and
+     *         curtains stretch with {@link #kx()} / {@link #ky()} themselves (2026-11-04)
+     */
+    public static float shapeScale() {
+        return (float) Math.sqrt(kx * ky);
+    }
+
     /** @return half height of a judgement zone in world units: {@code 480·ky}. */
     public static float zoneHalf() {
         return Params.JUDGE_ZONE_HALF * ky;

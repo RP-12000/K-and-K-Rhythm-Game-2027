@@ -316,7 +316,7 @@ public final class ProfileStore {
             Profile p = readWithRecovery(profileFile(e.id), Profile.class);
             if (p == null) {
                 log("Profile " + e.id + " unreadable; recreating it empty");
-                p = newProfile(e.name != null ? e.name : defaultName(), null);
+                p = newProfile(e.name != null ? e.name : defaultName());
                 p.id = e.id;
                 p.createdAt = e.createdAt != 0 ? e.createdAt : p.createdAt;
                 dirtyProfiles.add(p.id);
@@ -351,7 +351,7 @@ public final class ProfileStore {
         }
 
         if (profiles.isEmpty()) {
-            Profile p = newProfile(defaultName(), AvatarSpec.fromSeed(random.nextInt()));
+            Profile p = newProfile(defaultName());
             addProfile(p);
             index.activeProfileId = p.id;
             if (fresh) index.firstRunDone = false;
@@ -717,7 +717,8 @@ public final class ProfileStore {
     // ------------------------------------------------------------------ profile management
 
     /**
-     * Normalises a diver name: control characters removed, trimmed, cut to 16 code points.
+     * Normalises a diver name: control characters removed, trimmed, cut to 16 code points and to
+     * {@link NameWidth#MAX_UNITS} (15 Latin or 10 CJK characters, Kelvin 2026-10-30 20:20).
      *
      * @return the clean name, or null when it is empty
      */
@@ -739,6 +740,7 @@ public final class ProfileStore {
         if (s.codePointCount(0, s.length()) > MAX_NAME_CODEPOINTS) {
             s = s.substring(0, s.offsetByCodePoints(0, MAX_NAME_CODEPOINTS)).trim();
         }
+        s = NameWidth.cut(s, NameWidth.MAX_UNITS).trim();
         return s.isEmpty() ? null : s;
     }
 
@@ -747,23 +749,16 @@ public final class ProfileStore {
         return String.format(Locale.ROOT, "DIVER-%04X", random.nextInt(0x10000));
     }
 
-    /** Creates a profile with a random avatar; see {@link #create(String, AvatarSpec)}. */
-    public Profile create(String name) {
-        return create(name, null);
-    }
-
     /**
-     * Creates and saves a new profile (it does not become active; call {@link #switchTo}).
+     * Creates and saves a new profile with the default avatar (it does not become active; call {@link #switchTo}).
      *
-     * @param name   raw name (sanitised; an invalid name becomes the default name)
-     * @param avatar avatar, or null for a random one
+     * @param name raw name (sanitised; an invalid name becomes the default name)
      * @return the profile, or null when {@link #MAX_PROFILES} is reached
      */
-    public Profile create(String name, AvatarSpec avatar) {
+    public Profile create(String name) {
         if (!canCreate()) return null;
         String clean = sanitizeName(name);
-        Profile p = newProfile(clean != null ? clean : defaultName(),
-            avatar != null ? avatar.copy() : AvatarSpec.fromSeed(random.nextInt()));
+        Profile p = newProfile(clean != null ? clean : defaultName());
         addProfile(p);
         dirtyProfiles.add(p.id);
         indexDirty = true;
@@ -795,8 +790,8 @@ public final class ProfileStore {
      * Takes a diver back to a new player's progress (Settings → RESET RECORDS; Kelvin 2026-10-18 20:16:
      * 「把所有记录重置，包括贝壳和所有进度」): chart records, depth and its history, the game log, statistics,
      * play count, shells, bought singles, read stories, revealed secrets, the tutorial (seen, and its
-     * first-time shells), chapter mode and the sigil options that need depth. The name, the rest of the
-     * sigil, settings, calibration, the map position and the reminder flags stay. Bumps
+     * first-time shells), chapter mode, pearls and won avatars (back to the default one). The name, settings,
+     * calibration, the map position and the reminder flags stay. Bumps
      * {@link #revision()} and saves.
      *
      * @return false when the id is unknown
@@ -827,29 +822,10 @@ public final class ProfileStore {
         p.tutorialSeen = false;
         p.tutorialExpGranted = false;
         p.mainChapterMode = false;
-        if (p.avatar != null) {
-            AvatarSpec a = p.avatar.copy();
-            a.relock(0);
-            p.avatar = a;
-        }
-        dirtyProfiles.add(id);
-        anyDirty = true;
-        revision++;
-        save();
-        return true;
-    }
-
-    /**
-     * Sets a diver's sigil to a copy of {@code spec} (the avatar editor), for the active diver or
-     * any other. Bumps {@link #revision()} and saves.
-     *
-     * @return false when the id is unknown or {@code spec} is null
-     */
-    public boolean setAvatar(String id, AvatarSpec spec) {
-        Profile p = profiles.get(id);
-        if (p == null || spec == null) return false;
-        p.avatar = spec.copy();
-        p.avatar.sanitize();
+        p.pearls = 0L;
+        p.ownedAvatars.clear();
+        p.avatarId = AvatarCatalog.DEFAULT;
+        p.avatar = AvatarCatalog.specOf(p.avatarId);
         dirtyProfiles.add(id);
         anyDirty = true;
         revision++;
@@ -912,13 +888,12 @@ public final class ProfileStore {
         return true;
     }
 
-    private Profile newProfile(String name, AvatarSpec avatar) {
+    private Profile newProfile(String name) {
         Profile p = new Profile();
         p.scoreScale = Profile.SCORE_SCALE;
         p.id = newId();
         p.name = name;
         p.createdAt = System.currentTimeMillis();
-        p.avatar = avatar != null ? avatar : AvatarSpec.fromSeed(random.nextInt());
         return p;
     }
 
@@ -1017,13 +992,16 @@ public final class ProfileStore {
             if (rec.plays <= 0) rec.firstPlayedAt = r.timestampMillis();
             rec.plays++;
             rec.lastPlayedAt = r.timestampMillis();
-            rec.bestScore = Math.max(rec.bestScore, r.score());
+            // a score below 0 (mines took more than the run earned; shown positive on the HUD and the result)
+            // is kept as 0 in the records
+            int kept = Math.max(0, r.score());
+            rec.bestScore = Math.max(rec.bestScore, kept);
             if (Grades.isBetterGrade(grade, rec.bestGrade)) rec.bestGrade = grade;
             rec.bestAccuracy = Math.max(rec.bestAccuracy, r.accuracy());
             rec.maxCombo = Math.max(rec.maxCombo, r.maxCombo());
             rec.fullCombo |= r.fullCombo();
             rec.allResonance |= r.allResonance();
-            rec.pushRecent(r.score());
+            rec.pushRecent(kept);
             rec.bestDepth = Depth.chartDepth(r.chartConstant(), rec.bestScore);
 
             p.playCount++;
@@ -1038,7 +1016,7 @@ public final class ProfileStore {
             Profile.RecentPlay log = new Profile.RecentPlay();
             log.songId = r.songId();
             log.difficulty = r.difficulty().name();
-            log.score = r.score();
+            log.score = kept;
             log.grade = grade;
             log.accuracy = r.accuracy();
             log.fullCombo = r.fullCombo();
@@ -1062,7 +1040,6 @@ public final class ProfileStore {
         p.stats.totalPlayMs += Math.max(0, r.playTimeMs());
         p.shells += shells.total();
         b.depth(depthBefore, p.depth).shells(shells, shellsBefore, p.shells);
-        Depth.unlocksBetween(Depth.meters(depthBefore), Depth.meters(p.depth), b.unlockList());
         dirtyProfiles.add(p.id);
         anyDirty = true;
         revision++;

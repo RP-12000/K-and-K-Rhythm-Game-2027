@@ -4,7 +4,7 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.Batch;
 import com.badlogic.gdx.utils.Align;
 import org.kelvinizer.Main;
-import org.kelvinizer.profile.Depth;
+import org.kelvinizer.profile.NameWidth;
 import org.kelvinizer.profile.Profile;
 import org.kelvinizer.profile.ProfileStore;
 import org.kelvinizer.ui.Draw;
@@ -24,8 +24,8 @@ import org.kelvinizer.ui.Ui;
  * 点名字直接改名（14:55）：手机上只弹出键盘（上面一行系统输入条），桌面上名字原地变成输入框；不再打开改名对话框。
  *
  * <p>The diver block of the Profile screen (DESIGN §8.2, §23.8). WIDE: a 560-wide column with the
- * avatar 300 (tap → avatar editor), the name UI_BOLD 36 with a pencil (tap → rename), the shell and
- * count (NUMBER 26, gold, centred; no {@code SHELLS} label since 14:47) and the depth (NUMBER 56);
+ * avatar 300 (the default avatar since Kelvin 2026-10-30, no editor), the name UI_BOLD 36 with a pencil (tap → rename),
+ * the shell and count (NUMBER 26, gold, centred; no {@code SHELLS} label since 14:47) and the depth (NUMBER 56);
  * under the card, two bars down to the bottom: {@code PLAYS} and {@code PLAY TIME} (label left,
  * NUMBER 36 right; moved from STATS, Kelvin 14:47). TALL (4:3): a header block with a 240 avatar
  * beside the text and the two bars at its right. Numbers follow the live, counting
@@ -39,8 +39,6 @@ public final class ProfileHeader {
     private final Draw draw;
     private final Fonts fonts;
     private final AvatarView avatar;
-    /** Avatar hot-spot (opens the editor). */
-    public final Tappable avatarTap;
     /** Name hot-spot (starts {@link #beginRename}). */
     public final Tappable nameTap;
     /** In-place rename: keyboard only on a phone, an inline field over the name on desktop. */
@@ -67,10 +65,10 @@ public final class ProfileHeader {
         this.draw = game.draw();
         this.fonts = game.fonts();
         avatar = new AvatarView(game);
-        avatarTap = widgets.add(new Tappable(draw));
         nameTap = widgets.add(new Tappable(draw));
         nameField = widgets.add(new TextField(draw, fonts, Lang.of("TAP TO NAME YOUR PLAYER", "点这里给玩家起名")));
-        nameField.setMode(TextField.Mode.KEYBOARD).setMaxLength(ProfileStore.MAX_NAME_CODEPOINTS);
+        nameField.setMode(TextField.Mode.KEYBOARD).setMaxLength(ProfileStore.MAX_NAME_CODEPOINTS)
+            .setWidthLimit(NameWidth.MAX_UNITS);
         nameField.setTextStyle(Fonts.Role.UI_BOLD, 30f);
         nameField.setVisible(false);
     }
@@ -98,7 +96,6 @@ public final class ProfileHeader {
         name = p.name != null ? p.name : "";
         if (flip) avatar.flipTo(p.avatar, name);
         else avatar.set(p.avatar, name);
-        avatar.setOrbit(Depth.orbitRingUnlocked(p.depthMeters()));
     }
 
     /** Lays out the WIDE column: left edge {@code x}, top {@code topY}, down to {@code bottomY}. */
@@ -152,7 +149,6 @@ public final class ProfileHeader {
     }
 
     private void place() {
-        avatarTap.setBounds(avatarX - avatarSize * 0.5f, avatarY - avatarSize * 0.5f, avatarSize, avatarSize);
         float ny = nameY();
         if (tall) {
             nameTap.setBounds(textX(), ny - 30f, Math.min(560f, colW * 0.5f), 60f);
@@ -209,13 +205,8 @@ public final class ProfileHeader {
         buildStrings();
         float a = alpha * enter;
         Panel.card(draw, panelX, panelY, panelW, panelH, 0.85f * a);
-        float s = avatarTap.visualScale();
         draw.glowDot(avatarX, avatarY, avatarSize * 1.4f, Theme.GROUND_SIG, 0.08f * a);
-        avatar.draw(b, avatarX + avatarTap.shakeX(), avatarY, avatarSize * s, a);
-        if (avatarTap.hoverAmount() > 0f) {
-            Icons.draw(draw.shapes(), Icons.Icon.PENCIL, avatarX + avatarSize * 0.36f, avatarY - avatarSize * 0.36f,
-                34f, Theme.INK1, avatarTap.hoverAmount() * a);
-        }
+        avatar.draw(b, avatarX, avatarY, avatarSize, a);
         if (tall) drawTall(b, a);
         else drawWide(b, a);
         drawBars(b, a);

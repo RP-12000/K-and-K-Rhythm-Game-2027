@@ -4,7 +4,6 @@ import org.kelvinizer.Main;
 import org.kelvinizer.library.Difficulty;
 import org.kelvinizer.profile.Profile;
 import org.kelvinizer.profile.ProfileStore;
-import org.kelvinizer.screens.shell.AvatarEditorSheet;
 import org.kelvinizer.screens.shell.CreateDiverSheet;
 import org.kelvinizer.screens.shell.DiverStats;
 import org.kelvinizer.screens.shell.DiversTab;
@@ -30,7 +29,7 @@ import org.kelvinizer.ui.Ui;
  * <p>Profiles and local accounts (DESIGN §8).
  *
  * <p><b>Layout.</b> 16:9 / 20:9 / 16:10: columns anchored to SL + 72 and SR − 72; the left
- * column is the {@link ProfileHeader} (avatar → editor, name → rename, level and EXP, depth and R,
+ * column is the {@link ProfileHeader} (avatar, name → rename, level and EXP, depth and R,
  * rank emblem, next tier); the right column holds the tabs {@code STATS · DST 10 · RECENT · PLAYER}
  * (UI_BOLD 22) over a clipped, scrolling content area. 4:3: a header block on top, the tabs and
  * content below. Backdrop at the diver's depth (shafts × 0.6, {@code Blue.png} α .15) with the
@@ -56,7 +55,6 @@ public class ProfileScreen extends ShellScreen {
     private final ProfileTab[] tabViews = new ProfileTab[4];
     private final ThumbCache thumbs = new ThumbCache();
     private final DiverStats from = new DiverStats(), to = new DiverStats(), live = new DiverStats();
-    private final AvatarEditorSheet editor;
     private int tab = TAB_STATS;
     private int revision = Integer.MIN_VALUE;
     private String activeId;
@@ -66,15 +64,8 @@ public class ProfileScreen extends ShellScreen {
     public ProfileScreen(final Main game) {
         super(game, Lang.of("PROFILE", "账号与统计"), "Blue.png", 0.15f, 0.6f, false);
         header = new ProfileHeader(game, widgets);
-        editor = new AvatarEditorSheet(game, this);
         CreateDiverSheet create = new CreateDiverSheet(game, this);
         ImportDialog importDialog = new ImportDialog(game, this);
-        header.avatarTap.setOnTap(new Runnable() {
-            @Override
-            public void run() {
-                openModal(editor);
-            }
-        });
         header.nameTap.setOnTap(new Runnable() {
             @Override
             public void run() {

@@ -19,7 +19,7 @@ public final class Params {
      * Build version shown on Welcome and in Settings → ABOUT. Keep it equal to
      * {@code projectVersion} in gradle.properties and {@code versionName} in android/build.gradle.
      */
-    public static final String VERSION = "0.1.0-beta.1";
+    public static final String VERSION = "0.1.0-beta.6";
 
     /** Width of the reference frame of the playfield and the charts. */
     public static final float REF_W = 1920f;
@@ -37,17 +37,23 @@ public final class Params {
     /** PERFECT window half width (1000/30 ≈ 33.33 ms): a RESONANCE inside it adds 1 bonus point. */
     public static final float PERFECT_MS = Judgement.PERFECT_MS;
     /**
-     * Mine touch window half width: the RESONANCE window, 1000/15 ≈ 66.67 ms (Kelvin 2026-10-13
-     * 21:55: 「普通水雷生效范围为+-66ms」; was 100 ms from 2026-10-12). A MINE is dangerous over
-     * [T − 66.67, T + 66.67].
+     * Mine touch window half width: the ECHO window, 2000/15 ≈ 133.33 ms (Kelvin 2026-10-31: 「现在一个水雷的判定区间改为
+     * +-133ms」; was 66.67 ms from 2026-10-13, 100 ms from 2026-10-12). A press touches a MINE over [T − 133.33,
+     * T + 133.33], less the RESONANCE windows of the taps and STREAM heads in its lane (GameEngine class doc).
      */
-    public static final float MINE_WINDOW_MS = TIER1_MS;
+    public static final float MINE_WINDOW_MS = TIER2_MS;
     /**
      * How long before its judgement a LANE MINE starts blocking: 0 ms (Kelvin 2026-10-13 21:55:
-     * 「轨道水雷只在碰到判定线后才生效」; was {@link #MINE_WINDOW_MS}). A LANE MINE blocks over
+     * 「轨道水雷只在碰到判定线后才生效」; was the mine window, then 100 ms). A LANE MINE blocks over
      * [T, end).
      */
     public static final float LANE_MINE_LEAD_MS = 0f;
+    /**
+     * RESONANCE guard: 150 ms (Kelvin 2026-10-30 「打出共鸣以后保护区间是150ms，这个区间内同一轨的红键失效」). A
+     * RESONANCE on a tap or STREAM head that a LANE MINE gives way to keeps every LANE MINE in its lane and line
+     * asleep from the hit until 150 ms after it. (MINEs need no guard since 2026-10-31: only a press touches them.)
+     */
+    public static final float RESONANCE_GUARD_MS = 150f;
     /** Score weight of a tier-1 hit. */
     public static final float WEIGHT_TIER1 = Judgement.WEIGHT_TIER1;
     /** Score and accuracy weight of a tier-2 hit (0.55). */

@@ -60,6 +60,12 @@ import com.badlogic.gdx.utils.Disposable;
  *       {@link #SETTLE_GROSS_MS} re-anchors).</li>
  *   <li>The audio position is only trusted while {@code music.isPlaying()}: without an audio
  *       device, or after the stream ended, time keeps running on nanoTime.</li>
+ *   <li>With the platform's own output ({@link #setMusicOutput}, Android 8.0+) the song is decoded by the game
+ *       and mixed into the hit sound stream ({@link MixerMusic}): its position is the sample being heard, a play()
+ *       is heard {@link MusicOutput#startDelayMs()} later (the start lead), and pause, resume and seek are exact,
+ *       so there is no start latency to measure, no settling to wait out and no seekable copy (Kelvin 2026-10-26
+ *       20:43: the music came back at a different place after every pause). The count-in runs as before. Pauses,
+ *       count-ins and the error a second after each resume are logged (tag {@code KKSync}).</li>
  * </ul>
  * User offsets are applied by the caller: {@code judgeMs = timeAtNanos(event) − audioOffsetMs}.
  *
@@ -101,6 +107,13 @@ public final class SongClock implements Disposable {
     private TimeSource time = SYSTEM_TIME;
     private Music music;
     private boolean ownsMusic;
+    /** The platform's own song output, or null (libGDX music). */
+    private MusicOutput musicOutput;
+    /** The music comes from {@link #musicOutput}: exact positions, heard {@link #ownLeadMs} after play(). */
+    private boolean ownOutput;
+    private float ownLeadMs;
+    /** When to log how far the music and the clock are apart after a resume (0 = not due). */
+    private long checkNanos;
     private float durationMs;
     /**
      * The decoded stream starts this much later than the song (MP3 on desktop, see {@link Mp3Info}): audio ms =
@@ -159,6 +172,19 @@ public final class SongClock implements Disposable {
     public SongClock() {
     }
 
+    /**
+     * Plays songs through the platform's own output when it can take the file (set once at start; null = libGDX
+     * music only). Takes effect at the next {@link #load}.
+     */
+    public void setMusicOutput(MusicOutput out) {
+        musicOutput = out;
+    }
+
+    /** @return true when the loaded music plays on the platform's own output */
+    public boolean ownOutput() {
+        return ownOutput;
+    }
+
     /** Replaces the time source (tests only). Pass null to restore {@link System#nanoTime()}. */
     public void setTimeSource(TimeSource source) {
         time = source != null ? source : SYSTEM_TIME;
@@ -188,13 +214,29 @@ public final class SongClock implements Disposable {
     public boolean load(FileHandle file, float knownDurationMs) {
         disposeMusic();
         Music m = null;
-        if (file != null) {
+        boolean own = false;
+        if (file != null && musicOutput != null) {
+            try {
+                m = musicOutput.open(file);
+            } catch (RuntimeException e) {
+                if (Gdx.app != null) Gdx.app.error("SongClock", "own output: " + e.getMessage());
+            }
+            own = m != null;
+        }
+        if (file != null && m == null) {
             // Android seeks an MP3 by its table of contents, far off the place it reports (Mp3Info#seekableCopy)
             FileHandle play = android() ? Mp3Info.seekableCopy(file) : file;
             m = newMusic(play);
             if (m == null && play != file) m = newMusic(file);
         }
         attach(m, knownDurationMs, true);
+        if (own) {
+            ownOutput = true;
+            ownLeadMs = Math.max(0f, musicOutput.startDelayMs());
+            preroll = 2; // its start delay is known: nothing to measure in the lead-in
+            log("song on the game's own output: " + file.name());
+            return true;
+        }
         // MP3 on desktop starts late (Info frame, encoder and decoder delay): play it that much earlier
         if (m != null) audioDelayMs = Mp3Info.startDelayMs(file);
         if (m != null && audioDelayMs > 0f) primeStream();
@@ -219,6 +261,7 @@ public final class SongClock implements Disposable {
         if (m != music) disposeMusic();
         music = m;
         ownsMusic = takeOwnership;
+        ownOutput = false;
         this.durationMs = Math.max(0f, durationMs);
         audioDelayMs = 0f;
         streamUsed = false;
@@ -260,7 +303,7 @@ public final class SongClock implements Disposable {
      *         when no start was measured since the music loaded
      */
     public float measuredStartLatencyMs() {
-        return measuredStartMs;
+        return ownOutput ? Float.NaN : measuredStartMs; // the own output's start delay is known, not measured
     }
 
     /**
@@ -319,9 +362,12 @@ public final class SongClock implements Disposable {
         if (durationMs > 0f && target >= durationMs) return true;
         music.setPosition((float) (target / 1000.0));
         music.play();
+        log(String.format(java.util.Locale.ROOT, "count-in %.0f ms: frozen at %.1f, music from %.1f", ms,
+            countInEndMs, target));
         if (!music.isPlaying()) return true;
-        // the positions of its first second are not followed (only a gross error), as at a song start
-        settleEndNanos = time.nanoTime() + (long) (SETTLE_MS * 1e6);
+        // the positions of its first second are not followed (only a gross error), as at a song start; the own
+        // output's are exact from the first sample
+        settleEndNanos = time.nanoTime() + (ownOutput ? 0L : (long) (SETTLE_MS * 1e6));
         lastAudioMs = audioMs();
         return true;
     }
@@ -381,9 +427,16 @@ public final class SongClock implements Disposable {
             // the count-in is due: time runs on from its own, which follows the music (short of the frozen time,
             // nowMs() holds that until it gets there); whatever error is left is caught up gently. The music
             // sounds at full volume at once (Kelvin 2026-10-21 15:09)
+            double c = countInMs();
             countIn = false;
             resumeSlew = true;
             if (music != null && preroll != 1) music.setVolume(volume);
+            if (music != null && music.isPlaying()) {
+                double a = audioMs();
+                log(String.format(java.util.Locale.ROOT, "count end: clock %.1f, music %.1f (%+.1f ms)", c, a,
+                    a - c));
+                checkNanos = time.nanoTime() + (long) (SETTLE_MS * 1e6);
+            }
             return;
         }
         if (running) return;
@@ -405,6 +458,7 @@ public final class SongClock implements Disposable {
             resumeNanos = anchorNanos;
             resumeAudioMs = lastAudioMs;
             resumeSlew = true;
+            checkNanos = anchorNanos + (long) (SETTLE_MS * 1e6);
         }
     }
 
@@ -432,9 +486,14 @@ public final class SongClock implements Disposable {
             measuringStart = false;
             music.pause();
             if (preroll != 1) music.setVolume(volume);
+            log(String.format(java.util.Locale.ROOT, "pause in the count-in: back to %.1f", anchorSongMs));
             return;
         }
         if (!running) return;
+        checkNanos = 0L;
+        if (music != null && musicStarted && music.isPlaying()) {
+            log(String.format(java.util.Locale.ROOT, "pause at %.1f, music %.1f", nowMs(), audioMs()));
+        }
         anchorSongMs = nowMs();
         anchorNanos = time.nanoTime();
         running = false;
@@ -527,6 +586,11 @@ public final class SongClock implements Disposable {
         // keep running on nanoTime alone so the chart can still reach its end.
         if (music == null || !music.isPlaying()) return;
         double audioMs = audioMs();
+        if (checkNanos != 0L && now >= checkNanos) {
+            checkNanos = 0L;
+            log(String.format(java.util.Locale.ROOT, "1 s after the resume: music %+.1f ms from the clock",
+                audioMs - t));
+        }
         if (audioMs == lastAudioMs) return;
         lastAudioMs = audioMs;
         if (measuringStart && (now - playNanos) / 1e6 >= SETTLE_MS) {
@@ -575,13 +639,14 @@ public final class SongClock implements Disposable {
         lastAudioMs = audioMs();
         playAudioMs = lastAudioMs;
         playNanos = time.nanoTime();
-        measuringStart = true;
-        settleEndNanos = lead() > 0f ? playNanos + (long) (SETTLE_MS * 1e6) : playNanos;
+        measuringStart = !ownOutput;
+        settleEndNanos = lead() > 0f && !ownOutput ? playNanos + (long) (SETTLE_MS * 1e6) : playNanos;
     }
 
     /** The start lead in use: the stored latency, else this stream's pre-roll measurement, else 0. */
     private float lead() {
         if (music == null) return 0f;
+        if (ownOutput) return ownLeadMs;
         if (startLeadMs > 0f) return startLeadMs;
         return Float.isNaN(prerollLeadMs) ? 0f : prerollLeadMs;
     }
@@ -622,6 +687,11 @@ public final class SongClock implements Disposable {
         } catch (RuntimeException e) {
             if (Gdx.app != null) Gdx.app.error("SongClock", "pre-roll: " + e.getMessage());
         }
+    }
+
+    /** Logs a timing event on the device (Android Logcat, tag {@code KKSync}); not called per frame. */
+    private static void log(String msg) {
+        if (android()) Gdx.app.log("KKSync", msg);
     }
 
     /** The music position on the song timeline (ms): the reported position minus the decoder's start delay. */
@@ -754,6 +824,7 @@ public final class SongClock implements Disposable {
         }
         music = null;
         ownsMusic = false;
+        ownOutput = false;
         preroll = 0;
         countIn = false;
     }

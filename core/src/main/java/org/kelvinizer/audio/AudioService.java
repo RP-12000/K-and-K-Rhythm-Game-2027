@@ -5,11 +5,15 @@ import com.badlogic.gdx.audio.Music;
 import com.badlogic.gdx.audio.Sound;
 import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.utils.Disposable;
+import com.badlogic.gdx.utils.TimeUtils;
 import org.kelvinizer.library.SongMeta;
 import org.kelvinizer.play.Judgement;
 import org.kelvinizer.profile.DeviceSettings;
 import org.kelvinizer.profile.ProfileStore;
 import org.kelvinizer.profile.Settings;
+
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 
 /**
  * 菜单这边的声音：菜单背景音乐、地图上的歌曲试听、结算音乐、可选的打击音效，以及校准时播放的节拍声。
@@ -53,7 +57,7 @@ public final class AudioService implements Disposable {
     public static final float RESUME_FADE = 0.3f;
 
     private static final String[] AUDIO_EXT = {"ogg", "mp3", "wav"};
-    private static final String[] SOUND_EXT = {"ogg", "wav"};
+    private static final String[] SOUND_EXT = {"wav", "ogg"};
     private static final String TAG = "AudioService";
 
     private final ProfileStore profiles;
@@ -79,6 +83,13 @@ public final class AudioService implements Disposable {
     private Sound hitEcho;
     private Sound holdEnd;
     private Sound mine;
+    /** The platform's own hit sound output (Android 8.0+), or null: hit sounds then go through {@link Sound}. */
+    private HitOutput hitOut;
+    private MusicOutput musicOut;
+    private int hitId = -1;
+    private int hitEchoId = -1;
+    private int holdEndId = -1;
+    private int mineId = -1;
 
     private boolean appPaused;
 
@@ -95,13 +106,13 @@ public final class AudioService implements Disposable {
     /** @return the device music volume 0..1. */
     public float musicVolume() {
         DeviceSettings d = profiles != null ? profiles.device() : null;
-        return d != null ? clamp01(d.musicVolume) : 0.8f;
+        return d != null ? clamp01(d.musicVolume) : 0.5f;
     }
 
     /** @return the device hit-sound volume 0..1. */
     public float sfxVolume() {
         DeviceSettings d = profiles != null ? profiles.device() : null;
-        return d != null ? clamp01(d.sfxVolume) : 0.8f;
+        return d != null ? clamp01(d.sfxVolume) : 0.5f;
     }
 
     private Settings diver() {
@@ -298,7 +309,7 @@ public final class AudioService implements Disposable {
     // ------------------------------------------------------------------ HIT (reserved)
 
     /**
-     * @return the hit sound loaded from {@code Sounds/hit.(ogg|wav)}, or null when not
+     * @return the hit sound loaded from {@code Sounds/hit.(wav|ogg)}, or null when not
      *         installed (not shipped now). Loaded and primed once, together with the other
      *         reserved slots ({@code hit_echo}, {@code hold_end}, {@code mine}).
      */
@@ -309,6 +320,12 @@ public final class AudioService implements Disposable {
             hitEcho = loadSound("hit_echo");
             holdEnd = loadSound("hold_end");
             mine = loadSound("mine");
+            if (hitOut != null) {
+                hitId = loadPcm("hit");
+                hitEchoId = loadPcm("hit_echo");
+                holdEndId = loadPcm("hold_end");
+                mineId = loadPcm("mine");
+            }
             primeHit();
         }
         return hit;
@@ -319,7 +336,7 @@ public final class AudioService implements Disposable {
         return hitSound() != null;
     }
 
-    /** Plays the hit sounds once at volume 0 to avoid the first-play delay. */
+    /** Plays the hit sounds once at volume 0 to avoid the first-play delay ({@link Sound} only). */
     public void primeHit() {
         if (hit != null) hit.play(0f);
         if (hitEcho != null) hitEcho.play(0f);
@@ -328,22 +345,65 @@ public final class AudioService implements Disposable {
     }
 
     /**
-     * Plays the hit sound for a judgement (call inside the input handler). No-op when no
+     * Gives hit sounds the platform's own output (Android 8.0+, set once at start): each is then heard at the
+     * instant asked for instead of whenever {@link Sound} gets round to it (Kelvin 2026-10-26 16:03).
+     */
+    public void setHitOutput(HitOutput out) {
+        hitOut = out;
+    }
+
+    /**
+     * Gives songs in gameplay the platform's own output (Android 8.0+, set once at start): the song is mixed into
+     * the hit sound stream and its position is exact (Kelvin 2026-10-26 20:43). Menu music, previews and
+     * calibration keep libGDX music.
+     */
+    public void setMusicOutput(MusicOutput out) {
+        musicOut = out;
+    }
+
+    /** @return the platform's own song output, or null */
+    public MusicOutput musicOutput() {
+        return musicOut;
+    }
+
+    /** @return true when hit sounds can be {@link #playHit(Judgement, long) timed} (the platform output has one) */
+    public boolean timesHits() {
+        hitSound();
+        return hitId >= 0;
+    }
+
+    /**
+     * Plays the hit sound for a judgement now (call inside the input handler). No-op when no
      * sound is installed, for LOST, or at volume 0. Pass null for an "any zone tap" hit.
      */
     public void playHit(Judgement j) {
+        playHit(j, TimeUtils.nanoTime());
+    }
+
+    /**
+     * Plays the hit sound for a judgement so it is heard at {@code atNanos} ({@code System.nanoTime()} base;
+     * a past instant plays at once). Only the platform output keeps the time; {@link Sound} plays at once.
+     */
+    public void playHit(Judgement j, long atNanos) {
         if (j == Judgement.LOST) return;
         Sound s = hitSound();
-        if (j == Judgement.ECHO && hitEcho != null) s = hitEcho;
-        float v = sfxVolume();
-        if (s != null && v > 0f) s.play(v);
+        int id = hitId;
+        if (j == Judgement.ECHO && hitEcho != null) {
+            s = hitEcho;
+            id = hitEchoId;
+        }
+        play(s, id, atNanos);
+    }
+
+    /** Drops timed hit sounds that have not started (the run paused). */
+    public void cancelTimedHits() {
+        if (hitOut != null) hitOut.cancelPending();
     }
 
     /** Plays the optional hold-end sound. */
     public void playHoldEnd() {
         hitSound();
-        float v = sfxVolume();
-        if (holdEnd != null && v > 0f) holdEnd.play(v);
+        play(holdEnd, holdEndId, TimeUtils.nanoTime());
     }
 
     /**
@@ -352,8 +412,51 @@ public final class AudioService implements Disposable {
      */
     public void playMine() {
         hitSound();
+        play(mine, mineId, TimeUtils.nanoTime());
+    }
+
+    private void play(Sound s, int id, long atNanos) {
         float v = sfxVolume();
-        if (mine != null && v > 0f) mine.play(v);
+        if (!(v > 0f)) return;
+        if (id >= 0) hitOut.play(id, v, atNanos);
+        else if (s != null) s.play(v);
+    }
+
+    /**
+     * Loads {@code Sounds/<base>.wav} (16-bit PCM) into the platform output.
+     *
+     * @return its id, or −1 (no such file, another format, or the output refused it)
+     */
+    private int loadPcm(String base) {
+        FileHandle f = Gdx.files.internal("Sounds").child(base + ".wav");
+        if (!f.exists()) return -1;
+        try {
+            ByteBuffer b = ByteBuffer.wrap(f.readBytes()).order(ByteOrder.LITTLE_ENDIAN);
+            if (b.getInt(0) != 0x46464952 || b.getInt(8) != 0x45564157) return -1; // "RIFF" … "WAVE"
+            int channels = 0, rate = 0, bits = 0, format = 0;
+            int pos = 12;
+            while (pos + 8 <= b.limit()) {
+                int id = b.getInt(pos), size = b.getInt(pos + 4), body = pos + 8;
+                if (id == 0x20746d66) { // "fmt "
+                    format = b.getShort(body);
+                    channels = b.getShort(body + 2);
+                    rate = b.getInt(body + 4);
+                    bits = b.getShort(body + 14);
+                } else if (id == 0x61746164) { // "data"
+                    if (format != 1 || bits != 16) return -1;
+                    int n = Math.min(size, b.limit() - body) / 2;
+                    short[] pcm = new short[n];
+                    b.position(body);
+                    b.asShortBuffer().get(pcm);
+                    return hitOut.load(pcm, channels, rate);
+                }
+                if (size < 0) break;
+                pos = body + size + (size & 1);
+            }
+        } catch (RuntimeException e) {
+            Gdx.app.error(TAG, "Cannot read " + f.path(), e);
+        }
+        return -1;
     }
 
     private Sound loadSound(String base) {

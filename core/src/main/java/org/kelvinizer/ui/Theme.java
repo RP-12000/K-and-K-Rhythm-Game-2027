@@ -58,8 +58,10 @@ public final class Theme {
     public static final Color ABYSS_BLACK = rgb(0x02040F, 1f);
     /** Map label shadow ({@code #02040F @ .6}). */
     public static final Color SHADOW = rgb(0x02040F, 0.6f);
-    /** Ground signal: ground line, ground notes, K1, lower curtain panel. */
+    /** Ground signal: ground line, K1, lower curtain panel. */
     public static final Color GROUND_SIG = rgb(0x4FD8FF, 1f);
+    /** Ground notes (DROP / STREAM / their trails); back to the ground signal's light blue since 2026-10-27 05:56. */
+    public static final Color GROUND_NOTE = rgb(0x4FD8FF, 1f);
     /** Sky signal: sky line, sky notes, K2, upper curtain panel. */
     public static final Color SKY_SIG = rgb(0xF2F7FF, 1f);
     /** Curtain seam line. */
@@ -113,7 +115,7 @@ public final class Theme {
     public static final Color MINE = rgb(0xFF3344, 1f);
     /** Mine body fill, drawn at α .92 (DESIGN §5.15 {@code mineCore}). */
     public static final Color MINE_CORE = rgb(0x2A0610, 1f);
-    /** Universal (TIDE 潮汐) notes, their zone hint and hit sweep (DESIGN §5.15 {@code tide}). */
+    /** Universal (TIDE 浪花) notes, their zone hint and hit sweep (DESIGN §5.15 {@code tide}). */
     public static final Color TIDE = rgb(0x8CFFD9, 1f);
     /**
      * Sky (upper-line) TIDE colour {@code skyTide} = 0.7·{@link #SKY_SIG} + 0.3·{@link #TIDE}
@@ -121,12 +123,6 @@ public final class Theme {
      * effects (rise/recede, line swell, stream light bands). Ground TIDE keeps {@link #TIDE}.
      */
     public static final Color SKY_TIDE = blend(SKY_SIG, TIDE, 0.3f);
-    /** Ground T4 TIDE wave fill, drawn at α .85 (Kelvin 2026-10-12 04:36, 「天键地键tide的改为T4」). */
-    public static final Color TIDE_WAVE = rgb(0x1FBF98, 1f);
-    /** Ground T4 TIDE wave crest line. */
-    public static final Color TIDE_WAVE_CREST = rgb(0xC8FFF0, 1f);
-    /** Ground T4 TIDE leading-edge base line. */
-    public static final Color TIDE_WAVE_BASE = rgb(0xEAFFF8, 1f);
     /**
      * The LOST word drawn at a touched MINE or LANE MINE contact (Kelvin 2026-10-12: a touched mine
      * shows a red judgement). Redder than the {@link #LOST} pink, so a missed note and a touched
@@ -163,8 +159,6 @@ public final class Theme {
     public static final Color MINE_PEARL_LUSTRE = rgb(0xFFB8AC, 1f);
     /** Missed notes and broken holds desaturate toward it (DESIGN §5.8; same value as {@link #INK3}). */
     public static final Color MISSED = rgb(0x6C7899, 1f);
-    /** Head colour of RESONANCE hit sparks, which fade to the line colour (DESIGN §5.9). */
-    public static final Color SPARK_HEAD = rgb(0xF2FFFF, 1f);
 
     // ------------------------------------------------------------------ difficulties (§1.2)
     private static final Color[] DIFF_FILL = {
@@ -178,8 +172,13 @@ public final class Theme {
     private static final float[] DIFF_BORDER_W = {0f, 0f, 2f, 3f};
     /** ABYSS chip: the extra 2 px cyan border copy, offset (+2, 0). */
     public static final Color ABYSS_BORDER_COPY = rgb(0x00E5FF, 1f);
-    /** Difficulty display names, indexed by ordinal. */
-    public static final String[] DIFFICULTY_NAMES = {"SURFACE", "SHALLOW", "DEEP", "ABYSS"};
+    /**
+     * Difficulty display names, indexed by ordinal (Kelvin 2026-10-27 04:03: the first two read SHALLOW and MEDIUM;
+     * the save keys and chart files keep SURFACE / SHALLOW, {@link #DIFFICULTY_KEYS}).
+     */
+    public static final String[] DIFFICULTY_NAMES = {"SHALLOW", "MEDIUM", "DEEP", "ABYSS"};
+    /** {@code library.Difficulty} constant names, indexed by ordinal (save keys; never shown). */
+    private static final String[] DIFFICULTY_KEYS = {"SURFACE", "SHALLOW", "DEEP", "ABYSS"};
     /**
      * Chart constant superscript ("16⁺", {@code library.ConstantLabel}): its size, the lift of its
      * centre above the number's centre and its gap after the number, as fractions of the number's cap height.
@@ -252,10 +251,10 @@ public final class Theme {
         return DIFF_BORDER_W[clampDiff(ordinal)];
     }
 
-    /** Difficulty ordinal from its upper-case name; -1 when unknown. */
+    /** Difficulty ordinal from its key ({@code library.Difficulty} name, any case); -1 when unknown. */
     public static int difficultyIndex(String name) {
-        for (int i = 0; i < DIFFICULTY_NAMES.length; i++) {
-            if (DIFFICULTY_NAMES[i].equalsIgnoreCase(name)) return i;
+        for (int i = 0; i < DIFFICULTY_KEYS.length; i++) {
+            if (DIFFICULTY_KEYS[i].equalsIgnoreCase(name)) return i;
         }
         return -1;
     }
@@ -272,8 +271,8 @@ public final class Theme {
     public static int difficultyIndex(Enum<?> difficulty) {
         if (difficulty == null) return 0;
         String n = difficulty.name();
-        for (int i = 0; i < DIFFICULTY_NAMES.length; i++) {
-            if (DIFFICULTY_NAMES[i].equals(n)) return i;
+        for (int i = 0; i < DIFFICULTY_KEYS.length; i++) {
+            if (DIFFICULTY_KEYS[i].equals(n)) return i;
         }
         return clampDiff(difficulty.ordinal());
     }
@@ -311,7 +310,7 @@ public final class Theme {
         return DIFF_BORDER_W[difficultyIndex(difficulty)];
     }
 
-    /** Display name (SURFACE … ABYSS) of a {@code library.Difficulty}. */
+    /** Display name (SHALLOW, MEDIUM, DEEP, ABYSS) of a {@code library.Difficulty}. */
     public static String difficultyName(Enum<?> difficulty) {
         return DIFFICULTY_NAMES[difficultyIndex(difficulty)];
     }

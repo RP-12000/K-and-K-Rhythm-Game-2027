@@ -33,6 +33,9 @@ public interface KkServices {
     /** Avatar ("sonar sigil") cache. */
     Avatar avatars();
 
+    /** Depth crest art (the 16 tier hexagons). */
+    DepthCrest crests();
+
     /** Ref-counted image-hook textures (DESIGN §2.8). */
     ArtCache art();
 }

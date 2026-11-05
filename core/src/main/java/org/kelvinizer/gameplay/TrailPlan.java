@@ -3,7 +3,6 @@ package org.kelvinizer.gameplay;
 import org.kelvinizer.elements.Events;
 import org.kelvinizer.elements.Note;
 import org.kelvinizer.elements.NoteTrail;
-import org.kelvinizer.elements.NoteType;
 
 import java.util.List;
 
@@ -98,7 +97,7 @@ public final class TrailPlan {
     public static boolean noCopies(Note n, NoteTrail t, int outcome) {
         if (t.isNone() || !(t.alpha() > 0f)) return true;
         if (t.mode() != NoteTrail.Mode.LEVEL) return false;
-        return outcome == HIT || n.type() == NoteType.UNIVERSAL;
+        return outcome == HIT || !n.type().inLane();
     }
 
     /** @return the earliest moment a copy may have: {@code max(visibleFrom, from)}. */

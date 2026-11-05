@@ -53,7 +53,7 @@ public final class StatsTab extends ProfileTab {
     /** Ticks under the trace, with their labels (96M is the bonus line). */
     private static final int[] TICK_SCORE = {60_000_000, 70_000_000, 80_000_000, 90_000_000, Depth.BONUS_FROM,
         100_000_000};
-    private static final String[] TICK_TEXT = {"60M", "70M", "80M", "90M", "96M", "100M"};
+    private static final String[] TICK_TEXT = {"-60M", "-70M", "-80M", "-90M", "-96M", "-100M"}; // scores read negative
 
     private DiverStats stats;
     /** Lit difficulties (by ordinal): the map's selected one each time the profile opens ({@link #lightOnly}). */

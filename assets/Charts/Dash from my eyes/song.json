@@ -1,8 +1,12 @@
 {
-  "jacket16x9" : {
-    "x" : 0.0,
-    "y" : 0.0,
-    "w" : 1.0,
-    "h" : 0.9
-  }
+  "title": "Dash from my eyes",
+  "artist": "silentsnow",
+  "illustrator": "-xzxzxz-",
+  "bpm": 156,
+  "offsetMs": 60,
+  "jacket16x9": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.9},
+  "previewStartMs": 50829,
+  "previewStartBeat": 132,
+  "previewEndBeat": 196,
+  "previewEndMs": 75445
 }

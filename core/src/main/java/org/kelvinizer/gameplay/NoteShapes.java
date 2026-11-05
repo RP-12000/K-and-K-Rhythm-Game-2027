@@ -3,9 +3,10 @@ package org.kelvinizer.gameplay;
 import com.badlogic.gdx.math.MathUtils;
 import org.kelvinizer.Params;
 import org.kelvinizer.elements.Note;
+import org.kelvinizer.elements.NoteOrbit;
 
 /**
- * 音符外形的纯几何：天地长条和潮汐水流重叠时的挖空、TIDE 的 T4 外形（天键珍珠串、地键滚浪）、同步珍珠和轨道水雷柱。
+ * 音符外形的纯几何：天地长条和潮汐重叠时的挖空、TIDE 的 T4 外形（天键珍珠串、地键滚浪）、同步珍珠和轨道水雷柱。
  * 渲染器按这里的数字画，测试直接检查这些数字。
  *
  * <p>Pure note-shape geometry: no GL and no allocation (every output array belongs to the
@@ -24,7 +25,7 @@ import org.kelvinizer.elements.Note;
  *       them as parameters, so the tests cover both.</li>
  *   <li><b>T4 TIDE drop</b> (Kelvin 2026-10-12 04:36, 「天键地键tide的改为T4」; numbers from the T4 style
  *       of the mock-ups): the sky TIDE is a
- *       string of pearls, the ground TIDE a rolling wave whose crest moves with song time.
+ *       string of pearls, the ground TIDE a rolling wave whose crest slides by the note's wave speed.
  *       "Behind" is the side the note comes from; {@code u} is the note size setting.</li>
  *   <li><b>Sync pearls</b> (Kelvin 2026-10-12 12:33, 12:39 「同一时刻都带」, 12:42 gold): every pending note
  *       that shares its beat with another note ({@link Note#sharesBeat()}) carries pearls: three gold
@@ -118,6 +119,116 @@ public final class NoteShapes {
         float vx = px * Field.kx();
         float vy = py * Field.ky() + h * 0.5f;
         return (up ? -d : d) - MathUtils.sinDeg(rot) * vx - MathUtils.cosDeg(rot) * vy;
+    }
+
+    // ================================================================== orbit centre (Kelvin 2026-10-29)
+    /**
+     * x part of {@link #anchorY}.
+     *
+     * @return world x of the leading-edge centre
+     */
+    public static float anchorX(Note n, float beat, float x, float y, float pos, float refH, float h, float rot) {
+        NoteOrbit o = n.orbit();
+        if (o == null) return x + pivotShiftX(pos, refH, h, rot, n.isUpper(), n.pivotX(), n.pivotY());
+        if (!o.polar()) return orbitAnchor(true, n, beat, x, y, pos, refH, h, rot);
+        if (!n.inOrbitSpan(beat)) return x + pivotShiftX(pos, refH, h, rot, n.isUpper(), 0f, 0f);
+        return polarAnchorX(n, beat, h, rot);
+    }
+
+    /**
+     * Where a lane note's or mine's leading-edge centre is drawn. Unturned it is at {@code (x, y)} plus
+     * {@link #centreShiftY}; it turns {@code rot} about its pivot ({@link #pivotShiftY}, 自转) or, when it has an
+     * {@link Note#orbit() orbit} (公转, Kelvin 2026-10-29 19:04), about that absolute centre: the head's centre turns
+     * about the orbit's starting centre in the reference frame and is stretched back like any position, then moves
+     * with the centre's moves, and the body turns {@code rot} as before. So notes that share a centre turn as one shape
+     * (unstretched on a 16 : 10 screen, stretched with the field on others), and at the angle 0 with the centre
+     * unmoved a note is where it is without an orbit. An orbit with a radius places the note by {@link #polarAnchorY}
+     * while it is in effect ({@link Note#inOrbitSpan}) and otherwise leaves it in its lane, turning about its head's
+     * centre (Kelvin 2026-10-29 20:55: 「自转定死在按键中心」).
+     *
+     * @param beat the beat the note's pose is read at (its look beat)
+     * @param x    world x of the note's lane centre plus its sideways shift
+     * @param y    world {@code lineY ± pos}
+     * @param pos  the note's world distance from its line ({@link Field#dist} of its chart distance)
+     * @param rot  drawn angle in degrees (the authored angle, +180 on the sky line)
+     * @return world y of the leading-edge centre
+     */
+    public static float anchorY(Note n, float beat, float x, float y, float pos, float refH, float h, float rot) {
+        NoteOrbit o = n.orbit();
+        if (o == null) return y + pivotShiftY(pos, refH, h, rot, n.isUpper(), n.pivotX(), n.pivotY());
+        if (!o.polar()) return orbitAnchor(false, n, beat, x, y, pos, refH, h, rot);
+        if (!n.inOrbitSpan(beat)) return y + pivotShiftY(pos, refH, h, rot, n.isUpper(), 0f, 0f);
+        return polarAnchorY(n, beat, y, pos, refH, h, rot, o.conflict() == NoteOrbit.CONFLICT_MOVE);
+    }
+
+    /**
+     * x part of {@link #polarAnchorY}: the orbit always gives the x.
+     *
+     * @return world x of the leading-edge centre
+     */
+    public static float polarAnchorX(Note n, float beat, float h, float rot) {
+        NoteOrbit o = n.orbit();
+        float k = o.rigid() ? rigidScale() : Field.kx();
+        return Field.x(o.xAt(beat)) + o.radiusAt(beat) * MathUtils.cosDeg(o.angleAt(beat)) * k
+            + MathUtils.sinDeg(rot) * h * 0.5f;
+    }
+
+    /**
+     * @return the scale of a {@link NoteOrbit#rigid() rigid} orbit's radius, across and up alike: the field's
+     *         distance scale {@link Field#ky()}, so the orbit stays round and keeps the proportions it was authored
+     *         with, taken where the orbit is instead of a screen-wide {@code min(kx, ky)} (Kelvin 2026-11-04). A
+     *         16 : 10 or wider screen draws exactly what it did before (there {@code ky} is the smaller one)
+     */
+    public static float rigidScale() {
+        return Field.ky();
+    }
+
+    /**
+     * Where an orbit with a radius and angle (Kelvin 2026-10-29 20:55 and 21:13, {@link NoteOrbit#polar()}) puts a
+     * note's leading-edge centre while it is in effect ({@link Note#inOrbitSpan}): the head's centre is the radius from
+     * the orbit's centre in the direction of the orbit's angle (0° right, counter-clockwise; a negative radius reaches
+     * the other way), stretched like any position, and the body turns {@code rot}, its own rotation, about the head's
+     * centre, so a key that keeps the angle 0 stays parallel to its line while it goes round.
+     * With {@code moveWins} the head's height is where the note's movement puts it instead (its x stays the orbit's):
+     * the chart editor compares the two for its 「物件坐标冲突」 check.
+     *
+     * @param y        world {@code lineY ± pos}
+     * @param pos      the note's world distance from its line ({@link Field#dist} of its chart distance)
+     * @param rot      drawn angle in degrees (the authored angle, +180 on the sky line)
+     * @param moveWins the movement gives the height ({@link NoteOrbit#CONFLICT_MOVE})
+     * @return world y of the leading-edge centre
+     */
+    public static float polarAnchorY(Note n, float beat, float y, float pos, float refH, float h, float rot,
+                                     boolean moveWins) {
+        NoteOrbit o = n.orbit();
+        boolean up = n.isUpper();
+        float headY;
+        if (moveWins) {
+            float d = (refH * 0.5f * BODY_REF_K * Field.ky() - h * 0.5f) * centreEase(pos) + h * 0.5f;
+            headY = up ? y - d : y + d;
+        } else {
+            float k = o.rigid() ? rigidScale() : Field.ky();
+            headY = Field.y(o.yAt(beat)) + o.radiusAt(beat) * MathUtils.sinDeg(o.angleAt(beat)) * k;
+        }
+        return headY - MathUtils.cosDeg(rot) * h * 0.5f;
+    }
+
+    private static float orbitAnchor(boolean wantX, Note n, float beat, float x, float y, float pos, float refH,
+                                     float h, float rot) {
+        NoteOrbit o = n.orbit();
+        boolean up = n.isUpper();
+        float kx = Field.kx();
+        float ky = Field.ky();
+        // the unturned head's centre from the starting centre, in reference units
+        float d = (refH * 0.5f * BODY_REF_K * ky - h * 0.5f) * centreEase(pos) + h * 0.5f;
+        float vx = (x - Field.x(o.x())) / kx;
+        float vy = ((up ? y - d : y + d) - Field.y(o.y())) / ky;
+        float a = rot - (up ? 180f : 0f);
+        float cos = MathUtils.cosDeg(a);
+        float sin = MathUtils.sinDeg(a);
+        // then back from the turned head's centre to its leading edge
+        if (wantX) return Field.x(o.xAt(beat)) + (cos * vx - sin * vy) * kx + MathUtils.sinDeg(rot) * h * 0.5f;
+        return Field.y(o.yAt(beat)) + (sin * vx + cos * vy) * ky - MathUtils.cosDeg(rot) * h * 0.5f;
     }
 
     /**
@@ -222,20 +333,23 @@ public final class NoteShapes {
     public static final float WAVE_BASE = 20f;
     /** Ground: crest amplitude (×u). */
     public static final float WAVE_AMP = 9f;
-    /** Ground: crest phase speed, radians per song second. */
-    public static final float WAVE_SPEED = 6f;
-    /** Ground: wave fill opacity. */
-    public static final float WAVE_FILL_A = 0.85f;
-    /** Ground: crest line and leading-edge base line thickness (×u). */
-    public static final float WAVE_LINE = 3f;
+    /**
+     * Ground: wave line thickness (×u). One line, no fill and no base line (Kelvin 2026-11-01 15:46
+     * 「把地键的浪花改为一条单个的波浪就行了，简洁一点」, 20:20 「稍微都可以粗一点」).
+     */
+    public static final float WAVE_LINE = 6.5f;
+    /** Ground: wave line thickness on a multi-press (×u), where the line turns white. */
+    public static final float WAVE_LINE_MULTI = 9f;
     /** Ground: vertical strips per lane width (DESIGN brief: 8–12). */
     public static final int WAVE_STRIPS_PER_LANE = 8;
-    /** Ground: glow height under the wave (×u). */
-    public static final float WAVE_GLOW_H = 64f;
-    /** Ground: glow opacity under the wave. */
-    public static final float WAVE_GLOW_A = 0.30f;
-    /** Farthest reach of a T4 shape behind its leading edge (×u): the wave crest plus half its line. */
-    public static final float T4_REACH = WAVE_BASE + WAVE_AMP + WAVE_LINE * 0.5f;
+    /** Ground: reach of the soft glow on each side of the wave line, in line widths (a gaussian fall-off). */
+    public static final float WAVE_GLOW = 2.7f;
+    /** Ground: glow opacity at the wave line's edges. */
+    public static final float WAVE_GLOW_A = 0.6f;
+    /** Ground: glow opacity at the edges of a multi-press wave line. */
+    public static final float WAVE_GLOW_MULTI_A = 0.7f;
+    /** Farthest reach of a T4 shape behind its leading edge (×u): the wave crest plus half its thickest line. */
+    public static final float T4_REACH = WAVE_BASE + WAVE_AMP + WAVE_LINE_MULTI * 0.5f;
 
     // ================================================================== sync pearls
     /** Diameter of each gold sync pearl on a DROP or STREAM head at note size 1 (half the 40-unit head). */
@@ -258,8 +372,8 @@ public final class NoteShapes {
     /** Diameter of the red MINE pearl as a share of the gold head pearl's. */
     public static final float MINE_PEARL_SHARE = 0.7f;
     /**
-     * Radius of the even (large) pearls of a row (ground TIDE wave) at note size 1: 14 units across, the largest
-     * that stays within the outer edges of the wave's base and crest lines where the band is thinnest.
+     * Radius of the even (large) pearls of a row (ground TIDE wave) at note size 1: 14 units across, strung on the
+     * wave line.
      */
     public static final float ROW_PEARL_BIG = 7f;
     /** Radius of the odd (small) pearls of a row at note size 1 (9 units across: the sky thread's 22 : 14 ratio). */
@@ -530,16 +644,17 @@ public final class NoteShapes {
      * @param meanLaneWidth {@link org.kelvinizer.elements.LaneLayout#patternWidth}: window width /
      *                      lane count, or on tiled lanes a default lane times the global lane scale
      *                      capped at 1
-     * @param seconds       song (visual) seconds: the wave freezes with the song on pause
-     * @return the crest phase {@code π·x/(meanLaneWidth/2) + 6·seconds}
+     * @param waves         how far the wave has slid to the right, in waves (the note's wave speed × beat,
+     *                      Kelvin 2026-10-28 00:33; 0 keeps it still)
+     * @return the crest phase {@code π·x/(meanLaneWidth/2) − 2π·waves}: one wave a mean lane width
      */
-    public static float wavePhase(float x, float meanLaneWidth, float seconds) {
-        return MathUtils.PI * x / (meanLaneWidth * 0.5f) + WAVE_SPEED * seconds;
+    public static float wavePhase(float x, float meanLaneWidth, float waves) {
+        return MathUtils.PI * x / (meanLaneWidth * 0.5f) - MathUtils.PI2 * waves;
     }
 
     /** @return the crest's distance behind the leading edge: {@code 20u + 9u·sin(phase)}. */
-    public static float waveCrest(float x, float meanLaneWidth, float seconds, float u) {
-        return (WAVE_BASE + WAVE_AMP * (float) Math.sin(wavePhase(x, meanLaneWidth, seconds))) * u;
+    public static float waveCrest(float x, float meanLaneWidth, float waves, float u) {
+        return (WAVE_BASE + WAVE_AMP * (float) Math.sin(wavePhase(x, meanLaneWidth, waves))) * u;
     }
 
     /** @return number of vertical strips of a ground T4 TIDE over {@code lanes} lanes. */
@@ -547,12 +662,9 @@ public final class NoteShapes {
         return Math.max(1, lanes) * WAVE_STRIPS_PER_LANE;
     }
 
-    /**
-     * @return quads of one T4 TIDE (normal pass): sky = thread + pearls; ground = base line + a
-     *         fill and a crest quad per strip
-     */
+    /** @return quads of one T4 TIDE (normal pass): sky = thread + pearls; ground = a line quad per strip */
     public static int t4Quads(int lanes, boolean sky) {
-        return sky ? 1 + beadCount(lanes) : 1 + 2 * waveStrips(lanes);
+        return sky ? 1 + beadCount(lanes) : waveStrips(lanes);
     }
 
     // ================================================================== sync pearls
@@ -610,13 +722,12 @@ public final class NoteShapes {
     }
 
     /**
-     * @return distance behind the leading edge of a ground TIDE wave's pearl at {@code x}: halfway
-     *         between the base line and the crest ({@code waveCrest / 2}, 5.5u to 14.5u), so the
-     *         row rides the crest's motion. Where the band is thinnest (crest near 11u) the pearls
-     *         overlap the base and crest lines a little, never past their outer edges.
+     * @return distance behind the leading edge of a ground TIDE wave's pearl at {@code x}: on the wave line
+     *         ({@link #waveCrest}, since 2026-11-01 when the band under it went), so the row rides the line
+     *         like the sky pearls their thread
      */
-    public static float wavePearlDistance(float x, float meanLaneWidth, float seconds, float u) {
-        return 0.5f * waveCrest(x, meanLaneWidth, seconds, u);
+    public static float wavePearlDistance(float x, float meanLaneWidth, float waves, float u) {
+        return waveCrest(x, meanLaneWidth, waves, u);
     }
 
     /**

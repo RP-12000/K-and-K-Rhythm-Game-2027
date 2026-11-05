@@ -7,40 +7,39 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.utils.Align;
 import org.kelvinizer.library.Difficulty;
 import org.kelvinizer.profile.Depth;
+import org.kelvinizer.profile.NameWidth;
 import org.kelvinizer.profile.Profile;
 import org.kelvinizer.ui.Avatar;
 import org.kelvinizer.ui.Button;
+import org.kelvinizer.ui.DepthCrest;
 import org.kelvinizer.ui.Draw;
 import org.kelvinizer.ui.Fonts;
 import org.kelvinizer.ui.Icons;
 import org.kelvinizer.ui.Lang;
+import org.kelvinizer.ui.Panel;
 import org.kelvinizer.ui.Pressable;
 import org.kelvinizer.ui.Theme;
 import org.kelvinizer.ui.Ui;
 
 /**
- * 洞穴地图四周的 HUD：左上玩家块（白圈圆头像、名字、两头尖的深度标签，2026-10-20 14:10 起不画框，顶边和贝壳胶囊对齐），
- * 右上设置按钮和它左边的贝壳胶囊（只显示贝壳数，点了不跳转），左下难度切换；“所有曲目”层右下有 SORT 按钮（打开排序和筛选面板）；
- * 主界面右下有“所有曲目”按钮，主线章节全部解锁后设置左边多一个故事模式 / 章节模式切换按钮；双指静止按住时两指中间出现上浮进度圈。
+ * 洞穴地图四周的 HUD：左上角深度徽章（头像坐在按深度分 16 档的六边形上，六边形里写深度；点头像展开 / 收起名字条，状态会保存，
+ * 每次开游戏第一次进地图时名字收着就自动探出 2 秒；六边形下面左边贝壳、右边珍珠，超过 9,999 显示 9,999+ 加一圈高光，点一下弹出
+ * 具体数目），右上设置和它左边的玩家按钮（进个人页），左下难度切换；“所有曲目”层右下有 SORT 按钮（打开排序和筛选面板）；主界面右下
+ * 有“所有曲目”按钮，主线章节全部解锁后玩家按钮左边多一个故事模式 / 章节模式切换按钮；双指静止按住时两指中间出现上浮进度圈。
  *
- * <p>The HUD around a cave level (DESIGN §16, preview v17): the player block (top left: a round avatar, the name and a
- * pointed depth tag) and the shell capsule (beside the depth tag since 2026-10-20 15:36), which split the profile
- * badge like the result screen's corners (Kelvin 2026-10-19 06:04 「就是地图界面上也这样分开到两个角落」, 06:28), Settings (top right),
- * lens control (bottom left),
- * on ALL SONGS the SORT button (bottom right), which
- * opens the {@link SortPanel} (sort and filter), and the rise ring between two fingers held still
- * (Kelvin 2026-10-19 18:46, which dropped the overview chip of 2026-10-17 19:39).
- * Kelvin 2026-10-16 trimmed it (no rise plate, recentre, match pill or DEMO chip) and then reshaped
- * the hub: no lens and no rise hint there, an ALL SONGS button at the bottom right (its only
- * entrance), and once MAIN's chapters are all open a story / chapter mode toggle left of
- * Settings. Kelvin 2026-10-20 03:26 enlarged the frame and the capsule to the green boxes of their
- * picture (「现在特别小的名字和低的depth就在角落缩成一团了」), and since 03:38 the capsule only shows the
- * count (「贝壳就不要再包括通往存档的跳转了」). At 14:10 the frame gave way to mock-up plan 5 (Kelvin 13:22
- * 「个人profile的那个稍微高了一点，以及观感不佳试着重新设计一下」): no panel, the block 100 high from the top of Settings.
- * At 15:10 the capsule shrank and the depth grew (「我感觉贝壳有点太大了，喧宾夺主了，我觉得深度才应该有那么大」); at 15:36
- * the name got plan 6's band and the capsule moved beside the depth tag (「把贝壳移动到depth旁边」).
- * Everything is laid out against the uncovered map area every frame, so it follows the card spring. No allocation per
- * frame.
+ * <p>The HUD around a cave level (DESIGN §16). Top left, the depth crest (Kelvin 2026-10-30 16:37–20:58; the player
+ * block of 2026-10-20 before it): the avatar sits on a hexagon holding the depth, in one of 16 looks by depth
+ * ({@link DepthCrest}). A tap on the avatar slides the name out on a dark band or takes it back (「点一下头像弹出来一个和之前
+ * 一样的那种用户名显示，再点一下收起来」), remembered in {@link Profile#mapNameShown}; the first map of a launch shows a hidden
+ * name for {@link #PEEK} seconds. Under the hexagon sit the shells (left) and the pearls (right, a count only for now);
+ * a count over 9,999 reads {@code 9,999+} inside a highlight ring, and a tap on it shows the whole count under it
+ * (「贝壳数超过9999就在贝壳外面加一圈高光，点一下贝壳就会弹出一个说已经攒了多少的具体值」). Top right, Settings and left of it
+ * the player button, which opens the profile (the avatar did until 20:54 「设置旁边放一个玩家的按钮，从那里进去」). Bottom
+ * left the lens control; on ALL SONGS the SORT button (bottom right), which opens the {@link SortPanel} (sort and
+ * filter); the rise ring between two fingers held still (Kelvin 2026-10-19 18:46). The hub (Kelvin 2026-10-16) has no
+ * lens and no rise hint, an ALL SONGS button at the bottom right (its only entrance), and once MAIN's chapters are all
+ * open a story / chapter mode toggle left of the player button. Everything is laid out against the uncovered map area
+ * every frame, so it follows the card spring. No allocation per frame.
  */
 final class MapHud {
     /** Actions the HUD triggers (implemented by the screen). */
@@ -59,21 +58,26 @@ final class MapHud {
 
         /** Hub: the story / chapter mode toggle. */
         void toggleMainMode();
+
+        /** A tap on the avatar showed or hid the name: remember it. */
+        void nameShown(boolean shown);
     }
 
     private final Draw draw;
     private final Fonts fonts;
     private final Avatar avatars;
+    private final DepthCrest crests;
     private final MapCamera cam;
     private final MapRenderer r;
     private final Actions actions;
 
-    /** The player frame (top left; tap → Profile). */
-    final Badge badge;
-    /** The shell capsule (left of Settings or the mode toggle; not a control since 2026-10-20 03:38). */
-    final ShellCapsule shells;
-    final Button settings;
-    /** Hub: the ALL SONGS button (bottom right) and the main-line mode toggle (left of Settings). */
+    /** The depth crest's avatar (top left; tap → the name band). */
+    final Crest crest;
+    /** The shell and pearl capsules under the crest (a tap shows the whole count when it reads 9,999+). */
+    final Capsule shells, pearls;
+    /** Top right: Settings and the player button left of it (tap → Profile). */
+    final Button settings, player;
+    /** Hub: the ALL SONGS button (bottom right) and the main-line mode toggle (left of the player button). */
     final AllSongsButton allSongs;
     final ModeToggle mode;
     final LensSegment[] lens = new LensSegment[4];
@@ -95,77 +99,84 @@ final class MapHud {
     private float mapRight, mapBottom, lensAlpha = 1f, hudAlpha = 1f, sortAlpha = 1f;
     /** HUD scale of this frame ({@link MapUi#k()}). */
     private float k = 1f;
+    /**
+     * The crest this frame: the hexagon's left and bottom, the avatar's centre, the capsules' bottom, how far the
+     * crest's art reaches right and the name band's longest reach.
+     */
+    private float hexL, hexB, avX, avY, capB, crestR, bandMax;
 
     // profile cache ---------------------------------------------------------------------
     private final Avatar.Spec spec = new Avatar.Spec();
     private String name = "";
-    private final StringBuilder shellText = new StringBuilder(16), depthText = new StringBuilder(20);
+    private final StringBuilder depthText = new StringBuilder(20);
+    /** The crest's tier (1–16, {@link Depth#crestTier}). */
+    private int tier = 1;
     private static final Color SHELL_RIB = Theme.mix(Theme.GOLD, Theme.ABYSS_BLACK, 0.55f, new Color());
     private static final String NO_DIVER = "NO PLAYER";
-    /** Longest name before it shrinks (× k). */
-    private static final float NAME_MAX = 560f;
     /**
-     * The player block (× k; Kelvin 2026-10-20 14:10, mock-up plan 5, laid out on 16:10 from the block's
-     * top left at (36, 36)): how far in from the screen's left margin it starts, the avatar disc's radius, its white
-     * ring's radius and width and the avatar drawn in it; the name's left edge, baseline under the top and cap; the
-     * depth tag's left tip, height (its bottom is the block's), tip depth and inner padding and the number's cap, on a
-     * baseline {@link #DEPTH_BASE} under the top (a tracked DEPTH label stood before the number until 17:34). Since
-     * Kelvin 2026-10-20 15:36 (「用最下面一版的深度大小」, after 15:10 「我觉得深度才应该有那么大」) the depth leads: the tag
-     * 62 high with a number cap of 40 (42 and 24 before), the name's cap 24 (31) so the block stays 100 high. Since
-     * Kelvin 2026-10-20 15:46 (「头像圈再放大一点，直径跟名字区域+深度高度加在一起相等」, the depth number 「稍微小一点」)
-     * the white ring's outer edge is the disc's, so the circle is exactly as tall as the name's band and the tag
-     * together (the block's 100; the ring 97 across before), the avatar 60 (58), and the number's cap 36 (40). Since
-     * Kelvin 2026-10-20 16:05 (「把头像圈直径扩大1.5倍我看看」) the circle is 150 across and so is the block; the name and
-     * the tag, a column {@link #COL_H} high, sit centred against it, {@link #COL_Y} under the top, and start 50 further
-     * right; the name's, band's and tag's measures below are from the column's top. Since Kelvin 2026-10-20 16:37
-     * (「玩家名称稍微往上挪一点，现在离depth太近了」) the name's baseline is 21 under the column's top (29), and since 16:39
-     * (「名字左对齐depth六边形左端点」) its first stroke lines up with the tag's left tip: it starts at 165 (168), the glyphs'
-     * own side bearing to the left of the tip at 166. All of it is drawn at {@link #BLOCK_K} since 17:34.
+     * The crest (× k; Kelvin 2026-10-30 20:13–20:34, picture topleft8): its art's left edge {@link #CREST_IN} in from
+     * the screen's left margin and the avatar's top at the top of Settings, the avatar ({@link DepthCrest#AV_R})
+     * centred over the hexagon and overlapping it by {@link DepthCrest#LIFT}; the avatar's white ring (radius and
+     * width) and the avatar drawn in it, 0.72 of the 2026-10-20 block's; the capsules {@link #CAP_DROP} under the
+     * hexagon.
      */
-    private static final float BLOCK_IN = 12f, AV_R = 75f, RING_R = 73.5f, RING_W = 3f, AV_ART = 90f, NAME_X = 165f,
-        NAME_BASE = 21f, NAME_CAP = 24f, TAG_X = 166f, TAG_H = 62f, TAG_TIP = 22f, TAG_PAD = 14f, DEPTH_CAP = 36f,
-        DEPTH_BASE = 87f, COL_Y = 25f, COL_H = 100f;
-    /**
-     * The player block and the shell capsule beside it are drawn at this much of their measures here (Kelvin
-     * 2026-10-20 17:34 「depth那个字不要了，然后整体等比例缩小到原来的75%」): the avatar, the name and its band, the depth
-     * tag, the capsule, the gaps and shadows between them. The block's top left corner ({@link #BLOCK_IN} in, at the
-     * top of Settings), the name's room up to Settings and ALL SONGS' gap under the block stay as they were.
-     */
-    private static final float BLOCK_K = 0.75f;
-    /** {@link #k} times {@link #BLOCK_K}: the scale of the player block and the shell capsule this frame. */
-    private float bk = BLOCK_K;
-    /**
-     * Plan 5's colours: the avatar disc, the shadows (under the disc and the tag, under the name), the tag's fill and
-     * edge.
-     */
+    private static final float CREST_IN = 12f, RING_R = 52.9f, RING_W = 2.2f, AV_ART = 64.8f, CAP_DROP = 6f;
+    /** The avatar disc and the shadows (under the disc, under the name). */
     private static final Color AV_DISC = Theme.rgb(0x05091C, 1f), SHADE = Theme.rgb(0x000012, 1f),
-        NAME_SHADE = Theme.rgb(0x000014, 1f), TAG_FILL = Theme.rgb(0x080D26, 1f), TAG_EDGE = Theme.rgb(0x38B6FF, 1f);
-    /** The name's soft shadow: four faint copies about 2 under it (× k). */
-    private static final float[] SHADE_DX = {-1.5f, 1.5f, -1f, 1f}, SHADE_DY = {-1.5f, -1.5f, -3f, -3f};
+        NAME_SHADE = Theme.rgb(0x000818, 1f);
+    /** The name's soft shadow: four faint copies about 2 under it and 1 right (× k). */
+    private static final float[] SHADE_DX = {0f, 2f, 0f, 2f}, SHADE_DY = {-1f, -1f, -3f, -3f};
     /**
-     * The name's band (× k; Kelvin 2026-10-20 15:36 「之前的号方案的那种光带加在名字上吧」, the band of mock-up
-     * plans 3 and 6): its top and bottom under the column's top, how far it runs past the name, and its alpha; navy
-     * from the avatar's centre, fading out to the right from 0.6 of the name. Since Kelvin 2026-10-20 16:37 it moves up
-     * 8 with the name (0 to 36 before), and since 16:39 (「那个banner稍微深一点」) its alpha is 0.95 (0.84).
+     * The name band (× k; picture topleft7, Kelvin 2026-10-30 20:30 「那就把名字大小再提升一点？」): {@link #BAND_H} high
+     * and centred on the avatar, from its centre past the name's room ({@link #NAME_ROOM} CJK glyphs, 「最多只能用15个英文
+     * 字符或者10个中文字符的宽度」) by {@link #BAND_TAIL}; solid ({@link #BAND_A}) to {@link #BAND_SOLID} of its length,
+     * then fading out, with faint cyan hairlines along its edges. The name's cap and its gap from the avatar.
      */
-    private static final float BAND_TOP = -8f, BAND_BOTTOM = 28f, BAND_RUN = 140f, BAND_A = 0.95f;
-    private static final Color BAND_CLEAR = Theme.rgb(0x080D26, 0f);
-    /** Gap between the depth tag's right tip and the shell capsule beside it (× k; Kelvin 2026-10-20 15:36). */
-    private static final float SHELL_GAP = 16f;
-    /** Room for the name this frame: from its left edge to 24 short of Settings or the mode toggle. */
-    private float nameRoom;
-    /** Right end of the name's band this frame (24 short of Settings or the mode toggle). */
-    private float bandRight;
+    private static final float BAND_H = 48f, BAND_TAIL = 44f, BAND_A = 215f / 255f, BAND_SOLID = 0.74f,
+        NAME_CAP = 24f, NAME_GAP = 14f;
+    private static final int NAME_ROOM = 10;
+    private static final Color BAND = Theme.rgb(0x080E26, 1f), BAND_CLEAR = Theme.rgb(0x080E26, 0f),
+        HAIR = Theme.rgb(0x78DCFF, 1f), HAIR_CLEAR = Theme.rgb(0x78DCFF, 0f);
+    /** Seconds the band takes to slide out and back, and how long the first map of a launch shows a hidden name. */
+    private static final float BAND_OPEN = 0.24f, BAND_CLOSE = 0.18f, PEEK = 2f;
+    /** The name band's target, its slide (0 in … 1 out) and what is left of the first map's look. */
+    private boolean nameShown;
+    private float nameT, peekLeft;
+    /** The first map of this launch has had its look at the name. */
+    private static boolean peeked;
+    /** Width per unit of cap of {@link #NAME_ROOM} CJK glyphs, and of the name. */
+    private final float nameRoomU;
     /**
-     * The shell capsule's insides (× k; 03:26, about their second green box; smaller since 15:10 and beside the depth
-     * tag since 15:36): padding, icon, gap, count cap, padding.
+     * The capsules' insides (× k; the shell capsule's of 2026-10-20 at its 0.75 of 17:34, the pearl capsule of
+     * picture topleft8 alike): padding, icon, gap, count cap, padding. {@link MapStyle#CAPSULE_H} high.
      */
-    private static final float CAP_PAD_L = 14f, CAP_ICON = 26f, CAP_GAP = 7f, COUNT_CAP = 22f, CAP_PAD_R = 16f;
+    private static final float CAP_PAD_L = 10.5f, CAP_ICON = 19.5f, CAP_GAP = 5.25f, COUNT_CAP = 16.5f,
+        CAP_PAD_R = 12f;
+    /** The pearl capsule (picture topleft8): fill, count, and the pearl's rim, body and light. */
+    private static final Color PEARL_FILL = Theme.rgb(0x3A3260, 225f / 255f), PEARL_TEXT = Theme.rgb(0xEEE8FF, 1f),
+        PEARL_RIM = Theme.rgb(0xFFE2F6, 1f), PEARL_BODY = Theme.rgb(0xC8BEEC, 1f),
+        PEARL_LIGHT = Theme.rgb(0xF4F0FF, 1f);
+    /** A capped count's highlight ring and glow (Kelvin 2026-10-30 20:58): gold for shells, lilac for pearls. */
+    private static final Color SHELL_LINE = Theme.rgb(0xFFF0C8, 1f), SHELL_GLOW = Theme.rgb(0xFFD678, 1f),
+        PEARL_LINE = Theme.rgb(0xF4ECFF, 1f), PEARL_GLOW = Theme.rgb(0xC8B4FF, 1f), PEARL_NUM = Theme.rgb(0xD9CCFF, 1f);
+    /** Gap between the player button and Settings (× k; their centres 102 apart on 16:10). */
+    private static final float PLAYER_GAP = 14f;
     private boolean hasProfile;
     private float time;
     private float sortU;
-    /** Width per unit of cap kept for the depth whatever its value ({@link #depthRoomU()}). */
-    private float depthRoomU;
+
+    // the whole count (a tap on a capped capsule) ---------------------------------------------
+    /** The capsule whose whole count shows, or null; seconds left and its fade (0..1). */
+    private Capsule pop;
+    private float popLeft, popT;
+    /** The count shown and the words around it, their widths at {@link #popCap} and that cap. */
+    private String popPre = "", popPost = "";
+    private float popPreW, popNumW, popPostW, popCap;
+    /**
+     * Seconds the whole count stays (a tap elsewhere closes it sooner); the bubble's padding, height and arrow (× k).
+     */
+    private static final float POP_TIME = 3f, POP_PAD = 18f, POP_H = 44f, POP_ARROW = 9f;
+    private final float[] popArrow = new float[6];
 
     // descent exit and the filter dot ----------------------------------------------------------
     private float exit;
@@ -191,27 +202,48 @@ final class MapHud {
         chapterMode = chapter;
     }
 
-    MapHud(Draw draw, Fonts fonts, Avatar avatars, MapCamera cam, MapRenderer r, Actions actions) {
+    MapHud(Draw draw, Fonts fonts, Avatar avatars, DepthCrest crests, MapCamera cam, MapRenderer r,
+           Actions actions) {
         this.draw = draw;
         this.fonts = fonts;
         this.avatars = avatars;
+        this.crests = crests;
         this.cam = cam;
         this.r = r;
         this.actions = actions;
-        Runnable profile = new Runnable() {
+        crest = new Crest(draw);
+        crest.setOnTap(new Runnable() {
             @Override
             public void run() {
-                actions.openProfile();
+                toggleName();
             }
-        };
-        badge = new Badge(draw);
-        badge.setOnTap(profile);
-        shells = new ShellCapsule(draw);
+        });
+        shells = new Capsule(draw, false);
+        shells.setOnTap(new Runnable() {
+            @Override
+            public void run() {
+                togglePop(shells);
+            }
+        });
+        pearls = new Capsule(draw, true);
+        pearls.setOnTap(new Runnable() {
+            @Override
+            public void run() {
+                togglePop(pearls);
+            }
+        });
         settings = new Button(draw, fonts, Icons.Icon.GEAR);
         settings.setOnTap(new Runnable() {
             @Override
             public void run() {
                 actions.openSettings();
+            }
+        });
+        player = new Button(draw, fonts, Icons.Icon.PERSON);
+        player.setOnTap(new Runnable() {
+            @Override
+            public void run() {
+                actions.openProfile();
             }
         });
         for (int i = 0; i < 4; i++) {
@@ -245,32 +277,35 @@ final class MapHud {
                 actions.toggleMainMode();
             }
         });
-        controls = new Pressable[]{badge, settings, mode, lens[0], lens[1], lens[2], lens[3], sort, allSongs};
+        controls = new Pressable[]{crest, shells, pearls, settings, player, mode, lens[0], lens[1], lens[2], lens[3],
+            sort, allSongs};
         sortU = r.uiWidth(SORT_TEXT, 1f);
-        depthRoomU = depthRoomU();
+        StringBuilder room = new StringBuilder(NAME_ROOM);
+        for (int i = 0; i < NAME_ROOM; i++) room.append('深');
+        nameRoomU = r.boldWidth(room, 1f);
     }
 
     // ------------------------------------------------------------------ state
-    /** Refreshes the frame and the capsule from {@code p} (on profile changes only; may allocate). */
+    /** Refreshes the crest and the capsules from {@code p} (on profile changes only; may allocate). */
     void refresh(Profile p) {
         hasProfile = p != null;
-        if (p == null) return;
-        name = p.name != null ? p.name : "";
+        if (p == null) {
+            closePop();
+            return;
+        }
+        name = NameWidth.clip(p.name != null ? p.name : "");
         char initial = name.isEmpty() ? 'K' : Character.toUpperCase(name.charAt(0));
         spec.set(p.avatar.seed, p.avatar.shape, p.avatar.pattern, p.avatar.palette, p.avatar.glyph, p.avatar.frame,
             initial);
-        shellText.setLength(0);
-        Fonts.appendGrouped(shellText, p.shells);
         int m = p.depthMeters();
+        tier = Depth.crestTier(m);
         depthText.setLength(0);
         Fonts.appendGrouped(depthText, -m).append(" m"); // depths read negative (below the surface)
-        shellU = r.numWidth(shellText, 1f);
-        depthU = r.numWidth(depthText, 1f);
-        nameU = r.boldWidth(name, 1f);
+        nameShown = p.mapNameShown;
+        shells.set(p.shells);
+        pearls.set(p.pearls);
+        if (pop != null && !pop.capped) closePop();
     }
-
-    /** Text widths per unit of cap (shell count, depth, name). */
-    private float shellU, depthU, nameU;
 
     /** Sets the lens shown by the control. */
     void setLens(Difficulty d) {
@@ -301,6 +336,14 @@ final class MapHud {
         sortOpen = open;
     }
 
+    /** A tap on the avatar: the name band out or back, remembered; it ends the first map's look. */
+    private void toggleName() {
+        if (!hasProfile) return;
+        nameShown = !(nameShown || peekLeft > 0f);
+        peekLeft = 0f;
+        actions.nameShown(nameShown);
+    }
+
     // ------------------------------------------------------------------ layout
     /**
      * Lays the HUD out against the uncovered map area (every metric × {@link MapUi#k()}).
@@ -315,7 +358,6 @@ final class MapHud {
         mapRight = right;
         mapBottom = bottom;
         k = MapUi.k();
-        bk = k * BLOCK_K;
         float ex = Interpolation.pow2In.apply(exit);
         float off = 200f * ex;
         hudAlpha = alpha * (1f - ex);
@@ -328,25 +370,36 @@ final class MapHud {
         float cy = st - slot * 0.5f + off;
         float x = right - 24f * k - slot * 0.5f;
         settings.setBounds(x - icon * 0.5f, cy - icon * 0.5f, icon, icon);
-        // the mode toggle (hub, once MAIN's chapters are all open) left of Settings
+        // the player button left of Settings (Kelvin 2026-10-30 20:54), the mode toggle (hub, once MAIN's chapters are
+        // all open) left of it
+        float px = x - icon - PLAYER_GAP * k;
+        player.setBounds(px - icon * 0.5f, cy - icon * 0.5f, icon, icon);
+        player.setVisible(hudAlpha > 0.05f);
         float mw = 252f * k, mh = 64f * k;
-        mode.setBounds(x - slot * 0.5f - gap - mw, cy - mh * 0.5f, mw, mh);
+        mode.setBounds(px - slot * 0.5f - gap - mw, cy - mh * 0.5f, mw, mh);
         mode.setMinHit(mw, Math.max(mh, P));
         mode.setVisible(hub && modeShown && hudAlpha > 0.05f);
-        // the player block from the top of Settings down, BLOCK_IN in from the screen's left margin (24 and EXTRA EDGE
-        // PADDING; a cutout no longer pushes it in, Kelvin 2026-10-20 14:39), the name and its band never reaching
-        // Settings (or the mode toggle); the shell capsule right of the depth tag, centred on it (Kelvin 2026-10-20
-        // 15:36 「把贝壳移动到depth旁边」)
-        float clusterLeft = mode.isVisible() ? mode.x() : settings.x();
-        float fh = MapStyle.FRAME_H * bk, fx = Ui.left() + Ui.MIN_MARGIN + Ui.edgePadding() + BLOCK_IN * k;
-        bandRight = clusterLeft - 24f * k;
-        nameRoom = bandRight - fx - NAME_X * bk;
-        badge.setBounds(fx, cy + icon * 0.5f - fh, blockW(), fh);
-        badge.setVisible(hudAlpha > 0.05f);
-        float ch = MapStyle.CAPSULE_H * bk;
-        shells.setBounds(fx + TAG_X * bk + tagW() + SHELL_GAP * bk, tagBottom() + (TAG_H * bk - ch) * 0.5f, capsuleW(),
-            ch);
+        // the crest from the top of Settings down, its art CREST_IN in from the screen's left margin (24 and EXTRA EDGE
+        // PADDING; a cutout does not push it in, Kelvin 2026-10-20 14:39); the name band never reaching the buttons
+        float fx = Ui.left() + Ui.MIN_MARGIN + Ui.edgePadding() + CREST_IN * k, top = cy + icon * 0.5f;
+        float R = DepthCrest.AV_R * k;
+        hexL = fx + DepthCrest.reachLeft(tier) * k;
+        avX = hexL + DepthCrest.HEX_W * k * 0.5f;
+        avY = top - R;
+        hexB = top - (2f * DepthCrest.AV_R - DepthCrest.LIFT + DepthCrest.HEX_H) * k;
+        crestR = hexL + (DepthCrest.HEX_W + DepthCrest.reachRight(tier)) * k;
+        crest.setBounds(avX - R, avY - R, 2f * R, 2f * R);
+        crest.setVisible(hudAlpha > 0.05f);
+        float clusterLeft = mode.isVisible() ? mode.x() : player.x();
+        bandMax = Math.max(avX, Math.min(avX + bandLength(), clusterLeft - 24f * k));
+        // the shells under the pedestal's left, the pearls under its right (picture topleft8)
+        float ch = MapStyle.CAPSULE_H * k;
+        capB = hexB - CAP_DROP * k - ch;
+        float sw = shells.naturalW(), pw = pearls.naturalW();
+        shells.setBounds(fx, capB, sw, ch);
+        pearls.setBounds(Math.max(crestR - pw, fx + sw + 8f * k), capB, pw, ch);
         shells.setVisible(hasProfile && hudAlpha > 0.05f);
+        pearls.setVisible(hasProfile && hudAlpha > 0.05f);
         // lens control (BL)
         float lx = sl, segW = MapStyle.LENS_SEG_W * k, lensH = MapStyle.LENS_H * k;
         for (int i = 0; i < 4; i++) {
@@ -356,11 +409,11 @@ final class MapHud {
         }
         // SORT (ALL SONGS): the bottom right of the grid's side, flush with its right edge (Kelvin 2026-10-19); above
         // the lens row's top where the row has no room for both
-        float ph = 80f * k, sw = 76f * k + sortU * MapUi.cap(20f, k) + 32f * k;
-        float sx = (grid ? gridRight : right - 24f * k) - sw;
+        float ph = 80f * k, sortW = 76f * k + sortU * MapUi.cap(20f, k) + 32f * k;
+        float sx = (grid ? gridRight : right - 24f * k) - sortW;
         float sy = sx - 24f * k >= lx ? sb : sb + lensH + 16f * k;
-        sort.setBounds(sx, sy - off, sw, ph);
-        sort.setMinHit(sw, Math.max(ph, P));
+        sort.setBounds(sx, sy - off, sortW, ph);
+        sort.setMinHit(sortW, Math.max(ph, P));
         sort.setVisible(sortAlpha > 0.05f);
         // ALL SONGS (hub): the bottom-right corner, its only entrance (Kelvin 2026-10-16)
         float aw = 256f * k, ah = 88f * k;
@@ -372,14 +425,18 @@ final class MapHud {
     /** Adds the HUD's screen rects to the renderer so map labels fade instead of showing through. */
     void occluders(MapRenderer r) {
         if (hudAlpha <= 0.01f) return;
-        float m = 8f * k;
-        r.addOccluder(badge.x() - m, badge.y() - m, badge.width() + 2f * m, badge.height() + 2f * m);
-        if (shells.isVisible()) {
-            r.addOccluder(shells.x() - m, shells.y() - m, shells.width() + 2f * m, shells.height() + 2f * m);
-        }
-        float fl = mode.isVisible() ? mode.x() : settings.x();
+        float m = 8f * k, left = crestLeft(), top = avY + (DepthCrest.AV_R + 12f) * k, bottom = crestBottom();
+        float right = Math.max(crestR, avX + DepthCrest.AV_R * k);
+        if (!hasProfile) right = nameX() + r.uiWidth(NO_DIVER, MapUi.cap(NAME_CAP, k));
+        else if (nameT > 0.01f) right = Math.max(right, bandEnd());
+        r.addOccluder(left - m, bottom - m, right - left + 2f * m, top - bottom + 2f * m);
+        float fl = mode.isVisible() ? mode.x() : player.x();
         r.addOccluder(fl - m, settings.y() - m, settings.x() + settings.width() - fl + 2f * m,
             settings.height() + 2f * m);
+        if (pop != null && popT > 0.01f) {
+            float pw = popW(), pl = popLeft(pw);
+            r.addOccluder(pl - m, popBottom() - m, pw + 2f * m, popTop() - popBottom() + 2f * m);
+        }
         if (lensAlpha > 0.05f) {
             float lx = lens[0].x() - m;
             r.addOccluder(lx, lens[0].y() - m, lens[3].x() + lens[3].width() - lx + m, lens[0].height() + 2f * m);
@@ -395,9 +452,9 @@ final class MapHud {
         return settings.centerY() - Math.max(Ui.touchTarget(), settings.height()) * 0.5f;
     }
 
-    /** Top edge for the shared (global) toast on the map: under the player frame. */
+    /** Top edge for the shared (global) toast on the map: under the crest. */
     float globalToastTop() {
-        return badge.y() - 16f * k;
+        return crestBottom() - 16f * k;
     }
 
     /** Left edge of the card's leader-line dim zone (no gauge: the card edge itself). */
@@ -405,78 +462,94 @@ final class MapHud {
         return mapRight;
     }
 
-    /** Shell capsule width: padding, icon, gap, count, padding; at least {@link MapStyle#CAPSULE_MIN_W}. */
-    private float capsuleW() {
-        return Math.max(MapStyle.CAPSULE_MIN_W * bk, capsuleContentW());
+    /** Left of the crest's art (its wings or the hexagon's tip), where the shell capsule starts too. */
+    private float crestLeft() {
+        return hexL - DepthCrest.reachLeft(tier) * k;
     }
 
-    private float capsuleContentW() {
-        return (CAP_PAD_L + CAP_ICON + CAP_GAP + CAP_PAD_R) * bk + shellU * bcap(COUNT_CAP);
+    /** Bottom of the crest this frame: the capsules', or the avatar's without a profile. */
+    private float crestBottom() {
+        return hasProfile ? capB : avY - DepthCrest.AV_R * k;
     }
 
-    /** Top of Settings at rest, where the player block starts. */
+    /** Top of Settings at rest, where the crest starts. */
     private static float rowTop(float k) {
         float icon = Button.ICON_DIAMETER * k;
         return Ui.safeTop() - Math.max(Ui.touchTarget(), icon) * 0.5f + icon * 0.5f;
     }
 
-    /** Bottom of the depth tag (and of the name and tag column) this frame. */
-    private float tagBottom() {
-        return badge.y() + badge.height() - (COL_Y + COL_H) * bk;
-    }
-
-    /** Bottom of the player block at rest, as {@link #layout} places it; ALL SONGS starts under it. */
+    /** Bottom of the crest and its capsules at rest, as {@link #layout} places them; ALL SONGS starts under it. */
     static float frameBottom(float k) {
-        return rowTop(k) - MapStyle.FRAME_H * k * BLOCK_K;
+        return rowTop(k) - (2f * DepthCrest.AV_R - DepthCrest.LIFT + DepthCrest.HEX_H + CAP_DROP
+            + MapStyle.CAPSULE_H) * k;
     }
 
-    /** A cap in the player block or the capsule: {@code cap} at {@link #BLOCK_K}, never under its legible minimum. */
-    private float bcap(float cap) {
-        return MapUi.cap(cap * BLOCK_K, k);
+    /** Full length of the name band: the avatar's radius, the gap, the name's room and the tail. */
+    private float bandLength() {
+        return (DepthCrest.AV_R + NAME_GAP + BAND_TAIL) * k + nameRoomU * MapUi.cap(NAME_CAP, k);
     }
 
-    /** Depth tag width: tips, paddings and room for a minus sign and five digits (more only for a longer number). */
-    private float tagW() {
-        return (2f * TAG_TIP + 2f * TAG_PAD) * bk + Math.max(depthU, depthRoomU) * bcap(DEPTH_CAP);
+    /** Right end of the name band as it slides this frame. */
+    private float bandEnd() {
+        return avX + (bandMax - avX) * Interpolation.pow2Out.apply(nameT);
     }
 
-    /**
-     * Width per unit of cap of {@code -88,888 m} in the NUMBER font's widest digit: the depth tag keeps room for a
-     * minus sign and five digits and centres a shorter number in it (Kelvin 2026-10-20 17:58
-     * 「预留5位数的空间加一个负号的空间啊，然后预留了空间以后，如果没有填满数字就剧中」).
-     */
-    private float depthRoomU() {
-        char wide = '0';
-        float best = 0f;
-        for (char c = '0'; c <= '9'; c++) {
-            float w = r.numWidth(String.valueOf(c), 1f);
-            if (w > best) {
-                best = w;
-                wide = c;
-            }
+    /** Left edge of the name (and of NO PLAYER). */
+    private float nameX() {
+        return avX + (DepthCrest.AV_R + NAME_GAP) * k;
+    }
+
+    /** A capsule count's cap. */
+    private float countCap() {
+        return MapUi.cap(COUNT_CAP, k);
+    }
+
+    // ------------------------------------------------------------------ the whole count
+    /** Shows {@code c}'s whole count under it, or hides it if it shows (a tap on a capped capsule). */
+    private void togglePop(Capsule c) {
+        if (pop == c) {
+            closePop();
+            return;
         }
-        return r.numWidth(new StringBuilder(9).append('-').append(wide).append(wide).append(',').append(wide)
-            .append(wide).append(wide).append(" m"), 1f);
+        pop = c;
+        popLeft = POP_TIME;
+        popT = 0f;
+        boolean zh = r.zh;
+        popPre = zh ? "已经攒了 " : "";
+        popPost = zh ? (c.pearl ? " 颗珍珠" : " 个贝壳") : (c.pearl ? " pearls saved" : " shells saved");
+        popCap = MapUi.cap(18f, k);
+        popPreW = r.uiWidth(popPre, popCap);
+        popNumW = r.uiWidth(c.full, popCap);
+        popPostW = r.uiWidth(popPost, popCap);
     }
 
-    /** Widest the name is drawn: {@link #NAME_MAX}, or less where the capsule is near. */
-    private float nameMaxW() {
-        return Math.max(0f, Math.min(NAME_MAX * k, nameRoom));
+    private void closePop() {
+        pop = null;
+        popLeft = 0f;
     }
 
-    /**
-     * Player block width (map labels fade under it): the avatar, and the name or the depth tag, whichever reaches
-     * further.
-     */
-    private float blockW() {
-        if (!hasProfile) return NAME_X * bk + r.uiWidth(NO_DIVER, bcap(NAME_CAP));
-        float name = Math.min(nameU * bcap(NAME_CAP), nameMaxW());
-        return Math.max(2f * AV_R * bk, Math.max(NAME_X * bk + name, TAG_X * bk + tagW()));
+    /** The bubble's width, left edge (centred under its capsule, kept on screen), top and bottom. */
+    private float popW() {
+        return popPreW + popNumW + popPostW + 2f * POP_PAD * k;
+    }
+
+    private float popLeft(float w) {
+        float min = Ui.left() + Ui.MIN_MARGIN, max = Ui.right() - Ui.MIN_MARGIN - w;
+        return MathUtils.clamp(pop.centerX() - w * 0.5f, min, Math.max(min, max));
+    }
+
+    private float popTop() {
+        return pop.y() - (4f + POP_ARROW) * k + 8f * k * (1f - popT);
+    }
+
+    private float popBottom() {
+        return popTop() - POP_H * k;
     }
 
     // ------------------------------------------------------------------ input
-    /** Touch down; true when a HUD control claims it. */
+    /** Touch down; true when a HUD control claims it. A touch anywhere but its capsule hides the whole count. */
     boolean touchDown(float x, float y, int ptr) {
+        if (pop != null && !pop.hit(x, y)) closePop();
         if (hudAlpha < 0.5f) return false;
         for (Pressable p : controls) {
             if (isLensPart(p) && lensAlpha < 0.5f) continue;
@@ -518,15 +591,28 @@ final class MapHud {
     void update(float dt, float now) {
         time = now;
         for (Pressable p : controls) p.update(dt);
+        // the first map of a launch shows a hidden name for PEEK seconds (Kelvin 2026-10-30 20:50 mock-up)
+        if (!peeked && hasProfile && hudAlpha > 0.5f) {
+            peeked = true;
+            if (!nameShown) peekLeft = PEEK;
+        }
+        if (peekLeft > 0f) peekLeft = Math.max(0f, peekLeft - dt);
+        boolean out = hasProfile && (nameShown || peekLeft > 0f);
+        nameT = out ? Math.min(1f, nameT + dt / BAND_OPEN) : Math.max(0f, nameT - dt / BAND_CLOSE);
+        if (pop != null) {
+            popLeft -= dt;
+            popT = Math.min(1f, popT + dt / 0.15f);
+            if (popLeft <= 0f || !pop.isVisible()) closePop();
+        }
     }
 
-    /** HUD atlas phase: the player block's disc and tag, the capsule, buttons, lens, SORT and the rise ring. */
+    /** HUD atlas phase: the name band, buttons, lens, SORT and the rise ring. */
     void drawShapes(Batch b) {
         float a = hudAlpha;
         if (a <= 0.01f) return;
-        badge.drawBack(a);
-        shells.drawBack(a);
+        if (hasProfile && nameT > 0.001f) drawBand(a);
         settings.draw(b, a);
+        player.draw(b, a);
         mode.draw(b, a);
         allSongs.draw(b, a);
         if (lensAlpha > 0.01f) for (LensSegment s : lens) s.draw(b, lensAlpha);
@@ -542,23 +628,91 @@ final class MapHud {
         }
     }
 
+    /**
+     * The name band, behind the avatar from its centre: solid to {@link #BAND_SOLID} of its length, then fading out,
+     * with hairlines along both edges.
+     */
+    private void drawBand(float alpha) {
+        float end = bandEnd(), len = end - avX, hh = BAND_H * k, by = avY - hh * 0.5f;
+        if (len <= 0.5f) return;
+        float solid = len * BAND_SOLID, fade = len - solid, line = Ui.worldPerPx(), a = BAND_A * alpha;
+        draw.rect(avX, by, solid, hh, BAND, a);
+        draw.rectGradientH(avX + solid, by, fade, hh, BAND, BAND_CLEAR, a);
+        for (int i = 0; i < 2; i++) {
+            float ly = i == 0 ? by : by + hh - line;
+            draw.rect(avX, ly, solid, line, HAIR, a / 3f);
+            draw.rectGradientH(avX + solid, ly, fade, line, HAIR, HAIR_CLEAR, a / 3f);
+        }
+    }
+
     private float riseAlpha() {
         return MathUtils.clamp(riseFill * 8f, 0f, 1f);
     }
 
-    /** HUD avatar phase (its own texture): the avatar in the disc, 1 under its centre. */
+    /**
+     * HUD avatar phase: the crest's back layer, the avatar disc and its ring, the capsules and the whole count's
+     * bubble, the avatar, then the crest's top layer (the pearls or the diamond on the ring).
+     */
     void drawAvatar(Batch b) {
-        if (hasProfile && hudAlpha > 0.01f) {
-            avatars.draw(b, spec, badge.x() + AV_R * bk, badge.y() + badge.height() - (AV_R + 1f) * bk,
-                AV_ART * bk * badge.visualScale(), hudAlpha, time);
+        float a = hudAlpha;
+        if (a <= 0.01f) return;
+        float s = crest.visualScale(), R = DepthCrest.AV_R * k * s;
+        if (hasProfile) crests.drawBack(b, tier, hexL, hexB, k, a);
+        // a soft shadow 3 under the disc (wider, fainter discs for its blur), the disc and its white ring
+        float sy = avY - 3f * k, px = Ui.worldPerPx();
+        draw.disc(avX, sy, R + 6f * k, SHADE, 0.08f * a);
+        draw.disc(avX, sy, R + 3.5f * k, SHADE, 0.12f * a);
+        draw.disc(avX, sy, R + 1.5f * k, SHADE, 0.2f * a);
+        draw.disc(avX, avY, R, AV_DISC, a);
+        float lit = crest.lit() * a;
+        if (lit > 0f) draw.disc(avX, avY, R, Theme.INK1, lit);
+        draw.ringArc(avX, avY, RING_R * k * s, 0f, MathUtils.PI2, RING_W * k, px, Color.WHITE, 0.92f * a);
+        if (hasProfile) {
+            shells.drawBack(a);
+            pearls.drawBack(a);
+            if (pop != null && popT > 0.01f) drawPopBack(a * popT);
+            // the avatar, 1 under the disc's centre
+            avatars.draw(b, spec, avX, avY - k, AV_ART * k * s, a, time);
+            // the pearls or the diamond on the ring, pressed with the avatar
+            crests.drawTop(b, tier, avX + (hexL - avX) * s, avY + (hexB - avY) * s, k * s, a);
         }
+    }
+
+    /**
+     * The whole count's card, as the result screen's breakdowns: opaque, its edge and the pointer up to its capsule
+     * in the capsule's colour.
+     */
+    private void drawPopBack(float alpha) {
+        float w = popW(), x = popLeft(w), t = popTop(), h = POP_H * k, rad = 12f * k;
+        float ax = MathUtils.clamp(pop.centerX(), x + rad + POP_ARROW * k, x + w - rad - POP_ARROW * k);
+        float[] p = popArrow;
+        p[0] = ax - POP_ARROW * k;
+        p[1] = t - 1f;
+        p[2] = ax + POP_ARROW * k;
+        p[3] = t - 1f;
+        p[4] = ax;
+        p[5] = t + POP_ARROW * k;
+        Color rim = pop.pearl ? PEARL_BODY : Theme.GOLD;
+        Panel.shadow(draw, x, t - h, w, h, alpha);
+        Panel.cardSolid(draw, x, t - h, w, h, rad, alpha);
+        draw.roundRectStroke(x, t - h, w, h, rad, 1.5f * k, rim, 0.5f * alpha);
+        draw.convexFill(p, 3, rim, 0.5f * alpha, Ui.worldPerPx());
     }
 
     /** HUD UI-raster phase. */
     void drawUi(Batch b) {
         float a = hudAlpha;
         if (a <= 0.01f) return;
-        badge.drawUi(b, a);
+        if (!hasProfile && crest.isVisible()) {
+            r.ui(b, NO_DIVER, MapUi.cap(NAME_CAP, k), nameX(), avY, Align.left | Fonts.VCENTER, Theme.INK2, a);
+        }
+        if (pop != null && popT > 0.01f) {
+            float pa = a * popT, w = popW(), x = popLeft(w) + POP_PAD * k, y = popTop() - POP_H * k * 0.5f;
+            Color num = pop.pearl ? PEARL_NUM : Theme.GOLD;
+            r.ui(b, popPre, popCap, x, y, Align.left | Fonts.VCENTER, Theme.INK1, pa);
+            r.ui(b, pop.full, popCap, x + popPreW, y, Align.left | Fonts.VCENTER, num, pa);
+            r.ui(b, popPost, popCap, x + popPreW + popNumW, y, Align.left | Fonts.VCENTER, Theme.INK1, pa);
+        }
         if (lensAlpha > 0.01f) for (LensSegment s : lens) s.drawText(b, lensAlpha);
         if (sortAlpha > 0.01f) sort.drawText(b, sortAlpha);
         mode.drawText(b, a);
@@ -570,174 +724,141 @@ final class MapHud {
         }
     }
 
-    /** HUD NUMBER-raster phase. */
+    /** HUD NUMBER-raster phase: the depth on the hexagon over its shadow, and the counts. */
     void drawNumbers(Batch b) {
-        if (hudAlpha <= 0.01f) return;
-        badge.drawNumbers(b, hudAlpha);
-        shells.drawNumbers(b, hudAlpha);
+        float a = hudAlpha;
+        if (a <= 0.01f || !hasProfile) return;
+        float cap = MapUi.cap(DepthCrest.NUM_CAP, k), cx = hexL + DepthCrest.HEX_W * k * 0.5f;
+        float cy = hexB + DepthCrest.HEX_H * k * 0.5f, d = DepthCrest.SHADOW * k;
+        r.num(b, depthText, cap, cx + d, cy - d, Align.center | Fonts.VCENTER, Color.BLACK, 0.67f * a);
+        r.num(b, depthText, cap, cx, cy, Align.center | Fonts.VCENTER, Theme.INK1, a);
+        shells.drawNumbers(b, a);
+        pearls.drawNumbers(b, a);
     }
 
-    /** HUD UI_BOLD-raster phase (the player's name). */
+    /** HUD UI_BOLD-raster phase: the name on its band, sliding in after it, over a soft shadow. */
     void drawBold(Batch b) {
-        if (hudAlpha > 0.01f) badge.drawBold(b, hudAlpha);
+        if (hudAlpha <= 0.01f || !hasProfile || nameT <= 0.3f) return;
+        float e = MathUtils.clamp((nameT - 0.3f) / 0.7f, 0f, 1f), a = hudAlpha * e;
+        float x = nameX() - 16f * k * (1f - e), cap = MapUi.cap(NAME_CAP, k);
+        float mw = Math.max(0f, Math.min(nameRoomU * cap, bandMax - 12f * k - x));
+        for (int i = 0; i < SHADE_DX.length; i++) {
+            r.boldFit(b, name, cap, x + SHADE_DX[i] * k, avY + SHADE_DY[i] * k, Align.left | Fonts.VCENTER, mw, 0.8f,
+                NAME_SHADE, 0.2f * a);
+        }
+        r.boldFit(b, name, cap, x, avY, Align.left | Fonts.VCENTER, mw, 0.8f, Theme.INK1, a);
     }
 
     // =================================================================== controls
     /**
-     * The player block (§3.9; mock-up plan 5, Kelvin 2026-10-20 14:10, after the frames of 2026-10-19 06:28
-     * and 2026-10-20 03:26): no panel; the avatar in a disc ({@link #AV_R}) with a white ring, the name (UI_BOLD
-     * {@link #NAME_CAP}) right of it and under the name a tag pointed at both ends holding the depth, {@code -2,698 m}
-     * (NUMBER {@link #DEPTH_CAP}; a DEPTH label before it until Kelvin 2026-10-20 17:34), all at {@link #BLOCK_K} since
-     * 17:34; the tag keeps room for a minus sign and five digits and centres the number in it since 17:58 (as wide as
-     * its number before). {@link MapStyle#FRAME_H} high;
-     * its bounds reach the end of the name or the tag. Only the avatar takes taps (Kelvin 2026-10-20 14:40
-     * 「然后现在就只保留点击头像进入profile界面」): tap → Profile; a touch on the name or the tag reaches the map.
+     * The crest's avatar: a tap shows or hides the name band (Kelvin 2026-10-30 20:20; it opened the profile before
+     * 20:54, which the player button does now). It takes touches on the avatar disc, at least a touch target across;
+     * the hexagon and the band take none. {@link MapHud} draws it, scaled while pressed.
      */
-    final class Badge extends Pressable {
-        /** The depth tag's six corners, counter-clockwise from its left tip. */
-        private final float[] tag = new float[12];
-
-        Badge(Draw draw) {
+    final class Crest extends Pressable {
+        Crest(Draw draw) {
             super(draw);
         }
 
-        /** The avatar disc only, at least a touch target across. */
         @Override
         public boolean hit(float px, float py, float grow) {
-            float r = Math.max(AV_R * bk, Ui.touchTarget() * 0.5f) + grow;
-            float dx = px - (x + AV_R * bk), dy = py - (y + h - AV_R * bk);
-            return dx * dx + dy * dy <= r * r;
+            float rr = Math.max(w * 0.5f, Ui.touchTarget() * 0.5f) + grow;
+            float dx = px - centerX(), dy = py - centerY();
+            return dx * dx + dy * dy <= rr * rr;
         }
 
-        void drawBack(float alpha) {
-            if (!visible) return;
-            float px = Ui.worldPerPx(), s = visualScale();
-            float cx = x + AV_R * bk, cy = y + h - AV_R * bk, rr = AV_R * bk * s, sy = cy - 3f * bk;
-            float lit = (0.06f * press + 0.04f * hover) * alpha;
-            if (hasProfile) {
-                // the name's band, under the disc: solid to 0.6 of the name, then fading out over BAND_RUN past it
-                float nx = x + NAME_X * bk, nw = Math.min(nameU * bcap(NAME_CAP), nameMaxW());
-                float bb = y + h - (COL_Y + BAND_BOTTOM) * bk, bh = (BAND_BOTTOM - BAND_TOP) * bk;
-                float solid = nx + nw * 0.6f, end = Math.max(solid, Math.min(nx + nw + BAND_RUN * bk, bandRight));
-                draw.rect(cx, bb, solid - cx, bh, TAG_FILL, BAND_A * alpha);
-                draw.rectGradientH(solid, bb, end - solid, bh, TAG_FILL, BAND_CLEAR, BAND_A * alpha);
-            }
-            // a soft shadow 3 under the disc (wider, fainter discs for its blur), the disc and its white ring
-            draw.disc(cx, sy, rr + 8f * bk, SHADE, 0.08f * alpha);
-            draw.disc(cx, sy, rr + 5f * bk, SHADE, 0.12f * alpha);
-            draw.disc(cx, sy, rr + 2.5f * bk, SHADE, 0.18f * alpha);
-            draw.disc(cx, sy, rr, SHADE, 0.3f * alpha);
-            draw.disc(cx, cy, rr, AV_DISC, alpha);
-            if (lit > 0f) draw.disc(cx, cy, rr, Theme.INK1, lit);
-            draw.ringArc(cx, cy, RING_R * bk * s, 0f, MathUtils.PI2, RING_W * bk, px, Color.WHITE, 0.92f * alpha);
-            if (!hasProfile) return;
-            // the depth tag over its shadow (two copies 3 and 4.5 under it), with a cyan edge
-            tag(-3f * bk);
-            draw.convexFill(tag, 6, SHADE, 0.3f * alpha, px);
-            tag(-4.5f * bk);
-            draw.convexFill(tag, 6, SHADE, 0.2f * alpha, px);
-            tag(0f);
-            draw.convexFill(tag, 6, TAG_FILL, 0.9f * alpha, px);
-            draw.convexStroke(tag, 6, 1.6f * bk, TAG_EDGE, 0.9f * alpha, px);
-        }
-
-        /** Puts the depth tag's corners in {@link #tag}, {@code dy} above its place (its bottom is the column's). */
-        private void tag(float dy) {
-            float x0 = x + TAG_X * bk, x1 = x0 + tagW(), p = TAG_TIP * bk;
-            float yb = tagBottom() + dy, yt = yb + TAG_H * bk, ym = yb + TAG_H * bk * 0.5f;
-            float[] t = tag;
-            t[0] = x0;
-            t[1] = ym;
-            t[2] = x0 + p;
-            t[3] = yb;
-            t[4] = x1 - p;
-            t[5] = yb;
-            t[6] = x1;
-            t[7] = ym;
-            t[8] = x1 - p;
-            t[9] = yt;
-            t[10] = x0 + p;
-            t[11] = yt;
-        }
-
-        /** The name, its baseline {@link #NAME_BASE} under the column's top, over a soft shadow about 2 under it. */
-        void drawBold(Batch b, float alpha) {
-            if (!visible || !hasProfile) return;
-            float nx = x + NAME_X * bk, base = y + h - (COL_Y + NAME_BASE) * bk, cap = bcap(NAME_CAP);
-            float mw = nameMaxW();
-            for (int i = 0; i < SHADE_DX.length; i++) {
-                r.boldFit(b, name, cap, nx + SHADE_DX[i] * bk, base + SHADE_DY[i] * bk, Align.left, mw, 0.8f,
-                    NAME_SHADE, 0.18f * alpha);
-            }
-            r.boldFit(b, name, cap, nx, base, Align.left, mw, 0.8f, Theme.INK1, alpha);
-        }
-
-        /** Without a profile, NO DIVER where the name goes. */
-        void drawUi(Batch b, float alpha) {
-            if (!visible || hasProfile) return;
-            r.ui(b, NO_DIVER, bcap(NAME_CAP), x + NAME_X * bk, centerY(), Align.left | Fonts.VCENTER, Theme.INK2,
-                alpha);
-        }
-
-        /** Centre of the depth tag, where its number is centred (left after the tip and padding until 17:58). */
-        private float numberX() {
-            return x + TAG_X * bk + tagW() * 0.5f;
-        }
-
-        /** Baseline of the tag's text, {@link #DEPTH_BASE} under the column's top. */
-        private float tagBase() {
-            return y + h - (COL_Y + DEPTH_BASE) * bk;
-        }
-
-        void drawNumbers(Batch b, float alpha) {
-            if (!visible || !hasProfile) return;
-            r.num(b, depthText, bcap(DEPTH_CAP), numberX(), tagBase(), Align.center, Theme.INK1, alpha);
+        /** The press and hover tint over the disc. */
+        float lit() {
+            return 0.06f * press + 0.04f * hover;
         }
 
         @Override
         public void draw(Batch b, float alpha) {
-            drawBack(alpha);
-            drawUi(b, alpha);
-            drawNumbers(b, alpha);
-            drawBold(b, alpha);
         }
     }
 
     /**
-     * The shell capsule (the gold pill that sat in the badge, Kelvin 2026-10-19 06:28 「把原来的那种贝壳和profile的小的
-     * 边界加上」): the shell icon and the count, {@link MapStyle#CAPSULE_H} high and at least
-     * {@link MapStyle#CAPSULE_MIN_W} wide (2026-10-20 03:26; smaller since 15:10, so the depth leads) with the two
-     * centred in it; since Kelvin 2026-10-20 15:36 (「把贝壳移动到depth旁边」) it sits {@link #SHELL_GAP} right of the
-     * player block's depth tag, centred on it, no longer left of Settings, and it is drawn at {@link #BLOCK_K} with the
-     * block since 17:34. It only shows the count: no tap since 2026-10-20 03:38.
-     * Its gold wash lies on a deep gold fill since 2026-10-19 13:59, so the level title it can sit on does not show
-     * through.
+     * A capsule under the crest (picture topleft8): the shells' (gold, the capsule of 2026-10-19 06:28) under the
+     * hexagon's left, the pearls' (lavender, a count only for now, Kelvin 2026-10-30 20:20 「底座右下角留一个珍珠数，暂时
+     * 不用写功能」) under its right reach; {@link MapStyle#CAPSULE_H} high and at least {@link MapStyle#CAPSULE_MIN_W}
+     * wide, the icon and count centred. A count over 9,999 reads {@code 9,999+} with a ring 2 outside the capsule and a
+     * soft glow, and only then does it take taps: the whole count shows under it (Kelvin 2026-10-30 20:58).
      */
-    final class ShellCapsule extends Pressable {
-        ShellCapsule(Draw draw) {
+    final class Capsule extends Pressable {
+        final boolean pearl;
+        /** The count as shown, and in full. */
+        final StringBuilder text = new StringBuilder(12), full = new StringBuilder(16);
+        boolean capped;
+        private float textU;
+
+        Capsule(Draw draw, boolean pearl) {
             super(draw);
+            this.pearl = pearl;
+        }
+
+        void set(long count) {
+            full.setLength(0);
+            Fonts.appendGrouped(full, Math.max(0L, count));
+            capped = count > Fonts.SHOWN_MAX;
+            text.setLength(0);
+            Fonts.appendCapped(text, count);
+            textU = r.numWidth(text, 1f);
+        }
+
+        /** Padding, icon, gap, count, padding; at least {@link MapStyle#CAPSULE_MIN_W}. */
+        float naturalW() {
+            return Math.max(MapStyle.CAPSULE_MIN_W * k, contentW());
+        }
+
+        private float contentW() {
+            return (CAP_PAD_L + CAP_ICON + CAP_GAP + CAP_PAD_R) * k + textU * countCap();
+        }
+
+        /** Left of the icon and count, centred in a capsule wider than they need. */
+        private float contentX() {
+            return x + Math.max(0f, w - contentW()) * 0.5f;
+        }
+
+        @Override
+        public boolean hit(float px, float py, float grow) {
+            return capped && super.hit(px, py, grow);
         }
 
         void drawBack(float alpha) {
             if (!visible) return;
             float s = visualScale();
-            float bw = w * s, bh = h * s;
-            float bx = centerX() - bw * 0.5f, by = centerY() - bh * 0.5f;
-            draw.pill(bx, by, bw, bh, Theme.SHELL_CAPSULE, alpha);
-            draw.pill(bx, by, bw, bh, Theme.GOLD, 0.16f * alpha);
-            draw.shell(contentX() + (CAP_PAD_L + CAP_ICON * 0.5f) * bk, centerY(), CAP_ICON * bk, Theme.GOLD, SHELL_RIB,
-                alpha);
-        }
-
-        /** Left of the icon and count, centred in a capsule wider than they need. */
-        private float contentX() {
-            return x + Math.max(0f, w - capsuleContentW()) * 0.5f;
+            float bw = w * s, bh = h * s, bx = centerX() - bw * 0.5f, by = centerY() - bh * 0.5f;
+            if (capped) {
+                // the glow, then the ring: 2 wide, 2 outside the capsule
+                Color glow = pearl ? PEARL_GLOW : SHELL_GLOW;
+                for (int i = 3; i >= 1; i--) {
+                    float e = (2f + 2f * i) * k;
+                    draw.pill(bx - e, by - e, bw + 2f * e, bh + 2f * e, glow, (0.2f - 0.05f * i) * alpha);
+                }
+                float o = 4f * k;
+                draw.roundRectStroke(bx - o, by - o, bw + 2f * o, bh + 2f * o, bh * 0.5f + o, 2f * k,
+                    pearl ? PEARL_LINE : SHELL_LINE, 0.95f * alpha);
+            }
+            float ix = contentX() + (CAP_PAD_L + CAP_ICON * 0.5f) * k, iy = centerY();
+            if (pearl) {
+                draw.pill(bx, by, bw, bh, PEARL_FILL, alpha);
+                float pr = CAP_ICON * 0.5f * k;
+                draw.disc(ix, iy, pr, PEARL_RIM, alpha);
+                draw.disc(ix, iy, pr - Math.max(1f, 0.8f * k), PEARL_BODY, alpha);
+                draw.disc(ix - 0.125f * pr, iy + 0.175f * pr, 0.72f * pr, PEARL_LIGHT, alpha);
+                draw.disc(ix - 0.325f * pr, iy + 0.4f * pr, 0.21f * pr, Color.WHITE, alpha);
+            } else {
+                draw.pill(bx, by, bw, bh, Theme.SHELL_CAPSULE, alpha);
+                draw.pill(bx, by, bw, bh, Theme.GOLD, 0.16f * alpha);
+                draw.shell(ix, iy, CAP_ICON * k, Theme.GOLD, SHELL_RIB, alpha);
+            }
+            if (press > 0f) draw.pill(bx, by, bw, bh, Theme.INK1, 0.1f * press * alpha);
         }
 
         void drawNumbers(Batch b, float alpha) {
             if (!visible) return;
-            r.num(b, shellText, bcap(COUNT_CAP), contentX() + (CAP_PAD_L + CAP_ICON + CAP_GAP) * bk, centerY(),
-                Align.left | Fonts.VCENTER, Theme.GOLD, alpha);
+            r.num(b, text, countCap(), contentX() + (CAP_PAD_L + CAP_ICON + CAP_GAP) * k, centerY(),
+                Align.left | Fonts.VCENTER, pearl ? PEARL_TEXT : Theme.GOLD, alpha);
         }
 
         @Override

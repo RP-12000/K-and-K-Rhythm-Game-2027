@@ -51,6 +51,8 @@ public final class TrailGeometry {
      * STREAM too since 2026-10-16, about their pivot).
      */
     public float rot;
+    /** The beat the copy's look (turn, sideways shift) is read at. */
+    public float lookBeat;
     /**
      * Hold ribbon / TIDE STREAM band / LANE MINE column length in world units (0 for others), not yet clamped for
      * drawing.
@@ -151,7 +153,7 @@ public final class TrailGeometry {
         layout = lay;
         windowLeft = lay.windowLeft();
         windowRight = lay.windowRight();
-        if (n.type() == NoteType.UNIVERSAL) {
+        if (!n.type().inLane()) {
             if (level) return false;
             x = (windowLeft + windowRight) * 0.5f;
             laneWidth = windowRight - windowLeft;
@@ -175,7 +177,8 @@ public final class TrailGeometry {
             tail = hold ? Field.dist(n.tailHeightAt(look(n, s))) : 0f;
         }
         y = up ? lineY - pos : lineY + pos;
-        rot = n.angleAt(look(n, s)) + (up ? 180f : 0f);
+        lookBeat = look(n, s);
+        rot = n.angleAt(lookBeat) + (up ? 180f : 0f);
         return true;
     }
 

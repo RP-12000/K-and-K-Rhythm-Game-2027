@@ -167,7 +167,7 @@ public class MapScreen extends KkScreen<Main>
         renderer = new MapRenderer(game.draw(), game.fonts(), game.glitch(), thumbs, slots, lib.size(),
             sonar, bubbles, data);
         renderer.cam = cam;
-        hud = new MapHud(game.draw(), game.fonts(), game.avatars(), cam, renderer, this);
+        hud = new MapHud(game.draw(), game.fonts(), game.avatars(), game.crests(), cam, renderer, this);
         grid = new GridPage(game.draw(), renderer, cam);
         renderer.grid = grid;
         filter = new MapFilter();
@@ -739,15 +739,18 @@ public class MapScreen extends KkScreen<Main>
         cam.setReduceMotion(reduceMotion);
         renderer.reduceMotion = reduceMotion;
         renderer.zh = zh;
+        if (switched || force) {
+            Difficulty d = p != null ? Difficulty.parse(p.lastDifficulty) : null;
+            lens = d != null ? d : Difficulty.SURFACE;
+        }
         world.refresh(p);
+        world.setLens(lens, p); // before the labels: the first hub was built before the lens was read back
         renderer.refreshLabels();
         hud.refresh(p);
         hud.setLevel(world);
         modeAvailable = computeModeAvailable();
         hud.setMode(modeAvailable, chapterMode());
         if (switched || force) {
-            Difficulty d = p != null ? Difficulty.parse(p.lastDifficulty) : null;
-            lens = d != null ? d : Difficulty.SURFACE;
             hud.setLens(lens);
             if (switched && !force) {
                 card.close();
@@ -1111,14 +1114,15 @@ public class MapScreen extends KkScreen<Main>
     }
 
     /**
-     * Sets the lens. An open card whose song has no chart for it goes away (Kelvin 2026-10-16), and
-     * ALL SONGS is laid out again when its order or filter depends on the lens.
+     * Sets the lens, which the plates count. An open card whose song has no chart for it goes away (Kelvin
+     * 2026-10-16), and ALL SONGS is laid out again when its order or filter depends on the lens.
      */
     private void setLens(Difficulty d) {
         if (d == null || d == lens) return;
         lens = d;
         hud.setLens(d);
         Haptics.light();
+        world.setLens(d, profile);
         MapNode n = selected;
         if (world.isGrid()) {
             renderer.resetTitles();
@@ -1127,6 +1131,7 @@ public class MapScreen extends KkScreen<Main>
             else if (n != null && n.missing(d)) openGridCard(null);
             return;
         }
+        renderer.refreshLabels(); // the plates' CLEARED counts
         if (n != null && n.missing(d)) deselect();
         else if (n != null && !n.launch) sonar.ping(n.x, n.y, 320f, 0.5f, Theme.difficultyAccent(d.ordinal()), 0.3f, 1);
     }
@@ -1164,6 +1169,13 @@ public class MapScreen extends KkScreen<Main>
         game.profiles().markDirty();
         hud.setMode(true, chapterMode());
         Haptics.light();
+    }
+
+    @Override
+    public void nameShown(boolean shown) {
+        if (profile == null) return;
+        profile.mapNameShown = shown;
+        game.profiles().markDirty();
     }
 
     /** The filter changed: ALL SONGS shows only the songs it keeps. */

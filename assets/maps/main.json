@@ -10,7 +10,7 @@
      "label": "01 SHORELINE", "labelZh": "浅滩", "sub": "DEMO · LEVEL 1", "subZh": "演示 · 第 1 层", "color": "#4FD8FF"},
     {"id": "s1", "type": "shaft", "to": "main_c1", "at": "song4", "x": -1000, "y": -230, "r": 132,
      "label": "S1 ECHO VALLEY", "labelZh": "回声谷", "sub": "SIDE · 支线", "color": "#8F7BFF"},
-    {"id": "s2", "type": "shaft", "to": "main_c1", "at": "song6", "x": -1000, "y": 300, "r": 132,
+    {"id": "s2", "type": "shaft", "to": "main_c1", "at": "aleph0", "x": -1000, "y": 300, "r": 132,
      "label": "S2 THE WRECK", "labelZh": "沉船区", "sub": "SIDE · 支线", "color": "#5CE6B0"},
     {"id": "c2", "type": "shaft", "to": "main_c2", "x": 0, "y": 50, "r": 140,
      "label": "02 TWILIGHT", "labelZh": "暮光层", "sub": "DEMO · LEVEL 2", "subZh": "演示 · 第 2 层", "color": "#4FD8FF"},

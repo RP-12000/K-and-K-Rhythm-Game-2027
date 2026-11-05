@@ -7,6 +7,8 @@ import com.badlogic.gdx.Screen;
 import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.graphics.GL20;
 import org.kelvinizer.audio.AudioService;
+import org.kelvinizer.audio.HitOutput;
+import org.kelvinizer.audio.MusicOutput;
 import org.kelvinizer.elements.Chart;
 import org.kelvinizer.fx.HitFx;
 import org.kelvinizer.gameplay.GameplayScreen;
@@ -35,6 +37,7 @@ import org.kelvinizer.transition.TransitionLayer;
 import org.kelvinizer.ui.ArtCache;
 import org.kelvinizer.ui.Avatar;
 import org.kelvinizer.ui.Backdrop;
+import org.kelvinizer.ui.DepthCrest;
 import org.kelvinizer.ui.Draw;
 import org.kelvinizer.ui.Fonts;
 import org.kelvinizer.ui.GlitchText;
@@ -89,6 +92,8 @@ public class Main extends Game implements KkServices {
     private SongLibrary library;
     private ProfileStore profiles;
     private AudioService audio;
+    /** The platform's hit sound output (Android 8.0+), or null. */
+    private final HitOutput hitOutput;
     private HitFx hitFx;
 
     private WelcomeScreen welcome;
@@ -153,6 +158,16 @@ public class Main extends Game implements KkServices {
     private ExecutorService loader;
     private boolean disposed;
 
+    /** A game whose hit sounds go through libGDX {@code Sound} (desktop). */
+    public Main() {
+        this(null);
+    }
+
+    /** @param hitOutput the platform's own hit sound output (Android 8.0+), or null */
+    public Main(HitOutput hitOutput) {
+        this.hitOutput = hitOutput;
+    }
+
     // ------------------------------------------------------------------ lifecycle
     @Override
     public void create() {
@@ -164,6 +179,9 @@ public class Main extends Game implements KkServices {
         profiles = new ProfileStore();
         profiles.load(library);
         audio = new AudioService(profiles);
+        audio.setHitOutput(hitOutput);
+        // the Android output plays the songs too, in the same stream (Kelvin 2026-10-26 20:43)
+        if (hitOutput instanceof MusicOutput) audio.setMusicOutput((MusicOutput) hitOutput);
         hitFx = new HitFx(ui.draw());
         hitFx.setOnAutoDrop(particlesAutoDropped);
         ui.backdrop().setOnAutoLow(new Runnable() {
@@ -740,6 +758,11 @@ public class Main extends Game implements KkServices {
     @Override
     public Avatar avatars() {
         return ui.avatars();
+    }
+
+    @Override
+    public DepthCrest crests() {
+        return ui.crests();
     }
 
     @Override

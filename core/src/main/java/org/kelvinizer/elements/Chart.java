@@ -19,8 +19,9 @@ import java.util.List;
  * <ul>
  *   <li>{@link #notes()}: every note sorted by judgement beat, then line (lower first), then
  *       judged notes before mines, then lane (universal notes first, lanes left to right).</li>
- *   <li>{@link #laneNotes(Line, int)}: tap and hold notes of one lane on one line, strictly
- *       ascending in time (duplicates are removed at load) — ready for per-lane cursors.</li>
+ *   <li>{@link #laneNotes(Line, int)}: tap and hold notes of one lane on one line, ascending in
+ *       time (notes stacked on one beat in file order, kept since Kelvin 2026-11-02) — ready for per-lane
+ *       cursors.</li>
  *   <li>{@link #laneMines(Line, int)}: mines (LANE MINEs included) of one lane on one line,
  *       ascending.</li>
  *   <li>{@link #universals(Line)}: universal notes of one line, ascending, with their
@@ -34,6 +35,8 @@ import java.util.List;
  *       also covers every beat before it. All beat / ms conversion goes through {@link #beatToMs},
  *       {@link #msToBeat} and {@link #msBetween} ({@link Note#judgementMs()}, {@link Note#endMs()},
  *       {@link #lastNoteEndBeat()} / {@link #lastNoteEndMs()}).</li>
+ *   <li>{@link #veils()}: the veils (CHART_FORMAT_v4 §6.10), set once by the loader before the chart is
+ *       shared.</li>
  * </ul>
  *
  * <p>The arrays returned by the accessors are the chart's own (no copies, so reading them never
@@ -41,6 +44,7 @@ import java.util.List;
  */
 public final class Chart {
     private static final Note[] NO_NOTES = new Note[0];
+    private static final Veil[] NO_VEILS = new Veil[0];
 
     private final String title;
     private final String artist;
@@ -74,6 +78,8 @@ public final class Chart {
     private FileHandle chartFile;
     private FileHandle musicFile;
     private FileHandle jacketFile;
+    private Veil[] veils = NO_VEILS;
+    private Veil[] curtains = NO_VEILS;
 
     /** Same as the full constructor with {@code offsetMs} 0 (beat 0 = song time 0 ms). */
     public Chart(String title, String artist, String illustrator, String charter, String level,
@@ -210,9 +216,11 @@ public final class Chart {
             n.index = i;
             n.judgementMs = beatToMs(n.judgement());
             n.endMs = beatToMs((double) n.judgement() + n.duration());
-            typeCounts[n.type().ordinal()]++;
-            if (n.isTideStream()) tideStreams++;
-            if (n.isLaneMine()) laneMineTotal++;
+            if (!n.fake()) { // decorations are drawn only (Kelvin 2026-11-02)
+                typeCounts[n.type().ordinal()]++;
+                if (n.isTideStream()) tideStreams++;
+                if (n.isLaneMine()) laneMineTotal++;
+            }
             lastEnd = i == 0 ? n.endBeat() : Math.max(lastEnd, n.endBeat());
             firstVisible = i == 0 ? n.visibleFrom() : Math.min(firstVisible, n.visibleFrom());
         }
@@ -227,15 +235,17 @@ public final class Chart {
         buildSyncGroups();
     }
 
-    /** Global note order; ties keep the input order (stable sort). */
+    /** Global note order (on one beat decorations after the rest); ties keep the input order (stable sort). */
     private static final Comparator<Note> NOTE_ORDER = new Comparator<Note>() {
         @Override
         public int compare(Note a, Note b) {
             int c = Float.compare(a.judgement(), b.judgement());
             if (c != 0) return c;
+            c = Boolean.compare(a.fake(), b.fake());
+            if (c != 0) return c;
             c = a.line().ordinal() - b.line().ordinal();
             if (c != 0) return c;
-            c = (a.type() == NoteType.MINE ? 1 : 0) - (b.type() == NoteType.MINE ? 1 : 0);
+            c = (a.type().judged() ? 0 : 1) - (b.type().judged() ? 0 : 1);
             if (c != 0) return c;
             c = Integer.compare(a.laneIndex, b.laneIndex);
             if (c != 0) return c;
@@ -249,6 +259,7 @@ public final class Chart {
         int[] mineCounts = new int[Line.COUNT * laneCount];
         int[] universalCounts = new int[Line.COUNT];
         for (Note n : notes) {
+            if (n.fake()) continue; // in no stream: nothing judges a decoration
             int line = n.line().ordinal();
             switch (n.type()) {
                 case MINE:
@@ -256,6 +267,8 @@ public final class Chart {
                     break;
                 case UNIVERSAL:
                     universalCounts[line]++;
+                    break;
+                case TIDE_MINE:
                     break;
                 default:
                     laneCounts[line * laneCount + n.laneIndex]++;
@@ -269,13 +282,13 @@ public final class Chart {
         for (int l = 0; l < Line.COUNT; l++) {
             universals[l] = universalCounts[l] == 0 ? NO_NOTES : new Note[universalCounts[l]];
         }
-        Note[] allMines = typeCounts[NoteType.MINE.ordinal()] == 0 ? NO_NOTES
-            : new Note[typeCounts[NoteType.MINE.ordinal()]];
+        Note[] allMines = totalMines() == 0 ? NO_NOTES : new Note[totalMines()];
         Arrays.fill(laneCounts, 0);
         Arrays.fill(mineCounts, 0);
         Arrays.fill(universalCounts, 0);
         int m = 0;
         for (Note n : notes) {
+            if (n.fake()) continue;
             int line = n.line().ordinal();
             switch (n.type()) {
                 case MINE: {
@@ -288,6 +301,9 @@ public final class Chart {
                 case UNIVERSAL:
                     n.slot = universalCounts[line]++;
                     universals[line][n.slot] = n;
+                    break;
+                case TIDE_MINE:
+                    allMines[m++] = n;
                     break;
                 default: {
                     int k = line * laneCount + n.laneIndex;
@@ -320,14 +336,22 @@ public final class Chart {
 
     /**
      * Sync groups (same line, same beat, judged notes) and the shared-beat flag (any other note of
-     * any type, either line, at exactly the same beat: {@link Note#sharesBeat()}).
+     * any type, either line, at exactly the same beat: {@link Note#sharesBeat()}). Decorations
+     * ({@link Note#fake()}, after the rest on their beat) are in neither.
      */
     private void buildSyncGroups() {
         int i = 0;
         while (i < notes.length) {
+            if (notes[i].fake()) {
+                notes[i].sharesBeat = false;
+                notes[i].syncStart = i;
+                notes[i].syncSize = 1;
+                i++;
+                continue;
+            }
             // Cluster of notes with exactly the same judgement beat (both lines).
             int end = i + 1;
-            while (end < notes.length && notes[end].judgement() == notes[i].judgement()) end++;
+            while (end < notes.length && !notes[end].fake() && notes[end].judgement() == notes[i].judgement()) end++;
             boolean shared = end - i > 1;
             for (int q = i; q < end; q++) notes[q].sharesBeat = shared;
             int k = i;
@@ -477,9 +501,9 @@ public final class Chart {
 
     // ------------------------------------------------------------------ notes
 
-    /** @return every note in chart order (shared array; do not modify). */
+    /** @return every note in chart order, decorations ({@link Note#fake()}) included (shared array; do not modify). */
     public Note[] notes() { return notes; }
-    /** @return number of notes of every type, mines included. */
+    /** @return number of notes of every type, mines and decorations included (the length of {@link #notes()}). */
     public int noteCount() { return notes.length; }
     /** @return note {@code i} of {@link #notes()}. */
     public Note note(int i) { return notes[i]; }
@@ -508,8 +532,10 @@ public final class Chart {
             + typeCounts[NoteType.UNIVERSAL.ordinal()];
     }
 
-    /** @return number of mines, each LANE MINE counted once (the result's MINES row). */
-    public int totalMines() { return typeCounts[NoteType.MINE.ordinal()]; }
+    /** @return number of mines, TIDE MINEs included, each LANE MINE / TIDE STREAM MINE counted once (MINES row). */
+    public int totalMines() {
+        return typeCounts[NoteType.MINE.ordinal()] + typeCounts[NoteType.TIDE_MINE.ordinal()];
+    }
 
     /** @return number of notes of {@code type} (UNIVERSAL counts TIDE drops and TIDE STREAMs). */
     public int count(NoteType type) { return typeCounts[type.ordinal()]; }
@@ -543,6 +569,38 @@ public final class Chart {
             }
         }
         return count;
+    }
+
+    // ------------------------------------------------------------------ veils
+
+    /** @return the veils (CHART_FORMAT_v4 §6.10) in file order; the chart's own array, callers must not modify it. */
+    public Veil[] veils() { return veils; }
+
+    /**
+     * Sets the veils: the loader does, before the chart is shared, and so may an editor that builds a chart.
+     * Null entries and veils without a usable shape ({@link Veil#isValid}) are left out.
+     */
+    public void setVeils(List<Veil> list) {
+        if (list == null || list.isEmpty()) {
+            veils = NO_VEILS;
+            return;
+        }
+        ArrayList<Veil> keep = new ArrayList<>(list.size());
+        for (Veil v : list) {
+            if (v != null && v.isValid()) keep.add(v);
+        }
+        veils = keep.isEmpty() ? NO_VEILS : keep.toArray(new Veil[0]);
+    }
+
+    /** @return the curtains (水帘, CHART_FORMAT §6.1) in file order; the chart's own array, do not modify it. */
+    public Veil[] curtains() { return curtains; }
+
+    /** Sets the curtains, as {@link #setVeils} sets the veils; curtains only blur and never block a touch. */
+    public void setCurtains(List<Veil> list) {
+        Veil[] keep = veils;
+        setVeils(list);
+        curtains = veils;
+        veils = keep;
     }
 
     // ------------------------------------------------------------------ files
@@ -588,16 +646,20 @@ public final class Chart {
         int trailsIgnored;
         int glitchesFixed;
         int glitchesIgnored;
+        int distortionsFixed;
+        int distortionsIgnored;
         int heightEventsIgnored;
         int laneMineConflicts;
         int pivotsFixed;
+        int veilsFixed;
+        int veilsDropped;
         final List<String> messages = new ArrayList<>(2);
 
         /** @return the source format version (1 or 2; a newer version is read as 2). */
         public int sourceFormat() { return sourceFormat; }
         /** @return v1 notes whose lane was outside 0..19 and became {@code lane % 20}. */
         public int remappedLanes() { return remappedLanes; }
-        /** @return tap / hold / mine notes removed as same (line, lane, beat) duplicates. */
+        /** @return 0: nothing is removed as a duplicate since Kelvin 2026-11-02 (kept for the chart editor). */
         public int duplicatesRemoved() { return duplicatesRemoved; }
         /** @return notes dropped for a missing or unknown type. */
         public int unknownTypes() { return unknownTypes; }
@@ -619,13 +681,17 @@ public final class Chart {
         /** @return trails found in a v1 chart and ignored (v1 charts get no trails). */
         public int trailsIgnored() { return trailsIgnored; }
         /**
-         * @return v2 notes whose {@code glitch} had to be sanitised (CHART_FORMAT §6.9: a value that
+         * @return v2 notes whose {@code glitch} had to be sanitised (CHART_FORMAT_v4 §6.9: a value that
          *         is not an object or an array of objects, bad or out-of-range numbers, a
          *         {@code duration} without {@code from}, {@code from > to})
          */
         public int glitchesFixed() { return glitchesFixed; }
         /** @return notes of a v1 chart whose {@code glitch} was ignored (v1 charts get no glitches). */
         public int glitchesIgnored() { return glitchesIgnored; }
+        /** @return notes whose {@code distortion} had to be sanitised (CHART_FORMAT_v4 §6.11; veils: veilsFixed). */
+        public int distortionsFixed() { return distortionsFixed; }
+        /** @return notes of a v1 chart whose {@code distortion} was ignored. */
+        public int distortionsIgnored() { return distortionsIgnored; }
         /**
          * @return notes of a v1 chart whose {@code HeightEvents} were ignored (v1 charts keep the
          *         default tail rule)
@@ -638,18 +704,23 @@ public final class Chart {
          */
         public int laneMineConflicts() { return laneMineConflicts; }
         /**
-         * @return notes whose {@code pivot} was not two finite numbers (CHART_FORMAT §6.1.1; read as far
+         * @return notes whose {@code pivot} was not two finite numbers (CHART_FORMAT_v4 §6.1.1; read as far
          *         as it went, a missing or bad coordinate 0)
          */
         public int pivotsFixed() { return pivotsFixed; }
+        /** @return veils whose values had to be sanitised (CHART_FORMAT_v4 §6.10). */
+        public int veilsFixed() { return veilsFixed; }
+        /** @return veils dropped: not an object, or a polygon with fewer than 3 usable points. */
+        public int veilsDropped() { return veilsDropped; }
 
         /** @return true when nothing was fixed or dropped. */
         public boolean clean() {
             return remappedLanes == 0 && duplicatesRemoved == 0 && unknownTypes == 0 && invalidLanes == 0
                 && invalidTimes == 0 && unknownLines == 0 && autoAddedLanes == 0 && rejectedLanes == 0
                 && trailsFixed == 0 && trailsIgnored == 0 && glitchesFixed == 0 && glitchesIgnored == 0
+                && distortionsFixed == 0 && distortionsIgnored == 0
                 && heightEventsIgnored == 0 && laneMineConflicts == 0 && pivotsFixed == 0
-                && messages.isEmpty();
+                && veilsFixed == 0 && veilsDropped == 0 && messages.isEmpty();
         }
 
         @Override
@@ -667,9 +738,13 @@ public final class Chart {
             append(sb, "trail(s) of a v1 chart ignored", trailsIgnored);
             append(sb, "glitch(es) sanitised", glitchesFixed);
             append(sb, "glitch(es) of a v1 chart ignored", glitchesIgnored);
+            append(sb, "distortion(s) sanitised", distortionsFixed);
+            append(sb, "distortion(s) of a v1 chart ignored", distortionsIgnored);
             append(sb, "HeightEvents of a v1 chart ignored", heightEventsIgnored);
             append(sb, "note(s) inside a LANE MINE's block window", laneMineConflicts);
             append(sb, "pivot(s) sanitised", pivotsFixed);
+            append(sb, "veil(s) sanitised", veilsFixed);
+            append(sb, "veil(s) dropped", veilsDropped);
             for (String s : messages) sb.append("; ").append(s);
             return sb.toString();
         }

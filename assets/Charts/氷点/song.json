@@ -1,0 +1,12 @@
+{
+  "title": "氷点",
+  "artist": "Chikanya",
+  "illustrator": "RainFoamP雨沫星辰",
+  "bpm": 280,
+  "offsetMs": 46,
+  "jacket16x9": {"x": 0.0, "y": 0.04, "w": 1.0, "h": 0.5625},
+  "previewStartMs": 61760,
+  "previewStartBeat": 288,
+  "previewEndBeat": 352,
+  "previewEndMs": 75475
+}

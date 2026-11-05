@@ -18,7 +18,8 @@ import java.util.List;
  * constant event (e.g. the window squeeze of the shipped charts holds 0..1920 with a 526–562
  * event). Every channel uses this rule: note movement / rotation / opacity / tail height, the
  * judgement-line, window and global lane scale events, and the lane width / opacity channels of
- * chart format v2.
+ * chart format v2. The one exception is a note's orbit centre ({@link NoteOrbit}): it stays where an
+ * event leaves it ({@link #heldValue}).
  */
 public final class Events {
     /** Event channel. The JSON {@code "type"} string is the constant name (read case-insensitively). */
@@ -146,6 +147,29 @@ public final class Events {
     }
 
     /**
+     * Like {@link #calculateValue}, but an event's final value holds after it ends, until the next event starts
+     * (a note's orbit centre, Kelvin 2026-10-29: a key stays where a move took it).
+     * Before the first event: {@code base}.
+     *
+     * @param events events sorted by start time
+     * @param time   beat
+     * @param base   value before the first event
+     */
+    public static float heldValue(List<Events> events, float time, float base) {
+        int low = 0;
+        int high = events.size();
+        while (low < high) {
+            int mid = (low + high) >>> 1;
+            if (events.get(mid).startTime <= time) {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+        return low > 0 ? events.get(low - 1).valueAt(time) : base;
+    }
+
+    /**
      * @return an unmodifiable copy of {@code events} (null entries dropped) stably sorted by start
      *         time, as {@link #calculateValue} requires; a shared empty list for null or empty input
      */
@@ -168,13 +192,16 @@ public final class Events {
         }
     };
 
+    /**
+     * Equal timing, values and exponent. The {@link #type} is left out: an event's channel is the list it is in, and
+     * format v5 has no type key, so an event reads back equal whichever format it came from.
+     */
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (!(o instanceof Events)) return false;
         Events e = (Events) o;
-        return type == e.type
-            && Float.compare(startTime, e.startTime) == 0
+        return Float.compare(startTime, e.startTime) == 0
             && Float.compare(endTime, e.endTime) == 0
             && Float.compare(initialValue, e.initialValue) == 0
             && Float.compare(finalValue, e.finalValue) == 0
@@ -183,8 +210,7 @@ public final class Events {
 
     @Override
     public int hashCode() {
-        int h = type != null ? type.hashCode() : 0;
-        h = 31 * h + Float.floatToIntBits(startTime);
+        int h = Float.floatToIntBits(startTime);
         h = 31 * h + Float.floatToIntBits(endTime);
         h = 31 * h + Float.floatToIntBits(initialValue);
         h = 31 * h + Float.floatToIntBits(finalValue);

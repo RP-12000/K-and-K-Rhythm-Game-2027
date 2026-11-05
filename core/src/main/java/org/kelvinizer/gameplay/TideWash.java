@@ -16,7 +16,7 @@ import org.kelvinizer.ui.Draw;
 import org.kelvinizer.ui.Theme;
 
 /**
- * 潮汐命中效果：一整条柔和光带从判定线浮起、散开，被抬起的水退回淡出，并短暂变暗；潮汐水流按住时，细光带按
+ * 浪花命中效果：一整条柔和光带从判定线浮起、散开，被抬起的水退回淡出，并短暂变暗；潮汐按住时，细光带按
  * 固定节奏不断浮起。The TIDE hit effect, v3 (DESIGN §19.2, §20.3, §21.1, §21.6): a soft
  * window-wide band of light lifts off the hit line and floats away as a whole, dissolves, and the
  * water it lifted slides back and fades under a brief darkening; a running TIDE STREAM keeps thin

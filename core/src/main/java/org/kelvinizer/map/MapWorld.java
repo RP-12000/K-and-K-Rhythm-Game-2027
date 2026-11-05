@@ -95,7 +95,7 @@ final class MapWorld {
     private final SongLibrary library;
     private final CaveData data;
     /** The selected difficulty the hub plates count (Kelvin 2026-10-21 20:15). */
-    private final Difficulty lens;
+    private Difficulty lens;
 
     MapWorld(CaveData data, CaveData.Level level, SongLibrary library, Profile p, int sort, Difficulty lens,
              MapFilter filter) {
@@ -703,6 +703,22 @@ final class MapWorld {
             }
         }
         for (int i = 0; i < la.length; i++) lcleared[i] = all[la[i]].cleared() && all[lb[i]].cleared();
+        countRoutes(p);
+    }
+
+    /**
+     * Sets the difficulty the plates count and counts them again for diver {@code p} when it changed: the map reads
+     * the saved difficulty back after it built this level (Kelvin 2026-10-25: the first hub counted SURFACE).
+     */
+    void setLens(Difficulty d, Profile p) {
+        Difficulty l = d != null ? d : Difficulty.SURFACE;
+        if (l == lens) return;
+        lens = l;
+        countRoutes(p);
+    }
+
+    /** Counts the songs behind every plate ({@link #countSongs}), "" for the whole library. */
+    private void countRoutes(Profile p) {
         routeCounts.clear();
         routeCounts.put("", countSongs(null, p));
         for (MapNode n : all) {
@@ -858,9 +874,10 @@ final class MapWorld {
     static String[] clearParts(String names, int score, boolean zh) {
         String g = null;
         for (int i = Grades.R; i < Grades.F; i++) if (Grades.GRADE_MIN_SCORE[i] == score) g = Grades.GRADES[i];
-        String s = g != null ? g : String.format(Locale.ROOT, "%,d", score);
-        if (zh) return new String[] {"在 " + names, "的任意难度中", "拿到 " + s + (g != null ? " 及以上" : " 分及以上")};
-        return new String[] {"GET " + s + (g != null ? " OR ABOVE" : " OR MORE"), "ON ANY DIFFICULTY", "OF " + names};
+        // scores read negative (Kelvin 2026-11-01): a deeper score is a better one
+        String s = g != null ? g : String.format(Locale.ROOT, "%,d", -(long) score);
+        if (zh) return new String[] {"在 " + names, "的任意难度中", "拿到 " + s + (g != null ? " 及以上" : " 分或更深")};
+        return new String[] {"GET " + s + (g != null ? " OR ABOVE" : " OR DEEPER"), "ON ANY DIFFICULTY", "OF " + names};
     }
 
     /** Profile flag of a read story. */

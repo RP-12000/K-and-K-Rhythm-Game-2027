@@ -162,6 +162,7 @@ public final class EdgeEntry {
             bodyReach[i] = 0f;
             from[i] = Float.NaN;
             drawFrom[i] = n.visibleFrom();
+            if (n.orbit() != null) continue; // drawn about its orbit centre, not on its way to the line
             float s;
             float e;
             float a;
@@ -192,7 +193,7 @@ public final class EdgeEntry {
             speed[i] = v;
             tailAt[i] = Math.max(0f, n.tailHeightAt(s));
             layout.update(s, LaneLayout.VIEW_LEFT, LaneLayout.VIEW_RIGHT);
-            if (n.type() == NoteType.UNIVERSAL) {
+            if (!n.type().inLane()) {
                 // a TIDE STREAM's head is its line's TIDE (2026-10-22), its band behind the leading edge
                 kind[i] = n.isUpper() ? K_T4_SKY : K_T4_GROUND;
                 laneW[i] = Math.max(0f, layout.windowRight() - layout.windowLeft() - 2f * NoteRenderer.TIDE_INSET);

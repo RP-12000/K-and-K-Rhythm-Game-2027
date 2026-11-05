@@ -11,10 +11,10 @@ import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.utils.NumberUtils;
 
 /**
- * 音符故障效果的录制批次：先把一个音符画出的全部四边形录下来，再按这一拍的故障图样（横向错位的条带、红蓝色散、闪断）画进真正的批次。
- * 只是画面，不影响判定；稳定运行时不分配内存（缓冲只在第一次超出时增长）。
+ * 音符故障效果的录制批次：先把一个音符画出的全部四边形录下来，再按这一拍的故障图样（横向错位的条带、红蓝色散、闪断）画进真正的批次；
+ * 有扭曲的音符先把这些四边形切细、按水的晃动弯一弯。只是画面，不影响判定；稳定运行时不分配内存（缓冲只在第一次超出时增长）。
  *
- * <p>Recording {@link Batch} for a glitching note (CHART_FORMAT §6.9, Kelvin 2026-10-14). The
+ * <p>Recording {@link Batch} for a glitching note (CHART_FORMAT_v4 §6.9, Kelvin 2026-10-14). The
  * {@link NoteRenderer} points its batch here while it draws a note whose glitch segment is active,
  * then {@link #emit} replays the recorded quads into the real batch with the approved look:
  * <ul>
@@ -33,6 +33,10 @@ import com.badlogic.gdx.utils.NumberUtils;
  * Recorded: every {@code draw} variant (rotated ones are turned into world quads as
  * {@code SpriteBatch} does); colour state is tracked; blend, shader and matrix calls go straight to
  * the real batch.
+ *
+ * <p>A distorted note (CHART_FORMAT_v4 §6.11) records the same way: {@link #bend} cuts the quads into small cells and
+ * moves their corners with the veils' water wobble, then {@link #emit} tears them as above or {@link #emitPlain} draws
+ * them as they are.
  */
 final class GlitchCapture implements Batch {
     /** Most strips a note is cut into. */
@@ -63,6 +67,14 @@ final class GlitchCapture implements Batch {
     private final float[] polyB = new float[8 * 5];
     private final float[] out = new float[20];
     private int rng;
+
+    /** Side of the cells a bent quad is cut into (reference units), and the most cells along one of its sides. */
+    private static final float BEND_CELL = 24f;
+    private static final int BEND_MAX = 48;
+    private float[] bent = new float[INITIAL_QUADS * 20];
+    private Texture[] bentTex = new Texture[INITIAL_QUADS];
+    private final float[] rowA = new float[(BEND_MAX + 1) * 5];
+    private final float[] rowB = new float[(BEND_MAX + 1) * 5];
 
     /** Starts recording for {@code real} (which must be drawing); the colour starts as the real batch's. */
     void begin(Batch real) {
@@ -150,6 +162,109 @@ final class GlitchCapture implements Batch {
         target = null;
         quads = 0;
         return n;
+    }
+
+    /**
+     * Draws the recorded quads into the real batch as they are (a note that bends without a glitch) and ends the
+     * recording, like {@link #emit}.
+     *
+     * @return quads submitted
+     */
+    int emitPlain() {
+        int n = quads;
+        for (int q = 0; q < n; q++) target.draw(tex[q], verts, q * 20, 20);
+        target.setPackedColor(packed);
+        target = null;
+        quads = 0;
+        return n;
+    }
+
+    // ------------------------------------------------------------------ distortion
+
+    /**
+     * Bends the recorded quads with the water wobble of the veils (CHART_FORMAT_v4 §6.11, Kelvin 2026-10-23 16:57):
+     * each quad is cut into cells about {@link #BEND_CELL} reference units wide (at most {@link #BEND_MAX} along a
+     * side), and every corner p moves by {@code −strength · scale · wobble((p − origin) / scale, t)}
+     * ({@link VeilRenderer#wobbleX}), so the waves ride with the note when {@code origin} is its head. Call between
+     * the recording and {@link #emit} or {@link #emitPlain}; grows its buffer only past its largest note so far.
+     *
+     * @param t     second of the 6 s loop
+     * @param scale {@link Field#shapeScale()}
+     */
+    void bend(float ox, float oy, float strength, float t, float scale) {
+        if (quads == 0 || !(strength > 0f) || !(scale > 0f)) return;
+        float cell = BEND_CELL * scale;
+        float k = strength * scale;
+        float inv = 1f / scale;
+        int n = 0;
+        for (int q = 0; q < quads; q++) {
+            int o = q * 20;
+            float[] v = verts;
+            // corners 0 → 3 run along a (the quad's x side), 0 → 1 along b
+            int na = cells(v[o + 15] - v[o], v[o + 16] - v[o + 1], cell);
+            int nb = cells(v[o + 5] - v[o], v[o + 6] - v[o + 1], cell);
+            int need = n + na * nb;
+            if (need > bentTex.length) {
+                int size = Math.max(need, bentTex.length * 2);
+                float[] nv = new float[size * 20];
+                System.arraycopy(bent, 0, nv, 0, n * 20);
+                bent = nv;
+                Texture[] nt = new Texture[size];
+                System.arraycopy(bentTex, 0, nt, 0, n);
+                bentTex = nt;
+            }
+            float[] a = rowA;
+            float[] b = rowB;
+            row(o, 0f, na, a, ox, oy, k, inv, t);
+            for (int j = 1; j <= nb; j++) {
+                row(o, (float) j / nb, na, b, ox, oy, k, inv, t);
+                for (int i = 0; i < na; i++) {
+                    int d = n * 20;
+                    System.arraycopy(a, i * 5, bent, d, 5);
+                    System.arraycopy(b, i * 5, bent, d + 5, 5);
+                    System.arraycopy(b, (i + 1) * 5, bent, d + 10, 5);
+                    System.arraycopy(a, (i + 1) * 5, bent, d + 15, 5);
+                    bentTex[n++] = tex[q];
+                }
+                float[] s = a;
+                a = b;
+                b = s;
+            }
+        }
+        float[] sv = verts;
+        verts = bent;
+        bent = sv;
+        Texture[] st = tex;
+        tex = bentTex;
+        bentTex = st;
+        quads = n;
+    }
+
+    /** @return cells along a side (dx, dy): its length over {@code cell}, rounded up (an exact multiple stays). */
+    private static int cells(float dx, float dy, float cell) {
+        float len = (float) Math.sqrt(dx * dx + dy * dy);
+        return Math.max(1, Math.min(BEND_MAX, (int) Math.ceil(len / cell - 1e-3f)));
+    }
+
+    /** Row {@code fb} (0..1 along b) of quad {@code o}, cut into {@code na} cells along a, bent, into {@code dst}. */
+    private void row(int o, float fb, int na, float[] dst, float ox, float oy, float k, float inv, float t) {
+        float[] v = verts;
+        float c0 = v[o + 2], c1 = v[o + 7], c2 = v[o + 12], c3 = v[o + 17];
+        boolean flat = c0 == c1 && c0 == c2 && c0 == c3;
+        for (int i = 0; i <= na; i++) {
+            float fa = (float) i / na;
+            float w0 = (1f - fa) * (1f - fb), w1 = (1f - fa) * fb, w2 = fa * fb, w3 = fa * (1f - fb);
+            int d = i * 5;
+            float x = w0 * v[o] + w1 * v[o + 5] + w2 * v[o + 10] + w3 * v[o + 15];
+            float y = w0 * v[o + 1] + w1 * v[o + 6] + w2 * v[o + 11] + w3 * v[o + 16];
+            float lx = (x - ox) * inv;
+            float ly = (y - oy) * inv;
+            dst[d] = x - k * VeilRenderer.wobbleX(lx, ly, t);
+            dst[d + 1] = y - k * VeilRenderer.wobbleY(lx, ly, t);
+            dst[d + 2] = flat ? c0 : lerpColor(lerpColor(c0, c3, fa), lerpColor(c1, c2, fa), fb);
+            dst[d + 3] = w0 * v[o + 3] + w1 * v[o + 8] + w2 * v[o + 13] + w3 * v[o + 18];
+            dst[d + 4] = w0 * v[o + 4] + w1 * v[o + 9] + w2 * v[o + 14] + w3 * v[o + 19];
+        }
     }
 
     // ------------------------------------------------------------------ pattern

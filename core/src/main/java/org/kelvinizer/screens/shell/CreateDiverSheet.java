@@ -49,7 +49,7 @@ public final class CreateDiverSheet extends Modal {
     @Override
     protected void onOpened() {
         ProfileStore store = game.profiles();
-        form.reset(null, store.defaultName(), null, 0);
+        form.reset(null, store.defaultName());
         create.setEnabled(store.canCreate());
     }
 
@@ -97,7 +97,7 @@ public final class CreateDiverSheet extends Modal {
     private void create() {
         if (!form.commitName()) return;
         ProfileStore store = game.profiles();
-        Profile p = store.create(form.name(), form.avatar().copy());
+        Profile p = store.create(form.name());
         if (p == null) {
             create.shake();
             game.toasts().show(ShellFormat.diversMax(), Theme.LOST);

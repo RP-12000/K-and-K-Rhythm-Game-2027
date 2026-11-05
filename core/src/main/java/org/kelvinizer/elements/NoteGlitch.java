@@ -7,7 +7,7 @@ import java.util.Locale;
  * 一个音符的一段故障效果（谱面的 {@code "glitch"} 键里的一段，不可变）：起止拍、强度（可以渐强渐弱）、跳变速度，以及色散、错位、闪断三种成分的比重。
  * 故障只是画面效果，引擎从不读取；{@link #of} 会修正非法值，从不抛异常。
  *
- * <p>One glitch segment of a note (CHART_FORMAT §6.9, Kelvin 2026-10-14), immutable and pure Java.
+ * <p>One glitch segment of a note (CHART_FORMAT_v4 §6.9, Kelvin 2026-10-14), immutable and pure Java.
  * A glitch is only a show: the engine never reads it, and it never changes a judgement or an
  * input.
  *

@@ -120,6 +120,22 @@ public enum Judgement {
     }
 
     /**
+     * What one touched mine takes off the score, however many mines the chart has (Kelvin 2026-11-01 20:14:
+     * 「水雷改为打中一个加10000分吧不然水雷少的谱面就很难了」; the score reads negative, so a mine adds to it).
+     * Until then all mines together took 1,000,000.
+     */
+    public static final int MINE_PENALTY = 10_000;
+
+    /**
+     * @return what {@code touched} of {@code total} mines take off the score, 10,000 each; 0 when the chart
+     *         has no mines. Each mine counts once, however often it is touched.
+     */
+    public static int minePenalty(int touched, int total) {
+        if (total <= 0 || touched <= 0) return 0;
+        return MINE_PENALTY * Math.min(touched, total);
+    }
+
+    /**
      * Exact base score (without the PERFECT bonus):
      * {@code floor((100,000,000 · (100·resonance + 55·echo) + 1,000,000 · chain) / (100·totalNotes))},
      * i.e. {@code 100,000,000 · (r + 0.55·e)/t + 10,000 · m_r/t} rounded down once; 0 when

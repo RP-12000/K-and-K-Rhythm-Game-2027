@@ -9,6 +9,7 @@ import com.badlogic.gdx.math.Matrix4;
 import org.kelvinizer.elements.Chart;
 import org.kelvinizer.elements.LaneLayout;
 import org.kelvinizer.elements.Note;
+import org.kelvinizer.elements.NoteDistortion;
 import org.kelvinizer.elements.NoteGlitch;
 import org.kelvinizer.elements.NoteType;
 import org.kelvinizer.profile.Settings;
@@ -19,7 +20,7 @@ import org.kelvinizer.ui.Theme;
 import org.kelvinizer.ui.Ui;
 
 /**
- * 音符渲染器：画 DROP、STREAM、MINE、轨道水雷、TIDE（T4：天键珍珠串、地键滚浪）和潮汐水流，并收集它们的发光。
+ * 音符渲染器：画 DROP、STREAM、MINE、轨道水雷、TIDE（T4：天键珍珠串、地键滚浪）和潮汐，并收集它们的发光。
  * 与别的音符同一拍的音符带同步珍珠（DROP、STREAM 头上三颗金色并排，水雷三颗红色，TIDE 金色珍珠）；轨道水雷的柱子画在条带层，不会盖住另一条判定线。
  *
  * <p>Note renderer (DESIGN §5.8 notes, §5.15 mines and TIDE notes, §19.1 TIDE STREAM, §20.2
@@ -35,12 +36,18 @@ import org.kelvinizer.ui.Ui;
  * fill leaves a hole under it. Missed notes turn grey, jitter for two frames and fade; broken holds
  * fade to grey. Notes glitch only where the chart asks for it.
  *
- * <p><b>Chart glitches</b> (CHART_FORMAT §6.9, Kelvin 2026-10-14): while a note's glitch segment is
+ * <p><b>Chart glitches</b> (CHART_FORMAT_v4 §6.9, Kelvin 2026-10-14): while a note's glitch segment is
  * active ({@link NoteGlitch#activeAt}), its sprites go to a {@link GlitchCapture} instead of the
  * atlas batch and are replayed cut into sideways-moving strips, with a red and a blue copy and an
  * occasional dim flicker; "reduce flashing" turns the flicker off and halves the pattern rate.
  * Its glows (sync frame, glow) tear along the same strips in the additive pass, without the colour
  * split. A TIDE group shows the glitch of the note that draws its head.
+ *
+ * <p><b>Distortion</b> (CHART_FORMAT_v4 §6.11, Kelvin 2026-10-23 16:57 / 17:01): while a note's distortion strength is
+ * above 0 ({@link NoteDistortion#strengthAt}, 0 outside its segments) its sprites are recorded the same way and
+ * {@link GlitchCapture#bend} moves them with the veils' water wobble about the note's head, so the waves ride with
+ * the note (a turned TIDE bends in its own turned frame); then they tear as above or go to the batch as they are.
+ * Its glows and a ground TIDE's line glow bend with it. Trails do not bend. Only a look: judgement never sees it.
  *
  * <p><b>Sync pearls</b> (Kelvin 2026-10-12 12:33, 12:39 「同一时刻都带」, 12:42 gold; they replace the gold
  * square): a note that shares its beat with any other note ({@link Note#sharesBeat()})
@@ -51,9 +58,8 @@ import org.kelvinizer.ui.Ui;
  * {@code SYNC_PEARL_LUSTRE} lustre and a white highlight toward the upper left of the screen); three
  * red pearls 0.7× as big the same way across a MINE or LANE MINE head; gold pearls instead of white on a sky
  * TIDE's thread, with gold glows; a row of gold pearls, large and small in turn like the sky thread's,
- * halfway up a ground TIDE's wave, riding the crest (a TIDE STREAM head alike). A note's own glows leave its
- * pearls out (an octagonal hole each), and so does the TIDE wave glow beneath a note drawn over it (a DROP,
- * STREAM or MINE on a TIDE's beat), so the pearls stay true gold and red.
+ * strung on a ground TIDE's wave line (a TIDE STREAM head alike). A note's own glows leave its
+ * pearls out (an octagonal hole each), so the pearls stay true gold and red.
  *
  * <p>Mines turn with {@code angleAt} like lane notes (Kelvin 2026-10-12 03:03). A LANE MINE (DESIGN §20.2) is
  * drawn in two layers: its body in {@link #drawBands} (beneath trails, lane notes and mines): an
@@ -65,10 +71,10 @@ import org.kelvinizer.ui.Ui;
  * contact and fades over 120 ms after its end.
  *
  * <p>TIDE drops use the T4 look (Kelvin 2026-10-12 04:36): a string of pearls on the sky line, a rolling wave on
- * the ground line whose crest moves with song time (frozen on pause). TIDE heads draw first in the
- * note pass, so lane notes and mines read on top of them (a joint DROP stays visible on its TIDE's
- * wave or pearls). A TIDE STREAM's head is its line's TIDE drop (Kelvin 2026-10-22: the pearl string on the sky
- * line, the wave on the ground line) with a band behind it (§19.1): window-wide
+ * the ground line (again since 2026-10-29) whose crest slides by the note's {@code waveSpeed} (still at 0), the
+ * pearls moving with it. TIDE heads draw first in the note pass, so lane notes and mines read on top of them (a
+ * joint DROP stays visible on its TIDE's wave or pearls). A TIDE STREAM's head is its line's TIDE drop (Kelvin
+ * 2026-10-22: the pearl string on the sky line, the wave on the ground line) with a band behind it (§19.1): window-wide
  * (sky inset by {@link NoteShapes#SKY_TIDE_STREAM_INSET}), fill α .14 at the head → .08 at the
  * tail, 2 px rails at α .6 and a 4 px tail cap at α .75 in the band's colour ({@code skyTide} on the
  * sky line, {@code tide} on the ground line), two faint ripple lines scrolling toward the line; in the
@@ -108,8 +114,6 @@ final class NoteRenderer {
     private static final int GLOW_MAX = 1024;
     /** Most octagonal holes the glows of one frame leave around sync pearls. */
     private static final int GLOW_HOLE_MAX = 1024;
-    /** Most TIDE glows of one frame that leave out the pearls of the notes drawn over them. */
-    private static final int COVER_MAX = 64;
     /** An octagon of apothem a cuts a × (2 − √2) off each corner of its a-box. */
     private static final float OCT_CUT = 0.58578644f;
     private static final byte G_NOTE = 0;
@@ -121,8 +125,8 @@ final class NoteRenderer {
     private static final byte G_BAND = 4;
     /** Solid disc ({@code disc}): the border round a highlighted sky TIDE pearl. */
     private static final byte G_DISC = 5;
-    /** Most ground TIDE crests highlighted in one frame, and most points along them. */
-    private static final int CREST_MAX = 32, CREST_PTS = 4096;
+    /** Most ground TIDE line glows in one frame (two sides each), and most points along them. */
+    private static final int CREST_MAX = 128, CREST_PTS = 8192;
     /**
      * Sync highlight (Kelvin 2026-10-13; 12:02 「高亮还可以再明显一点」; 12:05 the border about half as thick as the old
      * high-opacity glow's, which reached 16 beyond the body): the solid border's width beyond the body, the soft
@@ -177,6 +181,12 @@ final class NoteRenderer {
     private int glitchedNotes;
     /** First glow the glitching note added (its glows replay with its glitch in {@link #drawGlows}). */
     private int glowMark;
+    /** The note being recorded tears (an active glitch) and / or bends (an active distortion). */
+    private boolean tearing, bending;
+    /** Distortion strength of the note being recorded, and its head: where its waves are anchored (world). */
+    private float bendStrength, bendX, bendY;
+    /** Second of the water wobble's loop in this frame ({@link VeilRenderer#loopTime}). */
+    private float bendT;
     private final NinePatch nine;
     private final TextureRegion core;
     private final TextureRegion edgeL;
@@ -186,7 +196,6 @@ final class NoteRenderer {
     private final TextureRegion dot;
     private final Color col = new Color();
     private final Color col2 = new Color();
-    private final Color col3 = new Color();
     private final float[] bandQuad = new float[20];
     /** Rotated nine-slice and polygon quads. */
     private final float[] verts = new float[9 * 20];
@@ -215,7 +224,7 @@ final class NoteRenderer {
      * soft_dot's and disc's fall-off from the centre up (one texel wide) and their upper-right quarters: the soft
      * halos and the solid borders of the sync highlight.
      */
-    private TextureRegion dotSlice, dotQuarter, discSlice, discQuarter;
+    private TextureRegion dotSlice, dotQuarter, discSlice, discQuarter, gaussSlice;
 
     private final float[] gx = new float[GLOW_MAX];
     private final float[] gy = new float[GLOW_MAX];
@@ -225,8 +234,10 @@ final class NoteRenderer {
     private final float[] gcol = new float[GLOW_MAX];
     /** Halo width of a {@link #G_FRAME} glow. */
     private final float[] gpad = new float[GLOW_MAX];
-    /** Highlighted crests ({@link #crestGlow}): first point, point count, packed colour, width and kind of each. */
-    private final boolean[] crestBand = new boolean[CREST_MAX];
+    /**
+     * Sides of the ground TIDE line glows ({@link #lineGlow}): first point, point count, packed colour, reach,
+     * normal.
+     */
     private final int[] crestAt = new int[CREST_MAX];
     private final int[] crestN = new int[CREST_MAX];
     private final float[] crestCol = new float[CREST_MAX];
@@ -235,6 +246,17 @@ final class NoteRenderer {
     private final float[] crestNy = new float[CREST_MAX];
     private final float[] cpx = new float[CREST_PTS];
     private final float[] cpy = new float[CREST_PTS];
+    /**
+     * How far the TIDE being painted has flowed, in waves ({@link Note#waveSpeed()} × beat; 0 outside
+     * {@link #drawTide} and trail copies); {@link #beadShift} is the same for the pearls, in pearl steps.
+     */
+    float wavePhase;
+    /**
+     * Paints the TIDE shapes ({@link #paintTideT4}, {@link #paintTideBand}, {@link #paintTideCap}) in the mine red:
+     * set only around the paint calls of a TIDE MINE or TIDE STREAM MINE and their afterimage copies.
+     */
+    boolean mineTint;
+    private float beadShift;
 
     // a TIDE drawn turned about its pivot, between tideTurn and tideTurnEnd (Kelvin 2026-10-16)
     private boolean tideTurned;
@@ -268,10 +290,9 @@ final class NoteRenderer {
     private final boolean[] gglitch = new boolean[GLOW_MAX];
     private final int[] gseed = new int[GLOW_MAX];
     private final float[] gfx = new float[GLOW_MAX * 6];
+    // the distortion of the note that added each glow: strength (0: none) and anchor; see glitchEnd()
+    private final float[] gbend = new float[GLOW_MAX * 3];
     private int glows;
-    /** Glows (indices) that leave out the pearls drawn over them later in the frame ({@link #coverHoles}). */
-    private final int[] cover = new int[COVER_MAX];
-    private int covers;
 
     // scratch geometry of the last computed note (see geometry())
     private float sx;
@@ -401,8 +422,8 @@ final class NoteRenderer {
 
     /**
      * Sets how notes that share their beat are marked (Kelvin 2026-10-13): {@link Settings#SYNC_HINT_HIGHLIGHT} a
-     * border and halo (white; deep gold on sky notes; light red on mines; round each pearl of a sky TIDE, along the
-     * crest of a ground TIDE),
+     * border and halo (white; deep gold on sky notes; light red on mines; round each pearl of a sky TIDE; a ground
+     * TIDE's wave line turns white instead),
      * {@link Settings#SYNC_HINT_PEARLS} the halo and the sync pearls, {@link Settings#SYNC_HINT_OFF} neither.
      */
     void setSyncHint(int mode) {
@@ -440,12 +461,26 @@ final class NoteRenderer {
     }
 
     /**
-     * Starts recording note i's sprites when one of its glitch segments is active at
-     * {@code beat} with some intensity (CHART_FORMAT §6.9).
+     * Starts recording note i's sprites when one of its glitch segments is active at {@code beat} with some intensity
+     * (CHART_FORMAT_v4 §6.9) or it is distorted there (§6.11).
      *
-     * @return true when the note glitches; then {@link #glitchEnd()} must follow its drawing
+     * @return true when the note glitches or bends; then {@link #glitchEnd()} must follow its drawing
      */
-    private boolean glitchBegin(int i, Note n, float beat) {
+    private boolean glitchBegin(GameEngine e, int i, Note n, float beat) {
+        tearing = tearAt(i, n, beat);
+        bendStrength = n.distortions().isEmpty() ? 0f
+            : NoteDistortion.strengthAt(n.distortions(), beat, NoteDistortion.NOTE_BASE);
+        bending = bendStrength > 0.001f;
+        if (!tearing && !bending) return false;
+        if (bending) bendAnchor(e, i, n, beat);
+        glitch.begin(atlas);
+        batch = glitch;
+        glowMark = glows;
+        return true;
+    }
+
+    /** @return true when a glitch segment of note i is active at {@code beat} with some intensity (then set up). */
+    private boolean tearAt(int i, Note n, float beat) {
         if (n.glitches().isEmpty()) return false;
         NoteGlitch g = NoteGlitch.activeAt(n.glitches(), beat);
         if (g == null) return false;
@@ -457,22 +492,63 @@ final class NoteRenderer {
         glitchSplit = g.split();
         glitchSlice = g.slice();
         glitchFlicker = reduce ? 0f : g.flicker();
-        glitch.begin(atlas);
-        batch = glitch;
-        glowMark = glows;
         return true;
     }
 
-    /** Replays the recorded note with its glitch into the atlas batch. */
+    /**
+     * Anchors the waves of a bending note at its head: its lane's centre (the window's for a TIDE) where its leading
+     * edge crosses that lane, upright. A turned TIDE records in its own frame (the batch is turned), so this is its
+     * head in that frame too; its glows turn the anchor with them ({@link #glitchEnd}).
+     */
+    private void bendAnchor(GameEngine e, int i, Note n, float beat) {
+        LaneLayout lay = e.layout();
+        int lane = n.laneIndex();
+        bendX = n.type() == NoteType.UNIVERSAL || lane < 0 || lane >= lay.count()
+            ? 0.5f * (lay.windowLeft() + lay.windowRight())
+            : lay.centre(lane) + n.offsetXAt(entry.look(i, beat)) * Field.kx();
+        float pos = drawPos(i, n, beat);
+        if (Float.isNaN(pos)) pos = 0f;
+        float lineY = e.lineY(n.line());
+        bendY = n.isUpper() ? lineY - pos : lineY + pos;
+        if (n.orbit() != null) { // a key on its orbit bends where it is drawn
+            float lb = entry.look(i, beat);
+            boolean mine = n.type() == NoteType.MINE;
+            float rot = n.angleAt(lb) + (n.isUpper() ? 180f : 0f);
+            float h = mine ? mineHeight() : noteHeight();
+            float x = NoteShapes.anchorX(n, lb, bendX, bendY, pos, mine ? MINE_H : NOTE_H, h, rot);
+            bendY = NoteShapes.anchorY(n, lb, bendX, bendY, pos, mine ? MINE_H : NOTE_H, h, rot);
+            bendX = x;
+        }
+    }
+
+    /** Replays the recorded note, bent and with its glitch, into the atlas batch. */
     private void glitchEnd() {
         batch = atlas;
         boolean drew = glitch.recorded() > 0;
-        if (drew) glitchedNotes++;
-        glitchQuads += glitch.emit(glitchSeed, glitchIntensity, glitchSplit, glitchSlice, glitchFlicker);
+        if (bending) glitch.bend(bendX, bendY, bendStrength, bendT, Field.shapeScale());
+        if (tearing) {
+            if (drew) glitchedNotes++;
+            glitchQuads += glitch.emit(glitchSeed, glitchIntensity, glitchSplit, glitchSlice, glitchFlicker);
+        } else {
+            glitch.emitPlain();
+        }
         if (!drew) return;
-        // its glows (sync frame, glow) tear along the same strips when the additive pass draws them
+        // its glows (sync frame, glow) bend with the same waves and tear along the same strips in the additive pass
+        float ax = bendX;
+        float ay = bendY;
+        if (tideTurned) { // they are collected turned (addGlow)
+            float dx = ax - ttPx;
+            float dy = ay - ttPy;
+            ax = ttPx + ttCos * dx - ttSin * dy;
+            ay = ttPy + ttSin * dx + ttCos * dy;
+        }
         for (int k = glowMark; k < glows; k++) {
-            gglitch[k] = true;
+            int b = k * 3;
+            gbend[b] = bending ? bendStrength : 0f;
+            gbend[b + 1] = ax;
+            gbend[b + 2] = ay;
+            gglitch[k] = tearing;
+            if (!tearing) continue;
             gseed[k] = glitchSeed;
             int o = k * 6;
             gfx[o] = glitchIntensity;
@@ -511,9 +587,11 @@ final class NoteRenderer {
         for (int i = start; i < end; i++) {
             if (e.noteState(i) != GameEngine.STATE_PENDING) continue;
             Note n = notes[i];
+            if (n.fake()) continue; // a decoration lights no lane
             double dt = n.judgementMs() - vis;
             if (dt <= 0.0 || dt > APPROACH_MS) continue;
             float k = 1f - (float) dt / APPROACH_MS;
+            if (n.isTideMine()) continue;
             if (n.type() == NoteType.UNIVERSAL) field.tideApproach(n.line(), k);
             else if (n.type() == NoteType.MINE) field.approach(n.line(), n.laneIndex(), 0.20f * k, true);
             else field.approach(n.line(), n.laneIndex(), 0.25f * k, false);
@@ -576,10 +654,11 @@ final class NoteRenderer {
                     near = FLAT_CULL + pad + turnReach(up, n.angleAt(lb) + (up ? 180f : 0f), 0f, mineHeight());
                     break;
                 }
-                case UNIVERSAL: {
+                case UNIVERSAL:
+                case TIDE_MINE: {
                     if (st == GameEngine.STATE_HIT || st == GameEngine.STATE_COMPLETED) continue;
-                    boolean stream = n.isTideStream();
-                    boolean bar = tideBar(i, n, st);
+                    boolean stream = n.hasTideBand();
+                    boolean bar = tideBar(i, n, st, beat);
                     if (!bar && !stream) continue;
                     if (lay.windowRight() - lay.windowLeft() <= 2f * TIDE_INSET) continue;
                     float tail = stream ? tailDraw(n, lb) : 0f;
@@ -617,13 +696,13 @@ final class NoteRenderer {
             if (Float.isNaN(pos)) continue;
             float lineY = e.lineY(n.line());
             float y = up ? lineY - pos : lineY + pos;
-            if (n.type() != NoteType.UNIVERSAL) { // where drawLaneNote and drawMine put it
+            if (n.type().inLane()) { // where drawLaneNote and drawMine put it
                 boolean mine = n.type() == NoteType.MINE;
-                y += NoteShapes.pivotShiftY(pos, mine ? MINE_H : NOTE_H, mine ? mineHeight() : noteHeight(),
-                    n.angleAt(lb) + (up ? 180f : 0f), up, n.pivotX(), n.pivotY());
+                y = NoteShapes.anchorY(n, lb, lay.centre(n.laneIndex()) + n.offsetXAt(lb) * Field.kx(), y, pos,
+                    mine ? MINE_H : NOTE_H, mine ? mineHeight() : noteHeight(), n.angleAt(lb) + (up ? 180f : 0f));
             }
             // as drawTide and drawBand: a turned TIDE is not culled
-            boolean turnedTide = n.type() == NoteType.UNIVERSAL && NoteShapes.turned(n.angleAt(lb));
+            boolean turnedTide = !n.type().inLane() && NoteShapes.turned(n.angleAt(lb));
             if (!turnedTide && offScreen(up, y, far, near)) continue;
             if (n.shownOpacityAt(lb) * fadeIn(i, lineY, up) <= MIN_ALPHA) continue;
             q += nq;
@@ -682,23 +761,37 @@ final class NoteRenderer {
     }
 
     /**
-     * @return true when TIDE note i draws a head in state {@code st}: a pending group (same line
-     *         and beat) draws one head (its first member); a TIDE STREAM that runs or broke draws
-     *         its own (pinned) head; a missed drop group keeps its one head
+     * @return true when TIDE note i draws a head in state {@code st} at {@code beat}: a pending group
+     *         (same line and beat) draws one head per look ({@link #tideHead}); a TIDE STREAM that runs
+     *         or broke draws its own (pinned) head; a missed drop group keeps its heads; a decoration
+     *         ({@link Note#fake()}) always draws its own
      */
-    private boolean tideBar(int i, Note n, byte st) {
-        if (st == GameEngine.STATE_PENDING) return tideHead(i, n);
-        return n.isTideStream() || tideHead(i, n);
+    private boolean tideBar(int i, Note n, byte st, float beat) {
+        if (n.isTideMine()) return true; // a TIDE MINE is never part of a TIDE group
+        if (st == GameEngine.STATE_PENDING) return tideHead(i, n, beat);
+        return n.isTideStream() || tideHead(i, n, beat);
     }
 
-    /** @return true when TIDE note i heads its group (same line and beat). */
-    private boolean tideHead(int i, Note n) {
-        if (i == 0) return true;
+    /**
+     * @return true when TIDE note i draws its own head at {@code beat}: it heads its group (same line
+     *         and beat), is a decoration, or the member before it is not drawn yet (its window opens
+     *         later) or looks different now (position, angle, pivot, opacity or wave; Kelvin 2026-11-02:
+     *         lightning lines); members that look alike draw one head
+     */
+    private boolean tideHead(int i, Note n, float beat) {
+        if (i == 0 || n.fake()) return true; // a decorative TIDE is drawn on its own (Kelvin 2026-11-02)
         Note p = notes[i - 1];
-        return !(p.type() == NoteType.UNIVERSAL && p.line() == n.line() && p.judgement() == n.judgement());
+        if (!(p.type() == NoteType.UNIVERSAL && p.line() == n.line() && p.judgement() == n.judgement())) return true;
+        if (entry.drawFrom(i - 1) > beat) return true;
+        float lp = entry.look(i - 1, beat);
+        float ln = entry.look(i, beat);
+        return entry.position(i - 1, p, beat) != entry.position(i, n, beat) || p.angleAt(lp) != n.angleAt(ln)
+            || p.pivotX() != n.pivotX() || p.pivotY() != n.pivotY() || p.waveSpeed() != n.waveSpeed()
+            || p.shownOpacityAt(lp) != n.shownOpacityAt(ln);
     }
 
     private boolean done(GameEngine e, int i, double vis) {
+        if (notes[i].fake()) return vis > notes[i].endMs() + 500.0; // never judged: gone after its end
         byte st = e.noteState(i);
         if (st == GameEngine.STATE_PENDING || st == GameEngine.STATE_HOLDING) return false;
         float at = e.noteResolvedMs(i);
@@ -716,31 +809,40 @@ final class NoteRenderer {
     void draw(GameEngine e, float now) {
         glows = 0;
         glowHoles = 0;
-        covers = 0;
         crests = 0;
         crestPts = 0;
         float beat = e.visualBeat();
         fadeBeat = beat;
+        bendT = VeilRenderer.loopTime(now);
         int frame = (int) (now * 60f);
         collectSkyRibbons(e, beat);
         // TIDE heads first (T4 drops and TIDE STREAM heads): lane notes and mines read on top of them
         for (int i = end - 1; i >= start; i--) {
             Note n = notes[i];
-            if (n.type() != NoteType.UNIVERSAL || entry.drawFrom(i) > beat) continue;
-            boolean g = glitchBegin(i, n, beat);
+            if (n.type().inLane() || entry.drawFrom(i) > beat) continue;
+            boolean g = glitchBegin(e, i, n, beat);
             drawTide(e, i, n, beat, frame);
             if (g) glitchEnd();
             tideTurnEnd();
         }
         for (int i = end - 1; i >= start; i--) {
             Note n = notes[i];
-            if (entry.drawFrom(i) > beat || n.type() == NoteType.UNIVERSAL) continue;
-            boolean g = glitchBegin(i, n, beat);
+            if (entry.drawFrom(i) > beat || !n.type().inLane()) continue;
+            boolean g = glitchBegin(e, i, n, beat);
             if (n.type() == NoteType.MINE) drawMine(e, i, n, beat, now, frame);
             else drawLaneNote(e, i, n, beat, now, frame);
             if (g) glitchEnd();
         }
         batch.setColor(Color.WHITE);
+    }
+
+    /**
+     * Opacity factor of an unjudged DROP or TIDE past its time (Kelvin 2026-10-27): 1 at its judgement, falling
+     * linearly to 0 at {@link GameEngine#TIER2_MS} late, the moment it is judged LOST.
+     */
+    static float lateFade(GameEngine e, Note n) {
+        float late = (float) (e.judgeMs() - n.judgementMs());
+        return late <= 0f ? 1f : 1f - MathUtils.clamp(late / GameEngine.TIER2_MS, 0f, 1f);
     }
 
     /**
@@ -819,13 +921,31 @@ final class NoteRenderer {
         if (Float.isNaN(pos)) return false;
         boolean up = n.isUpper();
         float lineY = e.lineY(n.line());
-        sx = lay.centre(lane);
+        float lb = entry.look(n, beat);
+        sx = lay.centre(lane) + n.offsetXAt(lb) * Field.kx();
         sy = up ? lineY - pos : lineY + pos;
         sw = lw * 5f / 6f * Math.min(noteSize, 1.15f);
         sh = NOTE_H * noteSize;
-        srot = n.angleAt(entry.look(n, beat)) + (up ? 180f : 0f);
-        sx += NoteShapes.pivotShiftX(pos, NOTE_H, sh, srot, up, n.pivotX(), n.pivotY());
-        sy += NoteShapes.pivotShiftY(pos, NOTE_H, sh, srot, up, n.pivotX(), n.pivotY());
+        srot = n.angleAt(lb) + (up ? 180f : 0f);
+        float x = NoteShapes.anchorX(n, lb, sx, sy, pos, NOTE_H, sh, srot);
+        sy = NoteShapes.anchorY(n, lb, sx, sy, pos, NOTE_H, sh, srot);
+        sx = x;
+        return true;
+    }
+
+    /**
+     * The point a STREAM's hit effects start from at {@code beat} (DESIGN §5.9, Kelvin 2026-10-26 13:25): the point of
+     * its key that crosses the line at the judgement ({@link #hitShift()} in from the leading edge, along the key),
+     * wherever the base is drawn: its lane, its line, its distance from the line after the head and its turn.
+     *
+     * @param out receives x, y
+     * @return false when the note is not drawn at {@code beat} (hidden, inactive lane); {@code out} is unchanged
+     */
+    boolean effectPoint(GameEngine e, Note n, float beat, float[] out) {
+        if (!geometry(e, n, beat)) return false;
+        float shift = hitShift();
+        out[0] = sx - MathUtils.sinDeg(srot) * shift;
+        out[1] = sy + MathUtils.cosDeg(srot) * shift;
         return true;
     }
 
@@ -839,6 +959,7 @@ final class NoteRenderer {
         for (int i = start; i < end && skyRibs < MAX_SKY; i++) {
             Note n = notes[i];
             if (n.type() != NoteType.HOLD || !n.isUpper() || entry.drawFrom(i) > beat) continue;
+            if (n.fake() && beat >= n.endBeat()) continue; // as drawLaneNote
             byte st = e.noteState(i);
             if (st == GameEngine.STATE_HIT || st == GameEngine.STATE_COMPLETED) continue;
             int lane = n.laneIndex();
@@ -852,15 +973,14 @@ final class NoteRenderer {
             if (Math.abs(MathUtils.sinDeg(rot)) > NoteShapes.UPRIGHT_SIN) continue;
             float lineY = e.lineY(n.line());
             if (n.shownOpacityAt(lb) * fadeIn(i, lineY, true) <= MIN_ALPHA) continue;
-            float y = lineY - pos
-                + NoteShapes.pivotShiftY(pos, NOTE_H, noteHeight(), rot, true, n.pivotX(), n.pivotY());
+            float bx = lay.centre(lane) + n.offsetXAt(lb) * Field.kx();
+            float y = NoteShapes.anchorY(n, lb, bx, lineY - pos, pos, NOTE_H, noteHeight(), rot);
             float y2 = y + MathUtils.cosDeg(rot) * tail;
             int k = skyRibs++;
             skyRibLane[k] = lane;
             skyRibLo[k] = Math.min(y, y2);
             skyRibHi[k] = Math.max(y, y2);
-            skyRibCx[k] = lay.centre(lane) + NoteShapes.pivotShiftX(pos, NOTE_H, noteHeight(), rot, true, n.pivotX(),
-                n.pivotY());
+            skyRibCx[k] = NoteShapes.anchorX(n, lb, bx, lineY - pos, pos, NOTE_H, noteHeight(), rot);
             skyRibW[k] = NoteShapes.ribbonWidth(lay.width(lane), true);
         }
     }
@@ -892,6 +1012,7 @@ final class NoteRenderer {
     private void drawLaneNote(GameEngine e, int i, Note n, float beat, float now, int frame) {
         byte st = e.noteState(i);
         if (st == GameEngine.STATE_HIT || st == GameEngine.STATE_COMPLETED) return;
+        if (n.fake() && beat >= n.endBeat()) return; // a decoration is gone at its end (Kelvin 2026-11-02)
         if (!geometry(e, n, beat)) return;
         boolean up = n.isUpper();
         boolean hold = n.type() == NoteType.HOLD;
@@ -911,27 +1032,26 @@ final class NoteRenderer {
         if (offScreen(up, sy, far, near)) return;
         float alpha = n.shownOpacityAt(lb) * fadeIn(i, lineY, up);
         if (alpha <= MIN_ALPHA) return;
-        Color base = up ? Theme.SKY_SIG : Theme.GROUND_SIG;
+        Color base = up ? Theme.SKY_SIG : Theme.GROUND_NOTE;
         float x = sx;
         float headMul = 1f;
         boolean heldNow = hold && e.isHoldHeld(i);
         float ribHead = NoteShapes.ribbonHeadAlpha(heldNow);
         float ribTail = NoteShapes.ribbonTailAlpha(heldNow);
         boolean lost = st == GameEngine.STATE_LOST;
+        if (!hold) {
+            if (lost) return; // a missed DROP has faded out by its LOST
+            alpha *= lateFade(e, n);
+            if (alpha <= MIN_ALPHA) return;
+        }
         if (lost) {
             float age = (float) (e.judgeMs() - e.noteResolvedMs(i));
             if (Float.isNaN(age)) age = 0f;
-            if (hold) {
-                float k = MathUtils.clamp(age / MISS_FADE_MS, 0f, 1f);
-                Theme.mix(base, Theme.MISSED, k, col);
-                headMul = 1f - 0.70f * k;
-                ribHead += (NoteShapes.RIBBON_BROKEN_HEAD_A - ribHead) * k;
-                ribTail += (NoteShapes.RIBBON_BROKEN_TAIL_A - ribTail) * k;
-            } else {
-                Theme.mix(base, Theme.MISSED, MathUtils.clamp(age / MISS_GREY_MS, 0f, 1f), col);
-                alpha *= 1f - MathUtils.clamp(age / MISS_FADE_MS, 0f, 1f);
-                if (alpha <= MIN_ALPHA) return;
-            }
+            float k = MathUtils.clamp(age / MISS_FADE_MS, 0f, 1f);
+            Theme.mix(base, Theme.MISSED, k, col);
+            headMul = 1f - 0.70f * k;
+            ribHead += (NoteShapes.RIBBON_BROKEN_HEAD_A - ribHead) * k;
+            ribTail += (NoteShapes.RIBBON_BROKEN_TAIL_A - ribTail) * k;
             if (age < JITTER_MS) x += Anim.hash01(i, frame) < 0.5f ? -JITTER : JITTER;
         } else {
             col.set(base);
@@ -956,8 +1076,6 @@ final class NoteRenderer {
         float gcy = y + cos * h * 0.5f;
         if (sync && syncHalo()) syncFrame(gcx, gcy, w, h, rot, n.isUpper(), a);
         float pr = NoteShapes.headPearlRadius(NoteShapes.pearlRadius(noteSize), w);
-        // the glow of a TIDE beneath (a joint DROP or STREAM sits on its wave) leaves the pearls out
-        if (pearl) rowCoverHoles(gcx, gcy, pr);
         if (heldNow) {
             int k = glows;
             addGlow(G_NOTE, gcx, gcy, w + 56f, h + 40f, rot, col, 0.40f * alpha);
@@ -1131,17 +1249,6 @@ final class NoteRenderer {
     }
 
     /**
-     * Leaves the row of head pearls of radius {@code r} centred at {@code (cx, cy)} (in the current local frame)
-     * out of the TIDE glows beneath ({@link #coverHoles}).
-     */
-    private void rowCoverHoles(float cx, float cy, float r) {
-        for (int i = 0; i < NoteShapes.HEAD_PEARLS; i++) {
-            float lx = NoteShapes.headPearlOffset(i, r);
-            coverHoles(cx + lx * fcos, cy + lx * fsin, r);
-        }
-    }
-
-    /**
      * Paints a pearl of radius {@code r} centred at {@code (cx, cy)} from the {@code disc} and
      * {@code soft_dot} sprites (same atlas page as the notes, so no extra draw call): the rim disc
      * in {@code rimColor}, the {@code body} disc inside it ({@code rim} = rim width as a share of
@@ -1189,6 +1296,7 @@ final class NoteRenderer {
 
     private void drawMine(GameEngine e, int i, Note n, float beat, float now, int frame) {
         byte st = e.noteState(i);
+        if (n.fake() && beat >= n.endBeat()) return; // a decoration is gone at its end (Kelvin 2026-11-02)
         LaneLayout lay = e.layout();
         int lane = n.laneIndex();
         if (lane < 0 || lane >= lay.count() || !lay.active(lane)) return;
@@ -1196,7 +1304,7 @@ final class NoteRenderer {
         boolean laneMine = n.isLaneMine();
         float lineY = e.lineY(n.line());
         float lw = lay.width(lane);
-        if (laneMine) {
+        if (laneMine && !n.fake()) {
             // the closed lane reads at a glance: its line segment glows while it blocks
             float b = NoteShapes.blockLook(e.judgeMs(), n.judgementMs(), n.endMs(), GameEngine.LANE_MINE_LEAD_MS);
             if (b > 0f) {
@@ -1210,13 +1318,14 @@ final class NoteRenderer {
         float mw = lw * GameEngine.MINE_BOX;
         float mh = mineHeight();
         float rot = n.angleAt(lb) + (up ? 180f : 0f);
-        float y = (up ? lineY - pos : lineY + pos)
-            + NoteShapes.pivotShiftY(pos, MINE_H, mh, rot, up, n.pivotX(), n.pivotY());
+        float bx = lay.centre(lane) + n.offsetXAt(lb) * Field.kx();
+        float by = up ? lineY - pos : lineY + pos;
+        float y = NoteShapes.anchorY(n, lb, bx, by, pos, MINE_H, mh, rot);
         float pad = rotPad(rot, mw);
         // toward the line it reaches its turned corners, and its height when turned toward the line
         if (offScreen(up, y, mh + pad, FLAT_CULL + turnReach(up, rot, mw, mh))) return;
         float alpha = n.shownOpacityAt(lb) * fadeIn(i, lineY, up);
-        float x = lay.centre(lane) + NoteShapes.pivotShiftX(pos, MINE_H, mh, rot, up, n.pivotX(), n.pivotY());
+        float x = NoteShapes.anchorX(n, lb, bx, by, pos, MINE_H, mh, rot);
         boolean live;
         if (laneMine) {
             alpha *= NoteShapes.endFade(e.judgeMs(), n.endMs());
@@ -1244,7 +1353,6 @@ final class NoteRenderer {
         }
         if (pearl) {
             pearlRow(x, y, mh * 0.5f, pr, Theme.MINE_PEARL, Theme.MINE_PEARL_RIM, Theme.MINE_PEARL_LUSTRE, alpha);
-            rowCoverHoles(x - fsin * mh * 0.5f, y + fcos * mh * 0.5f, pr);
         }
         if (live) {
             float pulse = 0.26f + 0.08f * MathUtils.sin(now * MathUtils.PI2 * 2f);
@@ -1374,10 +1482,10 @@ final class NoteRenderer {
         if (alpha <= MIN_ALPHA) return q;
         float rot = n.angleAt(lb) + (up ? 180f : 0f);
         float mh = mineHeight();
-        float y = (up ? lineY - pos : lineY + pos)
-            + NoteShapes.pivotShiftY(pos, MINE_H, mh, rot, up, n.pivotX(), n.pivotY());
-        float x = lay.centre(lane) + NoteShapes.pivotShiftX(pos, MINE_H, mh, rot, up, n.pivotX(), n.pivotY())
-            + (dry ? 0f : contactJitter(e, i, frame));
+        float bx = lay.centre(lane) + n.offsetXAt(lb) * Field.kx();
+        float by = up ? lineY - pos : lineY + pos;
+        float y = NoteShapes.anchorY(n, lb, bx, by, pos, MINE_H, mh, rot);
+        float x = NoteShapes.anchorX(n, lb, bx, by, pos, MINE_H, mh, rot) + (dry ? 0f : contactJitter(e, i, frame));
         return q + paintLaneMineColumn(x, y, rot, lw, tail, alpha, NoteShapes.songSeconds(e),
             e.lineY(n.line().other()), true, dry);
     }
@@ -1600,11 +1708,10 @@ final class NoteRenderer {
      * Paints a TIDE drop or TIDE STREAM head in the T4 look (Kelvin 2026-10-12 04:36; {@link NoteShapes}) across
      * {@code [x0, x1]}
      * with its leading edge at {@code y}. Sky: a 2u {@code skySig} thread at α .45 7u behind the
-     * leading edge and {@code 3 × lanes} pearls on it, radius 11u / 7u alternating. Ground: a
-     * {@code TIDE_WAVE} band (α .85) from the leading edge back to a crest at
-     * {@code 20u + 9u·sin(phase)}, a 3u {@code TIDE_WAVE_CREST} crest line and a 3u
-     * {@code TIDE_WAVE_BASE} line on the leading edge, from {@code 8 × lanes} vertical strips.
-     * {@code u} is the note size; the phase moves with {@code seconds} (song time). With
+     * leading edge and {@code 3 × lanes} pearls on it, radius 11u / 7u alternating. Ground: one
+     * {@link NoteShapes#WAVE_LINE} {@code tide} wave line (Kelvin 2026-11-01: no band, no base line) at
+     * {@code 20u + 9u·sin(phase)} behind the leading edge, from {@code 8 × lanes} vertical strips.
+     * {@code u} is the note size; the phase moves with {@link #wavePhase} ({@code seconds} is unused). With
      * {@code glow} it also collects the soft glows (live notes only). Normal blend; leaves the
      * batch colour changed. No sync pearls (afterimage copies and the guide).
      *
@@ -1622,9 +1729,8 @@ final class NoteRenderer {
      * with the sync pearls of a live TIDE that shares its beat when {@code gold}: on the sky line
      * the pearls on the thread turn gold (rim, body, lustre, highlight) and so do their glows,
      * which leave the pearls out; on the ground line a row of {@link NoteShapes#beadCount} gold
-     * pearls, large and small in turn ({@link NoteShapes#rowPearlRadius}), rides halfway between the
-     * base line and the crest, and the wave's glow leaves them out. The thread and the wave are
-     * unchanged.
+     * pearls, large and small in turn ({@link NoteShapes#rowPearlRadius}), strung on the wave line.
+     * The thread and the wave are unchanged.
      *
      * @return quads submitted (at most {@link NoteShapes#t4Quads} plus, with {@code gold},
      *         {@link NoteShapes#t4PearlQuads})
@@ -1637,8 +1743,8 @@ final class NoteRenderer {
     /**
      * {@link #paintTideT4(float, float, float, boolean, float, float, float, LaneLayout, float, boolean, boolean)}
      * with the sync highlight when {@code halo} (Kelvin 2026-10-13: 「珍珠的surface tide每一个珍珠高亮而不是整一个大矩形框起来，
-     * bottom tide沿着轮廓高亮」): on the sky line a deep gold halo and outline round each pearl, on the ground line a
-     * white border and halo along the wave's crest.
+     * bottom tide沿着轮廓高亮」): on the sky line a deep gold halo and outline round each pearl; on the ground line the
+     * wave line turns white, {@link NoteShapes#WAVE_LINE_MULTI} thick, with a stronger glow (2026-11-01).
      */
     int paintTideT4(float x0, float x1, float y, boolean up, float grey, float jx, float alpha, LaneLayout lay,
                     float seconds, boolean glow, boolean gold, boolean halo) {
@@ -1649,7 +1755,8 @@ final class NoteRenderer {
         float ax0 = x0 + jx;
         float ax1 = x1 + jx;
         if (up) {
-            Color pc = grey > 0f ? Theme.mix(Theme.SKY_SIG, Theme.MISSED, grey, col2) : Theme.SKY_SIG;
+            Color sig = mineTint ? Theme.MINE : Theme.SKY_SIG;
+            Color pc = grey > 0f ? Theme.mix(sig, Theme.MISSED, grey, col2) : sig;
             float ty = y + dir * NoteShapes.T4_THREAD_BEHIND * u;
             float th = NoteShapes.T4_THREAD * u;
             batch.setColor(pc.r, pc.g, pc.b, NoteShapes.T4_THREAD_A * alpha);
@@ -1673,7 +1780,7 @@ final class NoteRenderer {
                 if (glow) {
                     float gs = NoteShapes.T4_BEAD_GLOW * r;
                     int k = glows;
-                    addGlow(G_DOT, cx, ty, gs, gs, 0f, gold ? Theme.SYNC_PEARL : Theme.SKY_SIG,
+                    addGlow(G_DOT, cx, ty, gs, gs, 0f, gold ? Theme.SYNC_PEARL : sig,
                         NoteShapes.T4_BEAD_GLOW_A * alpha);
                     if (gold && glows > k) glowHole(0f, 0f, r);
                 }
@@ -1691,100 +1798,89 @@ final class NoteRenderer {
             }
             return q;
         }
-        Color fc = Theme.TIDE_WAVE;
-        Color cc = Theme.TIDE_WAVE_CREST;
-        Color bc = Theme.TIDE_WAVE_BASE;
-        if (grey > 0f) {
-            fc = Theme.mix(fc, Theme.MISSED, grey, col);
-            cc = Theme.mix(cc, Theme.MISSED, grey, col2);
-            bc = Theme.mix(bc, Theme.MISSED, grey, col3);
-        }
-        float cFill = Color.toFloatBits(fc.r, fc.g, fc.b, NoteShapes.WAVE_FILL_A * alpha);
-        float cCrest = Color.toFloatBits(cc.r, cc.g, cc.b, alpha);
-        float cBase = Color.toFloatBits(bc.r, bc.g, bc.b, alpha);
-        float half = NoteShapes.WAVE_LINE * u * 0.5f;
+        // one wave line (Kelvin 2026-11-01): white and thicker on a multi-press, red on a mine
+        Color lc = mineTint ? Theme.MINE : halo ? Theme.SYNC_HIGHLIGHT : Theme.TIDE;
+        if (grey > 0f) lc = Theme.mix(lc, Theme.MISSED, grey, col);
+        float lw = (halo && !mineTint ? NoteShapes.WAVE_LINE_MULTI : NoteShapes.WAVE_LINE) * u;
+        float cLine = Color.toFloatBits(lc.r, lc.g, lc.b, alpha);
+        float half = lw * 0.5f;
         float wo = lay.patternOrigin();
         float mlw = lay.patternWidth();
-        // base line on the leading edge
-        flatQuad(ax0, y - half, ax0, y + half, ax1, y + half, ax1, y - half, cBase);
         int strips = NoteShapes.waveStrips(lanes);
         float xa = ax0;
-        float ca = NoteShapes.waveCrest(tideWin(x0) - wo, mlw, seconds, u);
+        float ca = NoteShapes.waveCrest(tideWin(x0) - wo, mlw, wavePhase, u);
         for (int k = 1; k <= strips; k++) {
             float xr = x0 + (x1 - x0) * k / strips;
             float xb = xr + jx;
-            float cb = NoteShapes.waveCrest(tideWin(xr) - wo, mlw, seconds, u);
-            // fill from the base line to the crest line, then the crest line
-            flatQuad(xa, y + dir * half, xa, y + dir * (ca - half), xb, y + dir * (cb - half), xb, y + dir * half,
-                cFill);
+            float cb = NoteShapes.waveCrest(tideWin(xr) - wo, mlw, wavePhase, u);
             flatQuad(xa, y + dir * (ca - half), xa, y + dir * (ca + half), xb, y + dir * (cb + half),
-                xb, y + dir * (cb - half), cCrest);
+                xb, y + dir * (cb - half), cLine);
             xa = xb;
             ca = cb;
         }
-        float gcx = (ax0 + ax1) * 0.5f;
-        float gcy = y + dir * NoteShapes.WAVE_BASE * u * 0.5f;
-        int k = glows;
-        if (glow) {
-            addGlow(G_V, gcx, gcy, ax1 - ax0, NoteShapes.WAVE_GLOW_H * u, 0f, Theme.TIDE_WAVE,
-                NoteShapes.WAVE_GLOW_A * alpha);
+        if (glow || halo) {
+            lineGlow(x0, x1, y, jx, lay, half, lw * NoteShapes.WAVE_GLOW, lc,
+                (halo ? NoteShapes.WAVE_GLOW_MULTI_A : NoteShapes.WAVE_GLOW_A) * alpha, strips);
         }
-        if (halo) crestGlow(x0, x1, y, jx, lay, seconds, alpha, strips);
-        int q = 1 + 2 * strips;
+        int q = strips;
         if (gold) {
-            // the gold row halfway up the wave, riding the crest; the wave's glow leaves it out
-            boolean holed = glows > k;
+            // the gold row strung on the wave line
             int n = NoteShapes.beadCount(lanes);
             float bs = beadStep(lay, x0, x1);
             beadRange(lay, x0, x1, bs, n);
             for (int i = beadFirst; i <= beadLast; i++) {
                 float px = beadX(lay, i, n, x0, x1, bs);
-                float py = y + dir * NoteShapes.wavePearlDistance(tideWin(px) - wo, mlw, seconds, u);
+                float py = y + dir * NoteShapes.wavePearlDistance(tideWin(px) - wo, mlw, wavePhase, u);
                 float r = NoteShapes.rowPearlRadius(i, u);
                 q += pearl(px + jx, py, r, NoteShapes.ROW_PEARL_RIM, Theme.SYNC_PEARL, Theme.SYNC_PEARL_RIM, null,
                     alpha);
-                if (holed) glowHole(px + jx - gcx, py - gcy, r);
             }
         }
         return q;
     }
 
     /**
-     * Collects the sync highlight along a ground TIDE wave's crest ({@link #paintTideT4}): the crest's points, for
-     * {@link #drawGlows} to draw over them a solid border {@link #HL_BAND} × note size high and a soft halo
-     * {@link #HL_PAD} × note size high, both from the crest up.
+     * Collects the soft glow along a ground TIDE's wave line ({@link #paintTideT4}): the line's points, for
+     * {@link #drawGlows} to draw on each side of it a gaussian fall-off from its edge ({@code half} from its middle)
+     * at {@code a} out to {@code reach}, in the line's colour.
      */
-    private void crestGlow(float x0, float x1, float y, float jx, LaneLayout lay, float seconds, float alpha,
-                           int strips) {
-        if (crests + 2 > CREST_MAX || crestPts + strips + 1 > CREST_PTS || alpha <= 0.003f) return;
+    private void lineGlow(float x0, float x1, float y, float jx, LaneLayout lay, float half, float reach, Color c,
+                          float a, int strips) {
+        if (crests + 2 > CREST_MAX || crestPts + 2 * (strips + 1) > CREST_PTS || a <= 0.003f) return;
         float u = noteSize;
         float wo = lay.patternOrigin();
         float mlw = lay.patternWidth();
-        Color hc = Theme.SYNC_HIGHLIGHT;
+        float packed = Color.toFloatBits(c.r, c.g, c.b, Math.min(1f, a));
         for (int i = 0; i < 2; i++) {
-            int c = crests++;
-            boolean band = i == 1;
-            crestBand[c] = band;
-            crestAt[c] = crestPts;
-            crestN[c] = strips + 1;
-            crestPad[c] = (band ? HL_BAND : HL_PAD) * u;
-            crestCol[c] = Color.toFloatBits(hc.r, hc.g, hc.b, Math.min(1f, (band ? HL_BAND_A : HL_HALO_A) * alpha));
-            crestNx[c] = tideTurned ? -ttSin : 0f;
-            crestNy[c] = tideTurned ? ttCos : 1f;
-        }
-        for (int k = 0; k <= strips; k++) {
-            float xr = x0 + (x1 - x0) * k / strips;
-            float px = xr + jx;
-            float py = y + NoteShapes.waveCrest(tideWin(xr) - wo, mlw, seconds, u);
-            if (tideTurned) { // drawn later, without the turned batch
-                float dx = px - ttPx;
-                float dy = py - ttPy;
-                px = ttPx + ttCos * dx - ttSin * dy;
-                py = ttPy + ttSin * dx + ttCos * dy;
+            float s = i == 0 ? 1f : -1f;
+            int c0 = crests++;
+            crestAt[c0] = crestPts;
+            crestN[c0] = strips + 1;
+            crestPad[c0] = reach;
+            crestCol[c0] = packed;
+            crestNx[c0] = s * (tideTurned ? -ttSin : 0f);
+            crestNy[c0] = s * (tideTurned ? ttCos : 1f);
+            for (int k = 0; k <= strips; k++) {
+                float xr = x0 + (x1 - x0) * k / strips;
+                float px = xr + jx;
+                float py = y + NoteShapes.waveCrest(tideWin(xr) - wo, mlw, wavePhase, u) + s * half;
+                if (bending) { // the glow bends with its wave (glitchEnd), in the wave's own frame
+                    float sc = Field.shapeScale();
+                    float lx = (px - bendX) / sc;
+                    float ly = (py - bendY) / sc;
+                    px -= bendStrength * sc * VeilRenderer.wobbleX(lx, ly, bendT);
+                    py -= bendStrength * sc * VeilRenderer.wobbleY(lx, ly, bendT);
+                }
+                if (tideTurned) { // drawn later, without the turned batch
+                    float dx = px - ttPx;
+                    float dy = py - ttPy;
+                    px = ttPx + ttCos * dx - ttSin * dy;
+                    py = ttPy + ttSin * dx + ttCos * dy;
+                }
+                cpx[crestPts] = px;
+                cpy[crestPts] = py;
+                crestPts++;
             }
-            cpx[crestPts] = px;
-            cpy[crestPts] = py;
-            crestPts++;
         }
     }
 
@@ -1906,12 +2002,24 @@ final class NoteRenderer {
     private void drawTide(GameEngine e, int i, Note n, float beat, int frame) {
         byte st = e.noteState(i);
         if (st == GameEngine.STATE_HIT || st == GameEngine.STATE_COMPLETED) return;
-        // a pending TIDE group draws one head (its first member); a running TIDE STREAM its own
-        if (!tideBar(i, n, st)) return;
+        if (n.fake() && beat >= n.endBeat()) return; // a decoration is gone at its end (Kelvin 2026-11-02)
+        // a pending TIDE group draws one head per look (tideHead); a running TIDE STREAM its own
+        if (!tideBar(i, n, st, beat)) return;
+        boolean mine = n.isTideMine();
+        boolean block = n.isBlockMine();
+        LaneLayout lay = e.layout();
+        if (block) {
+            // as a LANE MINE's lane: the closed line glows across the window while it blocks
+            float b = NoteShapes.blockLook(e.judgeMs(), n.judgementMs(), n.endMs(), GameEngine.LANE_MINE_LEAD_MS);
+            if (b > 0f) {
+                addGlow(G_V, (lay.windowLeft() + lay.windowRight()) * 0.5f, e.lineY(n.line()),
+                    lay.windowRight() - lay.windowLeft(), NoteShapes.LANE_MINE_LINE_GLOW_H, 0f, Theme.MINE,
+                    NoteShapes.LANE_MINE_LINE_GLOW_A * b);
+            }
+        }
         boolean stream = n.isTideStream();
         if (stream && st != GameEngine.STATE_PENDING && beat > n.endBeat()
             && n.tailHeightAt(beat) <= 0f) return;
-        LaneLayout lay = e.layout();
         float pos = drawPos(i, n, beat);
         if (Float.isNaN(pos)) return;
         boolean up = n.isUpper();
@@ -1927,18 +2035,36 @@ final class NoteRenderer {
         float alpha = n.shownOpacityAt(lb) * fadeIn(i, lineY, up);
         boolean lost = st == GameEngine.STATE_LOST;
         float jx = 0f;
+        if (block) {
+            // as a LANE MINE: fades out at its end, shakes at each contact
+            alpha *= NoteShapes.endFade(e.judgeMs(), n.endMs());
+            jx = contactJitter(e, i, frame);
+        } else if (mine) {
+            // as a MINE: passes the line, fades once passed (120 ms) or touched (160 ms, with a shake)
+            if (st == GameEngine.STATE_MINE_PASSED || st == GameEngine.STATE_MINE_TOUCHED) {
+                float age = (float) (e.judgeMs() - e.noteResolvedMs(i));
+                if (Float.isNaN(age)) age = 0f;
+                boolean touched = st == GameEngine.STATE_MINE_TOUCHED;
+                alpha *= 1f - MathUtils.clamp(age / (touched ? 160f : 120f), 0f, 1f);
+                if (touched && age < JITTER_MS) jx = Anim.hash01(i, frame) < 0.5f ? -JITTER : JITTER;
+            }
+        } else if (!stream) {
+            if (lost) return; // a missed TIDE has faded out by its LOST
+            alpha *= lateFade(e, n);
+            if (alpha <= MIN_ALPHA) return;
+        }
         float grey = 0f;
         if (lost) {
             float age = (float) (e.judgeMs() - e.noteResolvedMs(i));
             if (Float.isNaN(age)) age = 0f;
-            // a drop fades out; a TIDE STREAM's head fades to .30 like a broken hold's
+            // a TIDE STREAM's head fades to .30 like a broken hold's
             float k = MathUtils.clamp(age / MISS_FADE_MS, 0f, 1f);
-            alpha *= stream ? 1f - 0.70f * k : 1f - k;
+            alpha *= 1f - 0.70f * k;
             grey = MathUtils.clamp(age / MISS_GREY_MS, 0f, 1f);
             if (age < JITTER_MS) jx = Anim.hash01(i, frame) < 0.5f ? -JITTER : JITTER;
         }
         if (alpha <= MIN_ALPHA) return;
-        boolean sync = NoteShapes.showsPearl(n, st);
+        boolean sync = !mine && NoteShapes.showsPearl(n, st);
         boolean pearls = sync && syncPearls();
         if (tideTurn(deg, n.pivotX(), n.pivotY(), y, up, x0, x1)) { // undone by the caller (tideTurnEnd)
             float a = tideLo(x0, x1);
@@ -1946,11 +2072,12 @@ final class NoteRenderer {
             x0 = a;
         }
         // a TIDE STREAM's head is its line's TIDE drop (Kelvin 2026-10-22), the band behind it drawn in drawBands
-        int g = glows;
+        wavePhase = n.waveSpeed() * beat;
+        mineTint = mine;
         paintTideT4(x0, x1, y, up, grey, jx, alpha, lay, NoteShapes.songSeconds(e), !lost && high, pearls,
             sync && syncHalo());
-        // the ground wave's glow leaves out the pearls of the notes drawn over it (upright only)
-        if (!up && glows > g && greg[g] == G_V && !tideTurned) coverGlow(g);
+        mineTint = false;
+        wavePhase = 0f;
     }
 
     /** First and last pearl index of the row {@link #beadRange} set last. */
@@ -1974,6 +2101,7 @@ final class NoteRenderer {
      * pearls come and go at its ends.
      */
     private void beadRange(LaneLayout lay, float a, float b, float s, int n) {
+        beadShift = 2f * (wavePhase - MathUtils.floor(wavePhase)); // two pearls a wave, in pearl steps [0, 2)
         if (!lay.tiled()) {
             beadFirst = 0;
             beadLast = n - 1;
@@ -1981,7 +2109,7 @@ final class NoteRenderer {
             beadFirst = 0;
             beadLast = -1;
         } else {
-            float o = tideX(lay.patternOrigin());
+            float o = tideX(lay.patternOrigin()) + (beadShift - 2f) * s; // one pair to the left covers the shift
             beadFirst = (int) Math.ceil((a - o) / s - 0.5f);
             beadLast = Math.min((int) Math.floor((b - o) / s - 0.5f), beadFirst + n - 1);
         }
@@ -1989,7 +2117,10 @@ final class NoteRenderer {
 
     /** @return centre x of pearl i of a row over {@code [a, b]} ({@link #beadRange}). */
     private float beadX(LaneLayout lay, int i, int n, float a, float b, float s) {
-        return lay.tiled() ? tideX(lay.patternOrigin()) + (i + 0.5f) * s : NoteShapes.beadX(i, n, a, b);
+        if (lay.tiled()) return tideX(lay.patternOrigin()) + (i + beadShift - 2f + 0.5f) * s;
+        if (beadShift == 0f) return NoteShapes.beadX(i, n, a, b);
+        float j = (i + beadShift) % n; // a row in a finite window wraps around
+        return a + (b - a) * (j + 0.5f) / n;
     }
 
     // ================================================================== band layer
@@ -2016,13 +2147,14 @@ final class NoteRenderer {
     void drawBands(GameEngine e, float now) {
         float beat = e.visualBeat();
         fadeBeat = beat;
+        bendT = VeilRenderer.loopTime(now);
         glitchQuads = 0;
         glitchedNotes = 0;
         collectSkyBands(e, beat);
         for (int i = end - 1; i >= start; i--) {
             Note n = notes[i];
-            if (!n.isTideStream() || entry.drawFrom(i) > beat) continue;
-            boolean g = glitchBegin(i, n, beat);
+            if (!n.hasTideBand() || entry.drawFrom(i) > beat) continue;
+            boolean g = glitchBegin(e, i, n, beat);
             drawBand(e, i, n, beat, now, false);
             if (g) glitchEnd();
             tideTurnEnd();
@@ -2031,14 +2163,14 @@ final class NoteRenderer {
         for (int i = end - 1; i >= start; i--) {
             Note n = notes[i];
             if (!n.isLaneMine() || entry.drawFrom(i) > beat) continue;
-            boolean g = glitchBegin(i, n, beat);
+            boolean g = glitchBegin(e, i, n, beat);
             laneMineBody(e, i, n, beat, frame, false);
             if (g) glitchEnd();
         }
         for (int i = end - 1; i >= start; i--) {
             Note n = notes[i];
-            if (!n.isTideStream() || entry.drawFrom(i) > beat) continue;
-            boolean g = glitchBegin(i, n, beat);
+            if (!n.hasTideBand() || entry.drawFrom(i) > beat) continue;
+            boolean g = glitchBegin(e, i, n, beat);
             drawBand(e, i, n, beat, now, true);
             if (g) glitchEnd();
             tideTurnEnd();
@@ -2051,7 +2183,8 @@ final class NoteRenderer {
         skyBands = 0;
         for (int i = start; i < end && skyBands < MAX_SKY; i++) {
             Note n = notes[i];
-            if (!n.isTideStream() || !n.isUpper() || entry.drawFrom(i) > beat) continue;
+            if (!n.hasTideBand() || !n.isUpper() || entry.drawFrom(i) > beat) continue;
+            if (n.fake() && beat >= n.endBeat()) continue; // as drawBand
             byte st = e.noteState(i);
             if (st == GameEngine.STATE_HIT || st == GameEngine.STATE_COMPLETED) continue;
             float pos = drawPos(i, n, beat);
@@ -2071,6 +2204,7 @@ final class NoteRenderer {
     private void drawBand(GameEngine e, int i, Note n, float beat, float now, boolean cap) {
         byte st = e.noteState(i);
         if (st == GameEngine.STATE_HIT || st == GameEngine.STATE_COMPLETED) return;
+        if (n.fake() && beat >= n.endBeat()) return; // a decoration is gone at its end
         LaneLayout lay = e.layout();
         float x0 = lay.windowLeft() + TIDE_INSET;
         float x1 = lay.windowRight() - TIDE_INSET;
@@ -2104,8 +2238,11 @@ final class NoteRenderer {
         float a = tideLo(x0, x1);
         x1 = tideHi(x0, x1);
         x0 = a;
+        if (n.isBlockMine()) alpha *= NoteShapes.endFade(e.judgeMs(), n.endMs());
+        mineTint = n.isTideMine();
         if (cap) {
             paintTideCap(x0, x1, y, tail, up, grey, alpha);
+            mineTint = false;
             return;
         }
         holes = 0;
@@ -2121,6 +2258,7 @@ final class NoteRenderer {
         }
         boolean held = st == GameEngine.STATE_HOLDING && e.isHoldHeld(i);
         paintTideBand(x0, x1, y, tail, up, held ? BAND_HELD : 1f, grey, now, tideReach(), alpha);
+        mineTint = false;
         holes = 0;
     }
 
@@ -2145,7 +2283,7 @@ final class NoteRenderer {
                       float head, float alpha) {
         if (!(len > 0f) || x1 <= x0) return 0;
         Color c = col;
-        Color base = up ? Theme.SKY_TIDE : Theme.TIDE;
+        Color base = mineTint ? Theme.MINE : up ? Theme.SKY_TIDE : Theme.TIDE;
         if (grey > 0f) Theme.mix(base, Theme.MISSED, grey, c);
         else c.set(base);
         float w = x1 - x0;
@@ -2243,7 +2381,7 @@ final class NoteRenderer {
     int paintTideCap(float x0, float x1, float y, float len, boolean up, float grey, float alpha) {
         if (!(len > 0f) || x1 <= x0) return 0;
         Color c = col;
-        Color base = up ? Theme.SKY_TIDE : Theme.TIDE;
+        Color base = mineTint ? Theme.MINE : up ? Theme.SKY_TIDE : Theme.TIDE;
         if (grey > 0f) Theme.mix(base, Theme.MISSED, grey, c);
         else c.set(base);
         float h = Math.min(NoteShapes.BAND_CAP, len);
@@ -2276,6 +2414,7 @@ final class NoteRenderer {
         int k = glows++;
         greg[k] = region;
         gglitch[k] = false;
+        gbend[k * 3] = 0f;
         gholes[k] = 0;
         gx[k] = x;
         gy[k] = y;
@@ -2311,72 +2450,6 @@ final class NoteRenderer {
         gholes[k] = m + 1;
     }
 
-    /** Marks upright glow k as one that leaves out the pearls drawn over it later in this frame. */
-    private void coverGlow(int k) {
-        if (covers < COVER_MAX) cover[covers++] = k;
-    }
-
-    /**
-     * Leaves the pearl of radius {@code r} at {@code (cx, cy)} out of every glow marked by {@link #coverGlow} (a
-     * TIDE's wave, all drawn before the lane notes and mines) that holds it whole, so a DROP, STREAM or MINE
-     * drawn over a TIDE of its beat keeps its colour.
-     */
-    private void coverHoles(float cx, float cy, float r) {
-        for (int t = 0; t < covers; t++) {
-            int k = cover[t];
-            float lx = cx - gx[k];
-            float ly = cy - gy[k];
-            float hw = gw[k] * 0.5f;
-            float hh = gh[k] * 0.5f;
-            if (lx - r < -hw || lx + r > hw || ly - r < -hh || ly + r > hh) continue;
-            insertHole(k, lx, ly, r);
-        }
-    }
-
-    /**
-     * Adds the hole {@code (lx, ly)} of apothem {@code a} to glow k's holes in x order, dropping the glow's own
-     * holes it overlaps along x (pearls of the glow's TIDE under the note's head). The glow's holes move to the
-     * end of the store first unless they end it already; a full store skips the hole.
-     */
-    private void insertHole(int k, float lx, float ly, float a) {
-        int m = gholes[k];
-        int h0 = gholeAt[k];
-        if (m == 0 || h0 + m != glowHoles) {
-            if (glowHoles + m + 1 > GLOW_HOLE_MAX) return;
-            if (m > 0) {
-                System.arraycopy(hlx, h0, hlx, glowHoles, m);
-                System.arraycopy(hly, h0, hly, glowHoles, m);
-                System.arraycopy(hla, h0, hla, glowHoles, m);
-            }
-            h0 = glowHoles;
-            gholeAt[k] = h0;
-            glowHoles += m;
-        } else if (glowHoles + 1 > GLOW_HOLE_MAX) {
-            return;
-        }
-        int w = h0;
-        int at = -1;
-        for (int j = h0; j < h0 + m; j++) {
-            if (hlx[j] + hla[j] > lx - a && hlx[j] - hla[j] < lx + a) continue;
-            if (at < 0 && hlx[j] > lx) at = w;
-            hlx[w] = hlx[j];
-            hly[w] = hly[j];
-            hla[w] = hla[j];
-            w++;
-        }
-        if (at < 0) at = w;
-        for (int j = w; j > at; j--) {
-            hlx[j] = hlx[j - 1];
-            hly[j] = hly[j - 1];
-            hla[j] = hla[j - 1];
-        }
-        hlx[at] = lx;
-        hly[at] = ly;
-        hla[at] = a;
-        gholes[k] = w - h0 + 1;
-        glowHoles = h0 + gholes[k];
-    }
-
     // ================================================================== additive pass
 
     /** Draws the glows collected by the last {@link #draw} (call inside the additive block). */
@@ -2393,10 +2466,13 @@ final class NoteRenderer {
             sh2 = disc.getRegionHeight() / 2;
             discSlice = new TextureRegion(disc, sw2, 0, 1, sh2);
             discQuarter = new TextureRegion(disc, sw2, 0, sw2, sh2);
+            TextureRegion gg = draw.gaussDot();
+            gaussSlice = new TextureRegion(gg, gg.getRegionWidth() / 2, 0, 1, gg.getRegionHeight() / 2);
         }
         float old = batch.getPackedColor();
         for (int k = 0; k < glows; k++) {
-            if (!gglitch[k]) {
+            float bs = gbend[k * 3];
+            if (!gglitch[k] && !(bs > 0f)) {
                 drawGlow(k, ng, gv, gd);
                 continue;
             }
@@ -2404,6 +2480,11 @@ final class NoteRenderer {
             batch = glitch;
             drawGlow(k, ng, gv, gd);
             batch = atlas;
+            if (bs > 0f) glitch.bend(gbend[k * 3 + 1], gbend[k * 3 + 2], bs, bendT, Field.shapeScale());
+            if (!gglitch[k]) {
+                glitch.emitPlain();
+                continue;
+            }
             int o = k * 6;
             // no colour split here: three additive copies would wash the frame out to white
             glitchQuads += glitch.emit(gseed[k], gfx[o], 0f, gfx[o + 2], gfx[o + 3], gfx[o + 4], gfx[o + 5]);
@@ -2432,11 +2513,11 @@ final class NoteRenderer {
         batch.draw(r, gx[k] - w * 0.5f, gy[k] - h * 0.5f, w * 0.5f, h * 0.5f, w, h, 1f, 1f, grot[k]);
     }
 
-    /** Draws the crest highlights collected by {@link #crestGlow}: one strip of quads sharing their corners. */
+    /** Draws the line glows collected by {@link #lineGlow}: one strip of quads per side, sharing their corners. */
     private void drawCrests() {
         float[] q = glowQuad;
         for (int c = 0; c < crests; c++) {
-            TextureRegion r = crestBand[c] ? discSlice : dotSlice;
+            TextureRegion r = gaussSlice;
             float u = (r.getU() + r.getU2()) * 0.5f;
             float vb = r.getV2();
             float vt = r.getV();

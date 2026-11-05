@@ -55,21 +55,24 @@ public final class PlayResult {
         echo = Math.max(0, b.echo);
         lost = Math.max(0, b.lost);
         totalNotes = Math.max(0, b.totalNotes);
+        minesTotal = Math.max(0, b.minesTotal);
+        minesTouched = Math.max(0, b.minesTouched);
         // ARCHITECTURE §18: the chain term and the PERFECT bonus lift the score above 100,000,000
         // (up to 100,010,000 + t)
-        score = Math.max(0, Math.min(Judgement.maxScore(totalNotes), b.score));
+        // below 0 when the touched mines took more than the run earned (shown positive)
+        score = Math.max(-Judgement.minePenalty(minesTotal, minesTotal),
+                Math.min(Judgement.maxScore(totalNotes), b.score));
         perfect = Math.max(0, Math.min(resonance, b.perfect));
         maxChain = Math.max(0, Math.min(resonance, b.maxChain));
         int base = b.baseScore >= 0 ? b.baseScore : score - perfect;
-        baseScore = Math.max(0, Math.min(Math.min(Judgement.MAX_BASE_SCORE, score), base));
+        // above the score when mines were touched (ScoreKeeper#minePenalty)
+        baseScore = Math.max(0, Math.min(Judgement.MAX_BASE_SCORE, base));
         accuracy = b.accuracy;
         early = b.early;
         late = b.late;
         earlyResonance = Math.max(0, Math.min(resonance - perfect, b.earlyResonance));
         lateResonance = Math.max(0, Math.min(resonance - perfect - earlyResonance, b.lateResonance));
         maxCombo = b.maxCombo;
-        minesTotal = Math.max(0, b.minesTotal);
-        minesTouched = Math.max(0, b.minesTouched);
         fullCombo = b.fullCombo;
         allResonance = b.allResonance;
         autoplay = b.autoplay;
@@ -102,8 +105,9 @@ public final class PlayResult {
     /** @return chart constant as authored, e.g. "15.9". */
     public String constantText() { return constantText; }
     /**
-     * @return final score, base + PERFECT bonus, 0..{@code 100,010,000 + totalNotes}
-     *         (ARCHITECTURE §18); depth and shells only look at {@code min(score, 100,000,000)}
+     * @return final score, base + PERFECT bonus − mines, −10,000 · mines..{@code 100,010,000 + totalNotes}
+     *         (ARCHITECTURE §18; below 0 it shows positive); depth and shells only look at
+     *         {@code min(score, 100,000,000)}, records keep at least 0
      */
     public int score() { return score; }
     /** @return score without the PERFECT bonus, 0..100,010,000 (100,010,000 = every note RESONANCE). */
@@ -140,6 +144,8 @@ public final class PlayResult {
     public int minesTotal() { return minesTotal; }
     /** @return mines touched during the run. */
     public int minesTouched() { return minesTouched; }
+    /** @return what the touched mines took off the score (Judgement#minePenalty). */
+    public int minePenalty() { return Judgement.minePenalty(minesTouched, minesTotal); }
     /** @return true when the whole run was one combo (maxCombo == totalNotes). */
     public boolean fullCombo() { return fullCombo; }
     /** @return true for the ALL RESONANCE badge: every note RESONANCE and a FULL COMBO. */

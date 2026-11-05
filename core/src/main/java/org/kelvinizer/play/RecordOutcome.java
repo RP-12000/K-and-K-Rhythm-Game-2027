@@ -7,7 +7,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 记录一局成绩后发生的变化（不可变）：最高分、评级、这张谱和潜水员的深度、贝壳的前后值，以及变深后解锁的头像外观。
+ * 记录一局成绩后发生的变化（不可变）：最高分、评级、这张谱和潜水员的深度、贝壳的前后值，以及解锁的东西（2026-10-30 起深度不再解锁头像，暂时为空）。
  * 由 {@code ProfileStore.recordPlay} 返回，结算画面用这些前后值做动画。
  *
  * <p>What recording a {@link PlayResult} changed, returned by {@code ProfileStore.recordPlay}
@@ -180,7 +180,7 @@ public final class RecordOutcome {
             this.shellsAfter = after;
             return this;
         }
-        /** @return the mutable unlock list (filled by {@code Depth.unlocksBetween}). */
+        /** @return the mutable unlock list (empty since depth stopped unlocking avatar looks; kept for rewards). */
         public List<String> unlockList() { return unlocks; }
         /** Sets the local ranking among profiles on this device (rank 0 = none). */
         public Builder local(int rank, int count) { localRank = rank; localCount = count; return this; }

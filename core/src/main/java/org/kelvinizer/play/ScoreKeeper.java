@@ -14,22 +14,22 @@ package org.kelvinizer.play;
  *       the base is {@code 100,000,000 · (r + 0.55·e)/t + 10,000 · m_r/t} rounded down once,
  *       with {@code m_r} = {@link #maxChain()}, so only an all-RESONANCE run reaches a base of
  *       100,010,000 and every PERFECT (RESONANCE with |Δt| ≤ {@link Judgement#PERFECT_MS}) adds
- *       one point on top ({@link #maxScore()} = 100,010,000 + t). Every term only grows, so the
- *       score never decreases during a run.</li>
+ *       one point on top ({@link #maxScore()} = 100,010,000 + t). A touched mine takes
+ *       {@link #minePenalty()} off again; the score is shown as a negative number, so a mine adds to it.</li>
  *   <li>Two streaks: the <b>combo</b> (RESONANCE or ECHO; reset by LOST and by a touched mine;
  *       shown in the HUD and used for FULL COMBO) and the <b>resonance chain</b> (RESONANCE only;
- *       reset by ECHO and LOST, <i>not</i> by a mine, so a mine never changes the score).</li>
+ *       reset by ECHO and LOST, <i>not</i> by a mine).</li>
  *   <li>{@link #accuracy()} = (r + 0.55·e) / judgedCount (1.0 before anything is judged).</li>
  *   <li>Early / late count non-LOST hits with Δt &lt; −TIER1 / Δt &gt; +TIER1 (the ECHO hits);
  *       {@link #earlyResonance()} / {@link #lateResonance()} split the RESONANCE hits that are not
  *       PERFECT by sign, so PERFECT + early + late RESONANCE = RESONANCE.</li>
  *   <li>The delta histogram has {@link #HISTOGRAM_BINS} bins of 10 ms over −135..+135 ms and
  *       only counts non-LOST hits (DESIGN Appendix A.9).</li>
- *   <li>Mines (ARCHITECTURE §13.2) are outside {@code totalNotes}: {@link #mineTouched()} only
- *       breaks the combo and counts; FULL COMBO / ALL RESONANCE require
- *       {@code maxCombo == totalNotes}, so a touched mine loses them without changing the score.
- *       A LANE MINE counts once; its further contacts only break the combo
- *       ({@link #laneMineContact()}).</li>
+ *   <li>Mines (ARCHITECTURE §13.2) are outside {@code totalNotes}: {@link #mineTouched()} breaks
+ *       the combo, counts, and costs 10,000 ({@link Judgement#minePenalty}, Kelvin
+ *       2026-11-01); FULL COMBO / ALL RESONANCE require {@code maxCombo == totalNotes}, so a touched
+ *       mine loses them. A LANE MINE or TIDE STREAM MINE counts once; its further contacts only
+ *       break the combo ({@link #laneMineContact()}).</li>
  * </ul>
  */
 public final class ScoreKeeper {
@@ -138,9 +138,9 @@ public final class ScoreKeeper {
     }
 
     /**
-     * Records a touched mine: the combo drops to 0 and {@link #minesTouched()} grows; the
-     * resonance chain, score, accuracy and judgement counts are unchanged (ARCHITECTURE §13.2,
-     * §18: "碰到不扣分但是断连击").
+     * Records a touched mine: the combo drops to 0, {@link #minesTouched()} grows and the score
+     * loses {@link Judgement#MINE_PENALTY}; the resonance chain, accuracy and judgement
+     * counts are unchanged (ARCHITECTURE §13.2, §18).
      */
     public void mineTouched() {
         combo = 0;
@@ -168,11 +168,18 @@ public final class ScoreKeeper {
     }
 
     /**
-     * @return the current score, {@link #baseScore()} + {@link #perfectCount()}, in
-     *         0..{@link #maxScore()}; never decreases during a run
+     * @return the current score, {@link #baseScore()} + {@link #perfectCount()} − {@link #minePenalty()},
+     *         in −10,000 · mines..{@link #maxScore()} (shown negative; below 0, when the touched mines took more than
+     *         the run has earned so far, it shows positive: Kelvin 2026-11-01 19:50 「允许正数」); only a touched
+     *         mine makes it drop
      */
     public int score() {
-        return baseScore() + perfect;
+        return baseScore() + perfect - minePenalty();
+    }
+
+    /** @return what the mines touched so far take off the score (10,000 each). */
+    public int minePenalty() {
+        return Judgement.minePenalty(minesTouched, totalMines);
     }
 
     /**

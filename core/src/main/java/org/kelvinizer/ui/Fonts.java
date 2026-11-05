@@ -42,7 +42,7 @@ import java.nio.IntBuffer;
  * mutated. Strings containing any char above U+024F (other than the shared UI symbols
  * {@code ·•—…–→←↑↓★☆♪×÷±%°μ} that the role font has) or a Latin char missing from the role font
  * are routed automatically to the CJK font at the same cap height. The CJK font (Noto Sans SC,
- * GB2312 subset) also carries Latin-1 and those symbols, so a mixed name such as
+ * GB2312 plus JIS level-1 kanji subset) also carries Latin-1 and those symbols, so a mixed name such as
  * {@code Élodie 潜水员} draws completely. The Mokoto faces have no en dash; they draw {@code –}
  * with their hyphen.
  *
@@ -560,11 +560,45 @@ public final class Fonts implements Disposable {
     public float drawDigits(Batch b, Role role, float cap, float rasterCap, long value, int minDigits,
                             boolean grouping, float x, float y, int align, Color color, Color leadingZero,
                             float alpha, float[] cellScale) {
-        int n = buildDigits(value, minDigits, grouping);
+        return drawCells(b, role, cap, rasterCap, value, minDigits, grouping, '\0', x, y, align, color, leadingZero,
+            alpha, cellScale);
+    }
+
+    /**
+     * A score (Kelvin 2026-11-01: scores read negative): {@code score} ≥ 0 drawn as {@link #drawDigits} after a
+     * {@code -} cell, which is dim like a leading zero while the score is 0; a score below 0 (touched mines took
+     * more than the run had earned, 19:50 「允许正数」) reads positive, {@code +} and its size. The sign is cell 0
+     * of {@code cellScale}, always as wide as a minus (a plus is drawn smaller to fit), so the digits never move;
+     * {@link #scoreWidth} gives the width.
+     */
+    public float drawScore(Batch b, Role role, float cap, float rasterCap, long score, int minDigits,
+                           boolean grouping, float x, float y, int align, Color color, Color leadingZero,
+                           float alpha, float[] cellScale) {
+        return drawCells(b, role, cap, rasterCap, score < 0 ? -score : score, minDigits, grouping,
+            score < 0 ? '+' : '-', x, y, align, color, leadingZero, alpha, cellScale);
+    }
+
+    /** {@link #drawScore} at cap {@code cap} from its own raster, without a per-cell scale. */
+    public float drawScore(Batch b, Role role, float cap, long score, int minDigits, boolean grouping, float x,
+                           float y, int align, Color color, Color leadingZero, float alpha) {
+        return drawScore(b, role, cap, cap, score, minDigits, grouping, x, y, align, color, leadingZero, alpha, null);
+    }
+
+    /** Width {@link #drawScore} uses for {@code digits} digits: {@link #digitsWidth} plus the minus cell. */
+    public float scoreWidth(Role role, float cap, int digits, boolean grouping) {
+        return digitsWidth(role, cap, digits, grouping) + cellWidth(role, cap, '-');
+    }
+
+    /** {@code sign}: a score's sign cell first ({@code -} or {@code +}, as wide as a minus), or {@code '\0'}. */
+    private float drawCells(Batch b, Role role, float cap, float rasterCap, long value, int minDigits,
+                            boolean grouping, char sign, float x, float y, int align, Color color,
+                            Color leadingZero, float alpha, float[] cellScale) {
+        int n = buildDigits(value, minDigits, grouping, sign);
         Entry e = entry(role, rasterCap > 0f ? rasterCap : cap, digitSet(role));
         float s = apply(e, cap);
+        float signW = sign != '\0' ? cellW(e, s, cap, '-') : 0f;
         float total = 0f;
-        for (int i = 0; i < n; i++) total += cellW(e, s, cap, digitBuf[i]);
+        for (int i = 0; i < n; i++) total += sign != '\0' && i == 0 ? signW : cellW(e, s, cap, digitBuf[i]);
         float left = alignX(x, total, align);
         float baseline = alignBaseline(y, cap, align);
         float packed = Color.toFloatBits(color.r, color.g, color.b, color.a * alpha);
@@ -575,11 +609,13 @@ public final class Fonts implements Disposable {
         // digitBuf holds chars left to right; digitLead marks leading cells
         for (int i = 0; i < n; i++) {
             char c = digitBuf[i];
-            float w = cellW(e, s, cap, c);
+            boolean signCell = sign != '\0' && i == 0;
+            float w = signCell ? signW : cellW(e, s, cap, c);
             boolean lead = digitLead[i];
             if (!lead || leadingZero != null) {
                 b.setPackedColor(lead ? packedLead : packed);
                 float k = (cellScale != null && i < cellScale.length) ? cellScale[i] : 1f;
+                if (signCell && c != '-') k *= Math.min(1f, w / cellW(e, s, cap, c));
                 drawCell(b, e, s, c, cx, w, baseline, k, cap);
             }
             cx += w;
@@ -651,6 +687,18 @@ public final class Fonts implements Disposable {
     }
 
     // ------------------------------------------------------------------ string helpers
+    /**
+     * Shell and pearl counts above this read {@link #SHOWN_CAPPED} where they sit in a capsule; a tap shows the whole
+     * count (Kelvin 2026-10-30 20:58 「贝壳数超过9999就在贝壳外面加一圈高光，点一下贝壳就会弹出一个说已经攒了多少的具体值」).
+     */
+    public static final long SHOWN_MAX = 9999L;
+    public static final String SHOWN_CAPPED = "9,999+";
+
+    /** Appends {@code v} grouped, or {@link #SHOWN_CAPPED} above {@link #SHOWN_MAX}, without allocating. */
+    public static StringBuilder appendCapped(StringBuilder sb, long v) {
+        return v > SHOWN_MAX ? sb.append(SHOWN_CAPPED) : appendGrouped(sb, Math.max(0L, v));
+    }
+
     /** Appends {@code v} with thousands grouping ({@code 2,560}) without allocating. */
     public static StringBuilder appendGrouped(StringBuilder sb, long v) {
         if (v == Long.MIN_VALUE) return sb.append("-9,223,372,036,854,775,808");
@@ -1067,8 +1115,9 @@ public final class Fonts implements Disposable {
      * Fills digitBuf/digitLead left to right; returns the cell count. Handles the whole long range
      * (including {@link Long#MIN_VALUE}) by extracting digits from the non-positive value, and
      * pads to at most 19 digits ({@link Long#MAX_VALUE} has 19), so the buffers never overflow.
+     * {@code sign} (not {@code '\0'}) puts that cell first even for 0 (dim then, like a leading zero).
      */
-    private int buildDigits(long value, int minDigits, boolean grouping) {
+    private int buildDigits(long value, int minDigits, boolean grouping, char sign) {
         boolean neg = value < 0;
         long v = neg ? value : -value;           // v ≤ 0: no overflow for Long.MIN_VALUE
         int nd = 0;
@@ -1080,9 +1129,9 @@ public final class Fonts implements Disposable {
         int sig = nd;
         int total = Math.max(Math.min(minDigits, MAX_DIGITS), nd);
         int n = 0;
-        if (neg) {
-            digitBuf[n] = '-';
-            digitLead[n++] = false;
+        if (neg || sign != '\0') {
+            digitBuf[n] = neg ? '-' : sign;
+            digitLead[n++] = !neg && value == 0;
         }
         for (int i = total - 1; i >= 0; i--) {
             boolean lead = i >= sig;

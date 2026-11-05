@@ -1,8 +1,12 @@
 {
-  "jacket16x9" : {
-    "x" : 0.0,
-    "y" : 0.0,
-    "w" : 1.0,
-    "h" : 0.5625
-  }
+  "title": "Confusion",
+  "artist": "Tectogen_海渊",
+  "illustrator": "Large Language Model",
+  "bpm": 197,
+  "offsetMs": 596,
+  "jacket16x9": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.5625},
+  "previewStartMs": 51154,
+  "previewStartBeat": 166,
+  "previewEndBeat": 230,
+  "previewEndMs": 70647
 }

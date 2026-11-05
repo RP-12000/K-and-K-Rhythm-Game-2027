@@ -177,7 +177,8 @@ final class GameplayHud {
     /** Digits of the HUD score (DESIGN §18.1: 9, grouped; up to 100,010,000 + the PERFECT bonus). */
     static final int SCORE_DIGITS = 9;
     /** Cells of the HUD score: the digits plus their group commas. */
-    private static final int SCORE_CELLS = SCORE_DIGITS + (SCORE_DIGITS - 1) / 3;
+    /** Minus (scores read negative, Kelvin 2026-11-01), digits and group commas. */
+    private static final int SCORE_CELLS = 1 + SCORE_DIGITS + (SCORE_DIGITS - 1) / 3;
     /** PERFECT glint sweep (DESIGN §18.1). */
     private static final float GLINT_SEC = 0.09f;
     /** Glint trail colour: the gradient starts at the settled trail's alpha (.35 of the head's .95), no seam. */
@@ -563,7 +564,7 @@ final class GameplayHud {
         measuredGen = Ui.generation();
         measuredK = k;
         measuredCap = scoreCap;
-        scoreW = fonts.digitsWidth(Fonts.Role.NUMBER, scoreCap, SCORE_DIGITS, true);
+        scoreW = fonts.scoreWidth(Fonts.Role.NUMBER, scoreCap, SCORE_DIGITS, true);
         chipNameW = boldWidth(diffName, CHIP_CAP * k);
         constW = constText.length() == 0 ? 0f : constDigits
             ? numFixedWidth(constText, CHIP_CAP * k)
@@ -850,7 +851,7 @@ final class GameplayHud {
         if (scoreT < SCORE_EASE) {
             scoreT += dt;
             float p = Anim.POW2_OUT.apply(Math.min(1f, scoreT / SCORE_EASE));
-            // exact at both ends and never past the target, so the shown score only ever rises
+            // exact at both ends and never past the target
             scoreShown = Anim.count(scoreFrom, scoreTarget, p);
         } else {
             scoreShown = scoreTarget;
@@ -912,12 +913,16 @@ final class GameplayHud {
 
     /** Pops the digit cells of the {@link #SCORE_DIGITS}-digit grouped score that differ between a and b. */
     private void markChangedCells(int a, int b, float now) {
+        // a score below 0 (mines took more than the run earned) shows positive: its sign cell pops too
+        if ((a < 0) != (b < 0)) cellPop[0] = now;
+        a = Math.abs(a);
+        b = Math.abs(b);
         for (int p = 0; p < SCORE_DIGITS; p++) {
             int e = SCORE_DIGITS - 1 - p;
             int div = pow10(e);
             if ((a / div) % 10 != (b / div) % 10) {
-                // commas precede every digit whose exponent is a multiple of 3 (except the last)
-                int cell = p + (SCORE_DIGITS - 1) / 3 - e / 3;
+                // the minus is cell 0; commas precede every digit whose exponent is a multiple of 3 (except the last)
+                int cell = 1 + p + (SCORE_DIGITS - 1) / 3 - e / 3;
                 cellPop[cell] = now;
             }
         }
@@ -1161,8 +1166,8 @@ final class GameplayHud {
         // blue while all RESONANCE, purple while a FULL COMBO with ECHOs, white after a break (Kelvin 2026-10-18 16:17)
         Color sc = autoplay ? Theme.AUTO : fcState == FC_AR ? Theme.ALL_RESONANCE : fcState == FC_ECHO
             ? Theme.FULL_COMBO : Theme.INK1;
-        fonts.drawDigits(b, Fonts.Role.NUMBER, scoreCap, scoreShown, SCORE_DIGITS, true, scoreX - off, scoreTop,
-            Align.left | Align.top, sc, Theme.LEADING_ZERO, 0.80f * s * gScore, cellScale);
+        fonts.drawScore(b, Fonts.Role.NUMBER, scoreCap, scoreCap, scoreShown, SCORE_DIGITS, true, scoreX - off,
+            scoreTop, Align.left | Align.top, sc, Theme.LEADING_ZERO, 0.80f * s * gScore, cellScale);
         if (scoreOnly) return;
         float chipCy = chipY + chipH * 0.5f;
         numFixed(b, timeSb, TIME_CAP * k, sr + off, chipCy, Align.right | Fonts.VCENTER, Theme.INK1, 0.50f * s * gTime);
