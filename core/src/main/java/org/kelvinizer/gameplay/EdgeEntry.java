@@ -5,6 +5,7 @@ import org.kelvinizer.elements.Chart;
 import org.kelvinizer.elements.Events;
 import org.kelvinizer.elements.JudgementLine;
 import org.kelvinizer.elements.LaneLayout;
+import org.kelvinizer.elements.Layers;
 import org.kelvinizer.elements.Line;
 import org.kelvinizer.elements.Note;
 import org.kelvinizer.elements.NoteType;
@@ -69,8 +70,8 @@ public final class EdgeEntry {
      * fall 1080 from the lines at 1080 / 120 (2026-10-19) spawns upright notes exactly on the frame's edge.
      */
     private static final float EDGE_EPS = 1e-3f;
-    /** Half the side of a MINE stud, which sits across the body's long edges. */
-    private static final float STUD_HALF = 3f;
+    /** How far a MINE's spikes reach past each end of its body at note size 1 (their tips are halfway up). */
+    private static final float MINE_SPIKE = 14f;
     // body kinds, for what lies beyond the leading edge toward the line
     private static final byte K_LANE = 0;
     private static final byte K_MINE = 1;
@@ -162,6 +163,7 @@ public final class EdgeEntry {
             bodyReach[i] = 0f;
             from[i] = Float.NaN;
             drawFrom[i] = n.visibleFrom();
+            if (n.floats()) continue; // appears in place, not in from an edge (FloatNotes)
             if (n.orbit() != null) continue; // drawn about its orbit centre, not on its way to the line
             float s;
             float e;
@@ -199,8 +201,7 @@ public final class EdgeEntry {
                 laneW[i] = Math.max(0f, layout.windowRight() - layout.windowLeft() - 2f * NoteRenderer.TIDE_INSET);
             } else {
                 kind[i] = n.type() != NoteType.MINE ? K_LANE : n.isLaneMine() ? K_LANE_MINE : K_MINE;
-                int lane = n.laneIndex();
-                laneW[i] = lane >= 0 && lane < layout.count() ? layout.width(lane) : 0f;
+                laneW[i] = layout.noteWidth(n);
             }
             float rot = n.angleAt(s);
             turnDeg[i] = rot;
@@ -267,10 +268,10 @@ public final class EdgeEntry {
 
     /**
      * @return how far note i's body at its spawn (pose of the start beat) reaches beyond its leading
-     *         edge toward the line at note size {@code u}, as NoteRenderer paints it, glows left out:
-     *         a lane note's turned head ({@code headWidth × NOTE_H u}) and ribbon, a mine's turned body
-     *         ({@code MINE_BOX} of the lane × 32u) with the studs across its long edges, a LANE MINE's
-     *         column, the base line of a ground TIDE, the big beads of a sky TIDE (a TIDE STREAM's head
+     *         edge toward the line at note size {@code u}, as NoteRenderer paints it, glows and the outer half of
+     *         outlines (at most 1.75u) left out: a lane note's turned head ({@code headWidth × NOTE_H u}) and body
+     *         (from the head's middle), a mine's turned body ({@code MINE_BOX} of the width × 32u) with its spikes, a LANE
+     *         MINE's head bar and column, the base line of a ground TIDE, the big beads of a sky TIDE (a TIDE STREAM's head
      *         alike, its band behind its leading edge) (world units: the lane width stretched by kx, the tail by ky)
      */
     private float reachAt(int i, boolean up, float u) {
@@ -304,22 +305,27 @@ public final class EdgeEntry {
             case K_LANE: {
                 float w = lw * 5f / 6f * Math.min(u, 1.15f);
                 float r = 0.5f * w * sin + back * NoteRenderer.NOTE_H * u;
-                if (tail > 0f) r = Math.max(r, 0.5f * NoteShapes.ribbonWidth(lw, up) * sin + back * tail);
+                if (tail > 0f) { // the body, from the head's middle
+                    float c0 = 0.5f * NoteRenderer.NOTE_H * u;
+                    r = Math.max(r, boxReach(0.5f * NoteShapes.ribbonWidth(lw, up), c0, c0 + tail, sin, cos));
+                }
                 return r;
             }
-            case K_MINE:
-            case K_LANE_MINE: {
+            case K_MINE: {
                 float mw = lw * GameEngine.MINE_BOX;
-                float mh = 32f * u;
+                float mh = NoteRenderer.MINE_H * u;
                 float r = 0.5f * mw * sin + back * mh;
-                // studs: 6 × 6 at a quarter, half and three quarters of each long edge
-                float studX = (0.25f * mw + STUD_HALF) * sin;
-                r = Math.max(r, studX + STUD_HALF * Math.abs(cos));
-                r = Math.max(r, studX + (cos < 0f ? (mh + STUD_HALF) * back : -(mh - STUD_HALF) * cos));
+                // the spikes' tips, halfway up the body
+                return Math.max(r, (0.5f * mw + MINE_SPIKE * u) * sin - 0.5f * mh * cos);
+            }
+            case K_LANE_MINE: {
+                // the head bar across the column, its middle half a key from the leading edge, then the column
                 float hw = NoteShapes.laneMineHalfWidth(lw);
-                if (kind[i] == K_LANE_MINE && tail > 0f && hw > NoteShapes.LANE_MINE_RIM) {
-                    float studOut = Math.max(0f, 0.5f * (NoteShapes.STUD - NoteShapes.LANE_MINE_RIM));
-                    r = Math.max(r, (hw + studOut) * sin + back * tail);
+                float c0 = 0.5f * NoteRenderer.NOTE_H * u;
+                float hh = 0.5f * NoteShapes.LANE_MINE_HEAD_H * u;
+                float r = boxReach(Math.max(hw, 0f), c0 - hh, c0 + hh, sin, cos);
+                if (tail > 0f && hw > NoteShapes.LANE_MINE_RIM) {
+                    r = Math.max(r, boxReach(hw, c0, c0 + tail, sin, cos));
                 }
                 return r;
             }
@@ -330,6 +336,14 @@ public final class EdgeEntry {
                 return Math.max(0f, 0.5f * big / NoteRenderer.DISC_R - NoteShapes.T4_THREAD_BEHIND * u);
             }
         }
+    }
+
+    /**
+     * @return how far the local box {@code [-hx, hx] × [y0, y1]} (y from the leading edge, away from the line) of a
+     *         body turned with {@code |sin|} and {@code cos} reaches beyond its leading edge toward the line
+     */
+    private static float boxReach(float hx, float y0, float y1, float sin, float cos) {
+        return hx * sin + Math.max(-y0 * cos, -y1 * cos);
     }
 
     /**
@@ -382,7 +396,7 @@ public final class EdgeEntry {
     /**
      * @return the line's y nearest to the edge its notes come from over the beats {@code [a, b]}:
      *         the highest sky line, the lowest ground line (its base and every event touching the
-     *         range; an eased event stays between its end values)
+     *         range; an eased event stays between its end values), plus the most its layers add that way
      */
     private float lineExtreme(boolean up, float a, float b) {
         List<Events> ev = up ? lines.upperEvents() : lines.lowerEvents();
@@ -394,7 +408,8 @@ public final class EdgeEntry {
             if (up) r = Math.max(r, Math.max(e.initialValue(), e.finalValue()));
             else r = Math.min(r, Math.min(e.initialValue(), e.finalValue()));
         }
-        return r;
+        Layers layers = lines.layersOf(up ? Line.UPPER : Line.LOWER);
+        return layers.isEmpty() ? r : r + (up ? layers.high(a, b) : layers.low(a, b));
     }
 
     /** @return true when the entries were prepared for {@code chart} ({@link #begin}). */

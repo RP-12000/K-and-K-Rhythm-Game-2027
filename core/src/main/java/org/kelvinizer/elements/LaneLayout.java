@@ -83,6 +83,14 @@ public final class LaneLayout {
     private float patternOrigin;
     /** Tiled mode: the factor inserted lanes shrink (deleted lanes widen) the others by this frame (1 without any). */
     private float squeeze = 1f;
+    /** The last {@link #update}: its beat, the lines' camera axis ({@code 960 + camera·kx}) and {@code scale·kx}. */
+    private float beat;
+    private float frameAxis = TILE_CENTRE;
+    private float frameScale = 1f;
+    /** Tiled mode: lanes outside the window keep their spans (the laneless conversion, {@link #setLanesUnscaled}). */
+    private boolean unclipped;
+    /** The chart whose 定轨 / 无轨 sections widen the judging width ({@link #judgeWidth}); null = 无轨. */
+    private Chart fixed;
 
     /** Creates an empty layout (no lanes); call {@link #setLanes} first. */
     public LaneLayout() {
@@ -106,6 +114,7 @@ public final class LaneLayout {
         setLanes(chart.lanes());
         tiled = chart.unlimitedLanes();
         lines = chart.lineEvents();
+        fixed = chart;
         if (tiled) {
             // the screen over the narrowest pattern, so the bound holds at every beat
             float p = Lane.DEFAULT_WIDTH * Math.min(1f, lines.laneScaleMin());
@@ -148,7 +157,9 @@ public final class LaneLayout {
         }
         count = n;
         tiled = false;
+        unclipped = false;
         lines = null;
+        fixed = null;
         patternLanes = Math.max(1, n);
         for (int i = 0; i < n; i++) {
             ids[i] = lanes[i].id();
@@ -158,6 +169,16 @@ public final class LaneLayout {
             opacities[i] = 0f;
         }
         windowLeft = windowRight = fieldLeft = fieldRight = totalWeight = 0f;
+    }
+
+    /**
+     * The lanes of {@code chart} in its lane mode at the lines' scale 1 and camera 0: where the lanes are before the
+     * lines move them ({@link LanePlacement}, the laneless conversion).
+     */
+    void setLanesUnscaled(Chart chart) {
+        setLanes(chart.lanes());
+        tiled = chart.unlimitedLanes();
+        unclipped = true; // a lane off the screen at scale 1 can be on it at the chart's scale
     }
 
     /** Same as {@link #setLanes(Lane[])} for a list. */
@@ -184,6 +205,9 @@ public final class LaneLayout {
         float kx = xScale > 0f && xScale < Float.POSITIVE_INFINITY ? xScale : 1f;
         float g = lines != null ? lines.laneScaleAt(beat) : 1f;
         axis = TILE_CENTRE + (lines != null ? lines.cameraFrameAt(beat) : 0f) * kx;
+        this.beat = beat;
+        frameAxis = axis;
+        frameScale = g * kx;
         if (lines != null && !tiled) {
             // finite lanes: the camera frame, 1920 wide at scale 1 (the whole screen by default)
             float half = (TILE_CENTRE - VIEW_LEFT) * g * kx;
@@ -341,7 +365,7 @@ public final class LaneLayout {
      * @return true when the lane reaches into the window
      */
     private boolean place(int i, float a, float b, float left, float right) {
-        if (b > left && a < right) {
+        if (unclipped || b > left && a < right) {
             lefts[i] = a;
             widths[i] = b - a;
             return true;
@@ -421,6 +445,55 @@ public final class LaneLayout {
     public float right(int i) { return lefts[i] + widths[i]; }
     /** @return centre x of lane {@code i}. */
     public float centre(int i) { return lefts[i] + widths[i] * 0.5f; }
+
+    // ------------------------------------------------------------------ notes (chart format v6, Kelvin 2026-11-05)
+
+    /** @return the beat of the last {@link #update}. */
+    public float beat() { return beat; }
+
+    /** @return the lines' camera axis of the last update: where the centre line (x 0) is ({@code 960 + camera·kx}). */
+    public float frameAxis() { return frameAxis; }
+
+    /** @return the lines' horizontal scale of the last update times the field's stretch ({@code scale·kx}). */
+    public float frameScale() { return frameScale; }
+
+    /**
+     * @return the world x of horizontal coordinate {@code cx} this frame (reference units from the screen's centre
+     *         line, negative left; Kelvin 2026-11-05 「以屏幕中线为y轴设置X坐标」): scaled about the camera axis, then
+     *         panned with it
+     */
+    public float x(float cx) { return frameAxis + frameScale * cx; }
+
+    /** @return the world x of note {@code n}'s centre at the last update's beat ({@link Note#xAt}). */
+    public float noteX(Note n) { return x(n.xAt(beat)); }
+
+    /** @return the world x of note {@code n}'s centre at {@code at} (a look beat), with this update's scale and camera. */
+    public float noteX(Note n, float at) { return x(n.xAt(at)); }
+
+    /**
+     * @return the world width of note {@code n}: every key is one size for now, 240 reference units times the scale
+     *         and stretch (Kelvin 2026-11-05: 「我们先不做大小键之类的」)
+     */
+    public float noteWidth(Note n) { return defaultWidth(); }
+
+    /** @return the world width of a key (240 reference units times the scale and stretch): also a bare touch's column. */
+    public float defaultWidth() { return frameScale * Lane.DEFAULT_WIDTH; }
+
+    /** @return the chart's fixed lane count at {@code beat} ({@link Chart#fixedLanesAt}; 0 = 无轨 or no chart). */
+    public int fixedLanesAt(float beat) { return fixed != null ? fixed.fixedLanesAt(beat) : 0; }
+
+    /**
+     * @return the world width key {@code n} on a line is judged with: its own ({@link #noteWidth}), or one fixed lane
+     *         ({@code 1920/k} times the scale and stretch) at its beat when the chart has {@code k} fixed lanes there
+     *         and the lane is wider (定轨, Kelvin 2026-11-06: one lane wide). The key is still drawn at its own width.
+     */
+    public float judgeWidth(Note n) {
+        float w = noteWidth(n);
+        int k = fixedLanesAt(n.judgement());
+        if (k <= 0) return w;
+        float lane = frameScale * VIEW_RIGHT / k;
+        return lane > w ? lane : w;
+    }
     /** @return opacity of lane {@code i} (0..1), for its furniture only. */
     public float opacity(int i) { return opacities[i]; }
     /** @return the evaluated width weight of lane {@code i} (≥ 0). */

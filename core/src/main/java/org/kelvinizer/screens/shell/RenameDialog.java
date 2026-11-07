@@ -40,7 +40,6 @@ public final class RenameDialog extends Modal {
                 if (p != null) avatar.replace(p.avatar, text, false);
             }
         });
-        host.registerField(field);
         cancel = widgets.add(new Button(draw, fonts, Button.Variant.SECONDARY, "CANCEL"));
         cancel.setOnTap(new Runnable() {
             @Override
@@ -76,11 +75,6 @@ public final class RenameDialog extends Modal {
     }
 
     @Override
-    protected void onClosed() {
-        field.cancelEdit();
-    }
-
-    @Override
     protected void layout(float dy) {
         centerCard(820f, 450f, dy);
         float fh = Button.standardHeight();
@@ -104,7 +98,6 @@ public final class RenameDialog extends Modal {
     }
 
     private void save() {
-        if (field.isEditing() && !field.commit()) return;
         String name = field.text();
         if (ProfileStore.sanitizeName(name) == null) {
             field.reject();

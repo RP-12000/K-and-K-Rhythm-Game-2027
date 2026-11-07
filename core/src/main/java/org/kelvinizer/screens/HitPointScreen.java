@@ -89,8 +89,4 @@ public class HitPointScreen extends ShellScreen {
         return panel.touchDown(x, y, pointer);
     }
 
-    @Override
-    protected boolean contentKeyDown(int keycode) {
-        return panel.keyDown(keycode);
-    }
 }

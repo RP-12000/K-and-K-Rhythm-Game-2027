@@ -31,8 +31,9 @@ import static org.kelvinizer.elements.ChartMapper.*;
  * 133.33 → 120).
  * Every other value keeps its number: note distances, tail lengths and pivots are measured from the line, so notes
  * still reach the lines on their beats, and the default fall stays 1080 over 2 beats (Kelvin 15:19:
- * 「默认下落改为两拍1080的距离」). The judgement zone stays ±480 about each line, so the two zones meet at the
- * centre.
+ * 「默认下落改为两拍1080的距离」). The judgement zone is ±480 about each line, so the two zones meet at the centre
+ * ({@link org.kelvinizer.Params#JUDGE_ZONE_HALF}; ±160 from 7.184 to 7.188). A {@code fixedLanes} array
+ * (定轨 / 无轨, CHART_FORMAT §12) is read as in format 6.
  *
  * <p>Parsing uses the Jackson streaming API (no reflection, so it is ProGuard-safe and fast).
  * Unknown keys are skipped, so stale keys in the shipped files ({@code combo}, {@code score},
@@ -217,11 +218,19 @@ final class LegacyChartFormat {
                 case "offsetMs": c.hasOffset = true; c.offsetMs = floatValue(p, v, Float.NaN); break;
                 case "lanes": c.lanes = parseLanes(p, v); break;
                 case "laneCount": c.hasLaneCount = true; c.laneCount = intValue(p, v); break;
+                // the chart editor's laneless working text (CHART_FORMAT §9): notes carry x / xEvents
+                case "laneless": c.laneless = flag(p, v); break;
                 case "notes": parseNotes(p, v, c.notes); break;
                 case "LineEvents":
                 case "judgementLine": c.line = parseLine(p, v); break;
                 case "veils": c.veils = parseVeils(p, v); break;
                 case "curtains": c.curtains = parseVeils(p, v); break;
+                // custom lines (自定义线条, CHART_FORMAT §13): the chart editor's working text, as format 6 writes them
+                case "strokes": parseStrokes(p, v, LegacyChartFormat::parseEvents, c); break;
+                // 定轨 / 无轨 sections (CHART_FORMAT §12): the same key as format 6
+                case "fixedLanes": c.fixedLanes = parseFixedLanes(p, v); break;
+                // the retired bubble lines: counted for the load report (CHART_FORMAT §11)
+                case "bubbles": c.bubbles = countEntries(p, v); break;
                 default: p.skipChildren(); break;
             }
         }
@@ -415,6 +424,9 @@ final class LegacyChartFormat {
                     case "waveSpeed": n.waveSpeed = floatValue(p, fv, 0f); break;
                     case "offsetX": n.offsetX = floatValue(p, fv, 0f); break;
                     case "offsetXEvents": n.offsetXEvents = parseEvents(p, fv); break;
+                    // laneless text: x from the screen's centre line (orbits and veils stay 1920-wide here)
+                    case "x": n.x = floatValue(p, fv, Float.NaN); break;
+                    case "xEvents": n.xEvents = parseEvents(p, fv); break;
                     case "orbitXEvents": n.orbitXEvents = parseEvents(p, fv); break;
                     case "orbitYEvents": n.orbitYEvents = parseEvents(p, fv); break;
                     case "orbitRadius": n.orbitRadius = floatValue(p, fv, Float.NaN); break;
@@ -424,11 +436,23 @@ final class LegacyChartFormat {
                     case "orbitConflict": n.orbitConflict = orbitConflictOf(text(p, fv)); break;
                     case "orbitRigid": n.orbitRigid = flag(p, fv); break;
                     case "fake": n.fake = flag(p, fv); break;
+                    case "bubble": n.bubble = idText(p, fv) != null; break;
+                    // a floating note (悬浮键, CHART_FORMAT §11): x from the screen's centre line, events in v4 keys
+                    case "float": n.floating = flag(p, fv); break;
+                    case "y": n.y = floatValue(p, fv, Float.NaN); break;
+                    case "size": n.size = floatValue(p, fv, Float.NaN); break;
+                    case "yEvents": n.yEvents = parseEvents(p, fv); break;
+                    case "sizeEvents": n.sizeEvents = parseEvents(p, fv); break;
+                    case "fillEvents": n.fillEvents = parseEvents(p, fv); break;
+                    case "chain": n.chain = idText(p, fv); break;
                     case "MovementEvents": n.movement = parseEvents(p, fv); break;
                     case "RotationEvents": n.rotation = parseEvents(p, fv); break;
                     case "DisappearEvents":
                     case "OpacityEvents": n.disappear = parseEvents(p, fv); break;
                     case "HeightEvents": n.heights = parseEvents(p, fv); break;
+                    case "xLayers": n.xLayers = parseEvents(p, fv); break;
+                    case "positionLayers": n.positionLayers = parseEvents(p, fv); break;
+                    case "rotationLayers": n.rotationLayers = parseEvents(p, fv); break;
                     default: p.skipChildren(); break;
                 }
             }
@@ -462,6 +486,9 @@ final class LegacyChartFormat {
                 case "laneScaleEvents": l.laneScaleEvents = parseEvents(p, fv); break;
                 case "cameraFrame": l.hasCamera = true; l.camera = floatValue(p, fv, Float.NaN); break;
                 case "cameraFrameEvents": l.cameraEvents = parseEvents(p, fv); break;
+                case "upperLayers": l.upperLayers = parseEvents(p, fv); break;
+                case "lowerLayers": l.lowerLayers = parseEvents(p, fv); break;
+                case "cameraLayers": l.cameraLayers = parseEvents(p, fv); break;
                 default: p.skipChildren(); break;
             }
         }

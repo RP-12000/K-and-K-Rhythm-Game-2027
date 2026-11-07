@@ -136,8 +136,8 @@ final class CardChip extends Pressable {
                 draw.roundRectStroke(bx, by, bw, bh, rad, 2f, fill, 0.6f * alpha);
             }
         }
-        if (press > 0f || hover > 0f) {
-            draw.roundRect(bx, by, bw, bh, rad, Theme.INK1, (0.10f * press + 0.05f * hover) * alpha);
+        if (press > 0f) {
+            draw.roundRect(bx, by, bw, bh, rad, Theme.INK1, 0.10f * press * alpha);
         }
         ripple.color(selected && o == 0 ? Theme.INK3 : Theme.INK1);
         drawRipple(alpha);

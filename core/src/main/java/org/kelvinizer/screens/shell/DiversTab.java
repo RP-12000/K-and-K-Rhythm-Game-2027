@@ -204,9 +204,9 @@ public final class DiversTab extends ProfileTab {
             draw.roundRect(x0, y0, cw, ch, Panel.RADIUS, Theme.GROUND_SIG, 0.08f * a);
             draw.roundRectStroke(x0, y0, cw, ch, Panel.RADIUS, 2.5f, Theme.GROUND_SIG, 0.9f * a);
         }
-        if (t.pressAmount() > 0f || t.hoverAmount() > 0f) {
+        if (t.pressAmount() > 0f) {
             draw.roundRect(x0, y0, cw, ch, Panel.RADIUS, Theme.INK1,
-                (0.07f * t.pressAmount() + 0.04f * t.hoverAmount()) * a);
+                0.07f * t.pressAmount() * a);
         }
         t.drawPress(Theme.INK1, a);
         boolean narrow = w0 < NARROW_W;
@@ -258,9 +258,9 @@ public final class DiversTab extends ProfileTab {
             draw.rect(x0 + 1f, py, 2f, len, Theme.INK2, 0.55f * a);
             draw.rect(x0 + cw - 3f, py, 2f, len, Theme.INK2, 0.55f * a);
         }
-        if (t.pressAmount() > 0f || t.hoverAmount() > 0f) {
+        if (t.pressAmount() > 0f) {
             draw.roundRect(x0, y0, cw, ch, Panel.RADIUS, Theme.INK1,
-                (0.07f * t.pressAmount() + 0.04f * t.hoverAmount()) * a);
+                0.07f * t.pressAmount() * a);
         }
         t.drawPress(Theme.INK1, a);
         boolean narrow = t.width() < NARROW_W;

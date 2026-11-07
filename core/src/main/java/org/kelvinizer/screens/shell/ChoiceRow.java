@@ -93,11 +93,6 @@ public class ChoiceRow extends SettingRow {
         control.cancel();
     }
 
-    @Override
-    public void mouseMoved(float px, float py) {
-        control.mouseMoved(px, py);
-    }
-
     /** Selected option index. */
     public int selected() {
         return control.selected();

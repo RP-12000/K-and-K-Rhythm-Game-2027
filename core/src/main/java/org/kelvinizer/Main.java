@@ -39,6 +39,7 @@ import org.kelvinizer.ui.Avatar;
 import org.kelvinizer.ui.Backdrop;
 import org.kelvinizer.ui.DepthCrest;
 import org.kelvinizer.ui.Draw;
+import org.kelvinizer.ui.EdgeGuard;
 import org.kelvinizer.ui.Fonts;
 import org.kelvinizer.ui.GlitchText;
 import org.kelvinizer.ui.Haptics;
@@ -94,6 +95,8 @@ public class Main extends Game implements KkServices {
     private AudioService audio;
     /** The platform's hit sound output (Android 8.0+), or null. */
     private final HitOutput hitOutput;
+    /** The platform's switch for the system's edge gestures (Android 10+), or null. */
+    private final EdgeGuard edgeGuard;
     private HitFx hitFx;
 
     private WelcomeScreen welcome;
@@ -165,7 +168,16 @@ public class Main extends Game implements KkServices {
 
     /** @param hitOutput the platform's own hit sound output (Android 8.0+), or null */
     public Main(HitOutput hitOutput) {
+        this(hitOutput, null);
+    }
+
+    /**
+     * @param hitOutput the platform's own hit sound output (Android 8.0+), or null
+     * @param edgeGuard the platform's switch for the system's edge gestures (Android 10+), or null
+     */
+    public Main(HitOutput hitOutput, EdgeGuard edgeGuard) {
         this.hitOutput = hitOutput;
+        this.edgeGuard = edgeGuard;
     }
 
     // ------------------------------------------------------------------ lifecycle
@@ -718,6 +730,14 @@ public class Main extends Game implements KkServices {
     /** Menu / preview / result music slots and the reserved hit sound. */
     public AudioService audio() {
         return audio;
+    }
+
+    /**
+     * Takes the screen's edges from the system's gestures while gameplay is shown, or gives them back
+     * ({@link EdgeGuard}; nothing on a platform without them).
+     */
+    public void guardEdges(boolean on) {
+        if (edgeGuard != null) edgeGuard.guardEdges(on);
     }
 
     /** Shared hit-effect facade (gameplay updates and draws it). */

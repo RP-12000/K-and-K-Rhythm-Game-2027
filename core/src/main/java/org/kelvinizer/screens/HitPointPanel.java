@@ -1,10 +1,8 @@
 package org.kelvinizer.screens;
 
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.Batch;
-import com.badlogic.gdx.graphics.g2d.NinePatch;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.TimeUtils;
@@ -513,18 +511,14 @@ final class HitPointPanel {
         float kw = KEY_W, kh = KEY_H, lineY = y + DIAGRAM_LINE;
         d.panel(x - DIAGRAM_W * 0.5f, y - DIAGRAM_H * 0.5f, DIAGRAM_W, DIAGRAM_H, 18f, a);
         float x0 = x - DIAGRAM_W * 0.5f + 24f, x1 = x + DIAGRAM_W * 0.5f - 24f;
-        d.rect(x0, lineY - 2f, x1 - x0, 4f, Theme.GROUND_SIG, 0.95f * a);
+        d.rect(x0, lineY - 3f, x1 - x0, 6f, Theme.GROUND_SIG, 0.95f * a);
         // the two labels on opposite sides of the line, so they never meet
         boolean above = px >= 0f;
         f.draw(b, Fonts.Role.UI_LABEL, 15f, Lang.t("LINE", "判定线"), x0, above ? lineY - 20f : lineY + 20f,
             Align.left | Fonts.VCENTER, Theme.GROUND_SIG, a);
         float mid = lineY + MathUtils.clamp(px, DIAGRAM_LO, DIAGRAM_HI);
         float kx = x - 10f - kw * 0.5f;
-        NinePatch note = d.note9();
-        float old = b.getPackedColor();
-        b.setColor(Theme.GROUND_SIG.r, Theme.GROUND_SIG.g, Theme.GROUND_SIG.b, 0.9f * a);
-        note.draw(b, kx, mid - kh * 0.5f, kw, kh);
-        b.setPackedColor(old);
+        d.noteHead(false, kx + kw * 0.5f, mid - kh * 0.5f, kw, kh, a); // the game's key
         // the midline, dashed, out to the distance marker
         float bx = kx + kw + 50f;
         for (float dx = kx - 16f; dx < bx; dx += 18f) d.rect(dx, mid - 1f, 10f, 2f, Theme.INK1, 0.9f * a);
@@ -548,14 +542,12 @@ final class HitPointPanel {
         d.rectGradientV(runX0, runLineY, w, 108f, Theme.GROUND_SIG, Theme.withAlpha(Theme.GROUND_SIG, 0f, tmp),
             0.06f * a);
         d.sprite(d.glowV(), (runX0 + runX1) * 0.5f, runLineY, w, 48f, Theme.GROUND_SIG, 0.18f * a);
-        d.rect(runX0, runLineY - 2f, w, 4f, Theme.GROUND_SIG, 0.95f * a);
+        d.rect(runX0, runLineY - 3f, w, 6f, Theme.GROUND_SIG, 0.95f * a);
         // the keys, as the game draws them: midline hitPointPx × size from the line at the judgement time
         float size = runSize, kh = KEY_H * size, kw = KEY_W * Math.min(size, 1.15f);
         float shift = (KEY_H * 0.5f - runHit) * size;
         double now = msSince(TimeUtils.nanoTime());
         float top = inCard ? fadeTop : Ui.top();
-        NinePatch note = d.note9();
-        float old = b.getPackedColor();
         for (int i = 0; i < KEYS; i++) {
             float ahead = (float) (keyMs(i) - now);
             float y = runLineY + SPEED * ahead - shift;
@@ -565,10 +557,8 @@ final class HitPointPanel {
             if (inCard) na *= MathUtils.clamp((top - y - kh) / 70f, 0f, 1f) * MathUtils.clamp((y - fadeBottom) / 40f,
                 0f, 1f);
             if (na <= 0f) continue;
-            b.setColor(Theme.GROUND_NOTE.r, Theme.GROUND_NOTE.g, Theme.GROUND_NOTE.b, na * a);
-            note.draw(b, laneX(i) - kw * 0.5f, y, kw, kh);
+            d.noteHead(false, laneX(i), y, kw, kh, na * a);
         }
-        b.setPackedColor(old);
         // what to do, at the left, clear of the lanes
         boolean warm = now < keyMs(WARM_UP) - BEAT_MS * 0.5f;
         f.drawFit(b, Fonts.Role.UI_BOLD, 34f, warm ? Lang.t("WARM-UP", "练习") : Lang.t("KEEP TAPPING", "继续点"), colX,
@@ -656,16 +646,4 @@ final class HitPointPanel {
         return true;
     }
 
-    /** A key: a tap during a run, SPACE / ENTER starts from the intro. */
-    boolean keyDown(int keycode) {
-        if (state == RUN) {
-            tap(lanesX, runLineY, eventNanos());
-            return true;
-        }
-        if (state == INTRO && (keycode == Input.Keys.SPACE || keycode == Input.Keys.ENTER)) {
-            startRun();
-            return true;
-        }
-        return false;
-    }
 }

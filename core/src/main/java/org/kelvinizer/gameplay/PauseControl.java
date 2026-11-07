@@ -1,6 +1,5 @@
 package org.kelvinizer.gameplay;
 
-import com.badlogic.gdx.Input;
 import com.badlogic.gdx.math.MathUtils;
 import org.kelvinizer.Params;
 import org.kelvinizer.elements.JudgementLine;
@@ -43,12 +42,12 @@ import org.kelvinizer.ui.Ui;
  * </ul>
  * A down counts only when it judges nothing: it did not judge a note or TIDE
  * ({@link GameEngine#INPUT_JUDGED}), did not re-grab a hold ({@link GameEngine#INPUT_REGRAB}), did
- * not touch a MINE or a LANE MINE ({@link GameEngine#lastInputMine()}) and does not cover a running
+ * not touch a MINE or a LANE MINE ({@link GameEngine#lastInputMine()}), did not catch a DRAG
+ * ({@link GameEngine#lastInputCaught()}) and does not cover a running
  * TIDE STREAM (it is in the zone of a line whose TIDE STREAM runs). Such a
  * down neither counts nor cancels a pending first tap, and neither does a down outside the box.
  * Drags and fingers resting in the box never count: only downs do. Every touch reaches gameplay
- * first, so notes under the corner stay playable. BACK, Esc and the keyboard's Pause key pause at
- * once ({@link #pausesAtOnce}); P stays the upper row's lane key (ARCHITECTURE §13.2).
+ * first, so notes under the corner stay playable. The BACK key pauses at once (in {@code GameplayScreen}).
  * Nothing is allocated after construction.
  */
 public final class PauseControl {
@@ -198,16 +197,16 @@ public final class PauseControl {
     // ------------------------------------------------------------------ input
 
     /**
-     * True when this touch-down did something in gameplay: it judged a note or TIDE, re-grabbed a
-     * hold, touched a MINE or a LANE MINE, or covers a running TIDE STREAM (its y is in the zone of a
-     * line whose TIDE STREAM runs). Such a touch never operates the pause control.
+     * True when this touch-down did something in gameplay: it judged a note or TIDE (a floating one too), re-grabbed a
+     * hold, touched a MINE or a LANE MINE, caught a DRAG before its time, or covers a running TIDE STREAM (its y is in
+     * the zone of a line whose TIDE STREAM runs). Such a touch never operates the pause control.
      *
      * @param result the engine's {@code INPUT_*} result for this down
      */
     public static boolean judges(GameEngine e, int result, float y) {
         if (result == GameEngine.INPUT_JUDGED || result == GameEngine.INPUT_REGRAB) return true;
         if (result != GameEngine.INPUT_EMPTY || e.autoplay()) return false;
-        if (e.lastInputMine()) return true;
+        if (e.lastInputMine() || e.lastInputCaught()) return true;
         return covers(e, Line.LOWER, y) || covers(e, Line.UPPER, y);
     }
 
@@ -313,13 +312,5 @@ public final class PauseControl {
         pending = false;
         armPointer = -1;
         held = 0f;
-    }
-
-    /**
-     * True for keys that pause a running song at once: BACK, Esc and the keyboard's Pause key. P is
-     * not one of them: it is the upper row's lane key (ARCHITECTURE §13.2).
-     */
-    public static boolean pausesAtOnce(int keycode) {
-        return keycode == Input.Keys.BACK || keycode == Input.Keys.ESCAPE || keycode == Input.Keys.PAUSE;
     }
 }

@@ -1,6 +1,6 @@
 # K & K（Kelvinizer and Kathlina）
 
-一款以“下潜”为主题的双判定线节奏游戏，用 [libGDX](https://libgdx.com/) 写成，支持桌面（Windows / macOS / Linux）和 Android。
+一款以“下潜”为主题的双判定线节奏游戏，用 [libGDX](https://libgdx.com/) 写成，只做手机和平板（Android）。
 
 当前版本 **0.1.0-beta.1**（内测版，2026-10-21）。每一次改了什么见 `docs/CHANGES.md`（开发日志）。
 
@@ -26,7 +26,7 @@
 | MINE 水雷 | `mine` | 别碰；碰到会断连击 |
 | TIDE 浪花 | `universal` | 整条线：线上任意位置点一下 |
 | TIDE STREAM 潮汐 | `universal`（有时长） | 任意手指按在线上就算 |
-| LANE MINE 轨道水雷 | `mine`（有时长） | 变红的时候别碰这条轨道 |
+| LONG MINE 长水雷 | `mine`（有时长） | 变红的时候别碰它那一块 |
 
 * 同一时刻要一起打的音符默认带一圈光晕（设置 → 视觉 → 游戏界面 → 多押辅助：可以关掉，或者再加上金色珍珠；水雷上是红色珍珠，提醒别碰）。有的音符后面拖着一串**残影**：残影只是光，不用打。
 * 有的谱面里有**漩涡**（圆形或多边形的一片水，会动、会转）：在漩涡里按下的手指，抬起来之前什么都打不到，但不会断连击。
@@ -44,57 +44,36 @@
 | JDK | **21** | 运行 Gradle 和游戏都用它 |
 | Java 语言级别 | **11** | 由 Gradle 设定（`sourceCompatibility = 11`），不能用更新的语法 |
 | Gradle | **9.8.0**（wrapper） | 用仓库里的 `gradlew` / `gradlew.bat`，不用另装 Gradle；第一次运行要联网下载 Gradle 和依赖 |
-| libGDX | **1.14.1** | 另有 LWJGL 3.4.1、ShapeDrawer 2.5.0、jackson-core 2.17.0；版本号都在 `gradle.properties` |
-| Android（可选） | compileSdk 36，minSdk 21 | 需要 Android SDK；Android Gradle Plugin 9.4.1 |
+| libGDX | **1.14.1** | 另有 ShapeDrawer 2.5.0、jackson-core 2.17.0；版本号都在 `gradle.properties` |
+| Android | compileSdk 36，minSdk 21 | 需要 Android SDK；Android Gradle Plugin 9.4.1 |
 | 音乐文件 | MP3 / OGG / WAV | **不在 git 仓库里**，要另外放进 `assets/`（见 §5） |
 
 ---
 
-## 3. 用 IntelliJ IDEA 打开和运行（桌面版）
+## 3. 用 Android Studio 打开和运行
 
-1. **打开工程**：File → Open，选仓库根目录（有 `settings.gradle` 的文件夹），作为 Gradle 工程打开并信任它。
-2. **选 JDK 21**：File → Project Structure → Project → SDK 选 JDK 21；Settings → Build, Execution, Deployment → Build Tools → Gradle → Gradle JVM 也选这个 JDK 21。语言级别不用改，Gradle 会按 Java 11 编译。
-3. **等 Gradle 同步完成**。
-   * 如果因为 `android` 模块同步失败（例如提示找不到 Android SDK）：安装 Android SDK，然后在仓库根目录建 `local.properties`，写一行 `sdk.dir=<Android SDK 的路径>`（这个文件不进 git），或者设置环境变量 `ANDROID_HOME`。
-   * 只想跑桌面版的话，也可以临时把 `settings.gradle` 最后一行里的 `'android'` 删掉再同步。**这个改动不要提交。**
-4. **运行**：打开右侧的 Gradle 工具窗口，双击 `lwjgl3` → Tasks → application → `run`。
-   * 命令行也一样：`./gradlew lwjgl3:run`（Windows：`gradlew.bat lwjgl3:run`）。
-   * 这个任务会把工作目录设成 `assets/`，加上需要的 JVM 参数，并且每次运行前更新资源清单 `assets/assets.txt`。
-5. **另一种运行方式**：新建一个 Application 运行配置：
-   * 模块（classpath）：`lwjgl3` 的 main（名字形如 `<文件夹名>.lwjgl3.main`）。
-   * 主类：`org.kelvinizer.lwjgl3.Lwjgl3Launcher`。
-   * 工作目录：`<仓库>/assets`。
-   * macOS 不用手动加 `-XstartOnFirstThread`：启动器会自己用这个参数重新启动 JVM（`lwjgl3/src/main/java/org/kelvinizer/lwjgl3/StartupHelper.java`）。
+游戏只做手机和平板（Android），没有电脑版。谱面编辑器是另一个程序，照样在电脑上用，它编译的是这里 `core/` 的代码。
 
-窗口默认 1280 × 720，可以拉伸（最小 960 × 540）。
+1. **打开工程**：File → Open，选仓库根目录（有 `settings.gradle` 的文件夹），信任它。
+2. **选 JDK 21**：Settings → Build, Execution, Deployment → Build Tools → Gradle → Gradle JDK 选 JDK 21。语言级别不用改，Gradle 会按 Java 11 编译。
+3. **等 Gradle 同步完成**。提示找不到 Android SDK 时：安装 Android SDK，然后在仓库根目录建 `local.properties`，写一行 `sdk.dir=<Android SDK 的路径>`（这个文件不进 git），或者设置环境变量 `ANDROID_HOME`。
+4. **运行**：选 `android` 运行配置，连上手机或模拟器运行。
+   * 命令行：`./gradlew android:installDebug` 安装到连着的设备；`./gradlew android:run` 在设备上启动已安装的游戏（它按 `local.properties` 的 `sdk.dir` 或环境变量 `ANDROID_SDK_ROOT` 找 `adb`）。
+   * **更新时直接覆盖安装，不要先卸载**：卸载会把手机上的存档一起删掉。
+5. **打包 APK**：Build → Build App Bundle(s) / APK(s) → Build APK(s)，或者 `./gradlew android:assembleDebug`；APK 在 `android/build/outputs/apk/`。打包前先把音乐文件放好，否则 APK 里没有音乐。
 
-**打包成 jar**：`./gradlew lwjgl3:jar`，生成 `lwjgl3/build/libs/KandK-0.1.0-beta.1.jar`，资源都打在 jar 里，用 `java -jar` 运行。另外还有 `lwjgl3:jarMac`、`lwjgl3:jarLinux`、`lwjgl3:jarWin`，只包含对应系统的本地库。打包前先把音乐文件放好，否则 jar 里没有音乐。
+* 启动器是 `android/src/main/java/org/kelvinizer/android/AndroidLauncher.java`，资源直接用根目录的 `assets/`。
+* 游戏固定横屏（可以 180° 翻转），全屏沉浸模式；振动反馈需要的 `VIBRATE` 权限已经在 `android/AndroidManifest.xml` 里声明。
 
 **版本号**：三处保持一致，改版本时一起改：`gradle.properties` 的 `projectVersion`、`android/build.gradle` 的 `versionName`（`versionCode` 每次发布加 1）、`core/.../Params.java` 的 `VERSION`（游戏里 设置 → 其他 最下面和开始画面显示的就是它）。
 
-### Android
-
-* Android 部分是 `android` 模块（启动器 `android/src/main/java/org/kelvinizer/android/AndroidLauncher.java`，资源直接用根目录的 `assets/`）。在 IntelliJ IDEA（需要 Android 插件）或 Android Studio 里打开同一个工程，选 `android` 模块的运行配置，连上手机或模拟器运行。
-* 命令行：`./gradlew android:installDebug` 安装到连着的设备；`./gradlew android:run` 在设备上启动已安装的游戏（它按 `local.properties` 的 `sdk.dir` 或环境变量 `ANDROID_SDK_ROOT` 找 `adb`）。
-* **更新时直接 `installDebug` 覆盖安装，不要先卸载**：卸载会把手机上的存档一起删掉。
-* 游戏固定横屏（可以 180° 翻转），全屏沉浸模式；振动反馈需要的 `VIBRATE` 权限已经在 `android/AndroidManifest.xml` 里声明。
-
 ---
 
-## 4. 键盘操作（桌面版）
+## 4. 操作
 
-鼠标左键相当于一根手指的触摸。键盘按键对应轨道（轨道编号见 `docs/CHART_FORMAT.md` §3）：
-
-| 判定线 | 左边轨道 −5 −4 −3 −2 −1 | 0 号轨道 | 右边轨道 1 2 3 4 5 |
-|---|---|---|---|
-| 天空线（上） | Tab　Q　W　E　R | T 或 Y | U　I　O　P　[ |
-| 地面线（下） | CapsLock　A　S　D　F | G 或 H | J　K　L　;　' |
-
-* **空格**：只判定地面线的 TIDE。另外，每一行的任何一个键也能判定**本条线**的 TIDE。
-* v2–v4 谱面默认 8 条轨道（±1 到 ±4），用不到 CapsLock、'、Tab、[。0 号轨道只在谱面插入它时才有；没有 0 号轨道时 G / H / T / Y 只判定 TIDE。原版歌曲的谱面（v1）有 ±5 两条外侧轨道，平时在画面外，只在部分段落窗口收窄时进入画面。
-* **暂停**：Esc 或键盘上的 Pause 键，立即暂停。暂停时按 Esc 或 Enter 继续（3-2-1 倒计时）。**P 是轨道键，不是暂停。**
-* 触摸 / 鼠标暂停：默认是双击右上角的暂停键（设置 → 游玩 → 暂停方式 可以改成按住或单击）。
-* 选歌地图：Esc 或 PageUp 上浮回上一层；滚轮缩放（所有曲目页是上下滚动）。
+* 全部用触摸。暂停默认是双击右上角的暂停键（设置 → 游玩 → 暂停方式 可以改成按住或单击）。
+* 手机的返回键：游戏中立即暂停，暂停时继续（3-2-1 倒计时）；选歌地图上先关掉打开的卡片或面板，没有的话上浮回上一层。
+* 选歌地图：双指捏合缩放，两根手指按住不动 1.5 秒上浮回上一层；所有曲目页上下拖动。
 
 ---
 
@@ -113,7 +92,7 @@
 
 * 文件名要和文件夹名一样；扩展名 `.mp3`、`.ogg`、`.wav` 都可以（菜单音乐也一样）。缺少某个文件时，游戏照样能运行，只是对应的歌曲、教程或菜单没有声音。
 * 加一首新歌、加章节的完整步骤见 `docs/ASSET_SLOTS.md` §5–§6 和 `docs/DEVELOPER.md` §6。
-* 存档：桌面版在用户主目录的 `KandKGame/profiles/`（导出的备份在 `KandKGame/export/`）；Android 在应用自己的存储里。
+* 存档在应用自己的存储里；导出的备份码复制到剪贴板。
 
 ---
 
@@ -123,7 +102,8 @@
 |---|---|---|
 | `docs/DEVELOPER.md` | 开发人员手册：每个包和类做什么、要改什么去哪里改、代码风格、常见任务 | 中文 |
 | `docs/CHANGES.md` | 开发日志：和原版相比改了什么（§1–§6），以及 2026-10-12 起每一次修改（§7） | 中文 |
-| `docs/CHART_FORMAT.md` | 谱面格式（v4，以及 v1、v2、v3 的自动转换） | 中文 |
+| `docs/CHART_FORMAT.md` | 谱面格式 v5 | 中文 |
+| `docs/CHART_FORMAT_v4.md` | 旧谱面格式 v1–v4（仍能读取），以及各条规则的细节 | 中文 |
 | `docs/MAP_FORMAT.md` | 地图格式（`assets/maps/*.json`：歌在哪、路怎么连、区域名和文案） | 中文 |
 | `docs/ASSET_SLOTS.md` | 资源槽位：音效、结算音乐、背景图、字体、粒子、加歌、加章节、教程 | 中文 |
 | `docs/DESIGN.md` | 画面和交互的设计规范（§22 是 2026-10-12 那一轮决定的索引，§24 是之后各轮的修改） | 英文 |
@@ -152,8 +132,8 @@
 
 - [ ] 首次设置做完自动开始；以后从 设置 → 其他 → 新手教程 重玩，结算画面的「再玩一次」也行。地图上没有教程的洞。
 - [ ] 开场 `WELCOME TO`、`Kelvinizer and Kathlina` 和三行故事；然后介绍四个角，暂停那句跟着 设置 → 游玩 → 暂停方式（双击是默认，只有双击模式会播放双击演示，演示不会真的暂停）；再介绍 RESONANCE / ECHO / LOST 和 EARLY / LATE。
-- [ ] 每一课都能打：地面 DROP、天空 DROP、TIDE、STREAM、TIDE STREAM、MINE（被碰到时红色 LOST 出现在水雷上方）、LANE MINE、浪花当判定线。字幕放在当时没有音符经过的地方。
-- [ ] 浪花当判定线那一课以后的对白现在是空的占位（等新文案），也不画空底板；结尾是 K & K，中间的 & 看得到，连击数在它出来时让开。
+- [ ] 每一课都能打：地面 DROP、天空 DROP、TIDE、STREAM、TIDE STREAM、MINE（被碰到时红色 LOST 出现在水雷上方）、LONG MINE（「浪花当判定线」那一课 2026-11-06 起不在教程里，那几拍是普通水滴）。字幕放在当时没有音符经过的地方。
+- [ ] 长水雷那一课以后的对白现在是空的占位（等新文案），也不画空底板；结尾是 K & K，中间的 & 看得到，连击数在它出来时让开。
 - [ ] `HOLD TO SKIP`（中文模式也是英文）在下判定线下面那条的正中，按住 0.6 秒跳过；第一次玩 10 秒后才出现，重玩时一开始就有；在 3-2-1 倒计时中跳过也直接进结算，歌不会在后面接着放。
 
 ### 7.3 选歌地图
@@ -161,12 +141,12 @@
 - [ ] 洞口（CAVE MOUTH）：SINGLES、MAIN 和罩着铁栅栏的 COLLAB（敬请期待）；右下角 ALL SONGS。SINGLES 牌子上的「N SONGS」只数单曲地图上的歌，不是整个曲库；后面的「x/y CLEARED」只数地图上选中的那个难度的谱面（不写难度名）。名字下面的进度条也只算这个难度：全 RESONANCE 浅蓝实心、FULL COMBO 紫色斜纹、玩过的白色半透明。MAIN 下面也有进度条和「N SONGS · x/y CLEARED」，数主线每一章的歌（同一首只算一次）。
 - [ ] 左上角玩家块：白圈圆头像、名字（底下一条往右淡出的深蓝光带）、两头尖的深度标签（只有数字，比如 -2,211 m；长度固定，数字居中）和紧挨着的贝壳数。只有点头像进个人页，点名字、深度和贝壳都没有反应。右上角是设置键。
 - [ ] 进每一层都是最近的缩放，层名在最上面，字小、半透明。单曲的歌排成两行；主线 01、02 章有歌和剧情（书本），03–07 章封着。第 1 章里通往第 2 章的竖井下面也有那一章的进度条和「N SONGS · x/y CLEARED」。
-- [ ] 两根手指按住不动：0.3 秒后两指中间出现一个圈，1.5 秒转满就上浮一层（圈里写 RISE / 上浮）；手指一动就取消，照常缩放。缩到最小不会上浮；电脑上 Esc / PageUp 上浮。
+- [ ] 两根手指按住不动：0.3 秒后两指中间出现一个圈，1.5 秒转满就上浮一层（圈里写 RISE / 上浮）；手指一动就取消，照常缩放。缩到最小不会上浮。
 - [ ] 每个洞外面是四圈分数环（最里圈 SURFACE，最外圈 ABYSS）；拉近后，当前难度没打过的谱面显示青色 NEW。全连的评级是紫色，R / R+ 浅蓝带一道白光。
 - [ ] 停在一首歌上开始试听：默认从整首歌的 30 % 放 20 秒，然后从头循环。歌曲文件夹里的 `song.json` 写了 `previewStartMs` / `previewEndMs` 时按它放；起点小于 0 时先静音再从歌曲开头放，终点超过音乐结尾时放完静音、等到终点，不跳回开头。
 - [ ] 歌名里的希腊字母和日文都显示完整，例如 `Mγ ς0μ1(feat.初音ミク)` 的 ς。
 - [ ] 歌曲文件夹的 `song.json` 有 `jacket16x9` / `jacketCircle`（谱面编辑器的曲绘取景）时：歌曲卡片和结算显示选的 16:9 那块，地图圆孔、转场圆盘和个人页小图显示选的圆形那块；没有时和以前一样取中间。
-- [ ] 点歌打开右边的歌曲卡片：‹ › 换歌，深度写成「-4,000 / -5,760 m」，DESCEND 上面那一行是 NEXT 推分建议、MAX 或 MAXED；点地图空白处、往右划或按返回键（电脑上 Esc）关上。AUTO 打开后按钮变成 WATCH（自动演奏，不记成绩）。
+- [ ] 点歌打开右边的歌曲卡片：‹ › 换歌，深度写成「-4,000 / -5,760 m」，DESCEND 上面那一行是 NEXT 推分建议、MAX 或 MAXED；点地图空白处、往右划或按返回键关上。AUTO 打开后按钮变成 WATCH（自动演奏，不记成绩）。
 - [ ] 单曲：没有解锁条件，七首散在地图上（一进来看到 Dash from my eyes、氷点、Aleph-0，其他四首要拖过去或缩小看全图）；Dash from my eyes 免费，另外六首没买时洞里是贝壳、名字下面写 300，卡片里按住购买；已经玩过的歌（比如以前免费的 Aleph-0）不用再买。
 - [ ] 解锁了还没买的单曲有金色虚线圈和价格（默认 300 贝壳）；卡片上按住 HOLD TO BUY 买下，贝壳不够时按钮变灰。
 - [ ] 所有曲目：一排两首、相邻两行错开半格，连成网（两头都打过是实线，否则虚线）；不缩放，上下拖动；右下 SORT 排序；右边的卡片一直开着；往下拖时歌从玩家块和设置键底下过去。
@@ -175,16 +155,16 @@
 
 ### 7.4 下潜（游戏画面）
 
-- [ ] 开场：3 秒倒计时时只有判定线、轨道和四角，接着 0.3 秒空白，然后音符从屏幕边缘落进来。
+- [ ] 开场：3 秒倒计时时只有判定线和四角，接着 0.3 秒空白，然后音符从屏幕边缘落进来。
 - [ ] 两条判定线在 1920 × 1200 画面的 y 1080 和 120（16:10 时离上下边 120）；判定区从线往外 0.4 屏高，上面有一层淡淡的颜色，深浅跟着「判定区提示」拖动条（默认 50%，拖到 0 就没有）。
-- [ ] 左上角只有分数：在屏幕顶边和上判定线之间按 0.3 / 0.4 / 0.3 放（上空 0.3、字高 0.4、下空 0.3），离左边的距离在电脑、手机和平板上都一样；FC/AR 指示开着时全共鸣淡蓝、出过回响紫色、断了连击白色。
+- [ ] 左上角只有分数：在屏幕顶边和上判定线之间按 0.3 / 0.4 / 0.3 放（上空 0.3、字高 0.4、下空 0.3），离左边的距离在手机和平板上都一样；FC/AR 指示开着时全共鸣淡蓝、出过回响紫色、断了连击白色。
 - [ ] 右上角暂停键在同一段的中间，默认双击暂停；左下角难度标签和歌名、右下角剩余时间在同一行；顶上的进度条约屏幕高度的 1%。
 - [ ] 屏幕中间是连击数；自动播放时连击数下面写淡绿色的 AUTOPLAY。
-- [ ] 暂停：双击暂停键或按 Esc → 暂停菜单（RETRY / RESUME / QUIT，中文 重开 / 继续 / 退出，只显示当前语言）→ 继续时 3-2-1 倒计时，共 3 秒，每个数字 1 秒（和开场一样），倒计时期间音符不动，也不判定。
-- [ ] 暂停后按继续（电脑和手机都一样）：3 出现时谱面（轨道、判定线、音符和定住的击打圈）几乎看不见（原来的 0.05 倍），3、2、1 的过程中匀速变回原样，数完正好恢复。
+- [ ] 暂停：双击暂停键或按返回键 → 暂停菜单（RETRY / RESUME / QUIT，中文 重开 / 继续 / 退出，只显示当前语言）→ 继续时 3-2-1 倒计时，共 3 秒，每个数字 1 秒（和开场一样），倒计时期间音符不动，也不判定。
+- [ ] 暂停后按继续：3 出现时谱面（判定线、音符和定住的击打圈）几乎看不见（原来的 0.05 倍），3、2、1 的过程中匀速变回原样，数完正好恢复。
 - [ ] 手机上暂停后按继续：倒数时画面定住（3、2、1 每个 1 秒），倒数时听不到音乐，数完音乐马上以原来的音量响起，和音符对得上，不会先停一下或跳一下。连续暂停、继续几次也一样；倒数时再暂停回到暂停菜单。
 - [ ] 判定字 RESONANCE / ECHO / LOST、COMBO、EARLY / LATE 和结束横幅 CLEAR / FULL COMBO / ALL RESONANCE 在中文模式下也是英文。
-- [ ] 宽屏手机和平板：轨道和判定线撑满整个屏幕，四角贴着角，大小不变。
+- [ ] 宽屏手机和平板：判定线撑满整个屏幕，四角贴着角，大小不变。
 - [ ] 开着 设置 → 游玩 → 显示触控：每个按着的手指下面有白圈和小点，松开后放大淡出。
 - [ ] 谱面里有漩涡（`veils`）时：圆形是一圈圈往外漂的同心圆，多边形是光网，平常一直在晃；在漩涡里按下的手指抬起前打不到任何音符，也不断连击，手指下面有一个和键一样宽的 glitch 触点（不管开没开显示触控），滑出漩涡也跟着；判定线、连击数和判定字在水面上看得清。
 
@@ -198,7 +178,7 @@
 
 ### 7.6 设置
 
-- [ ] 左边四项：音频、视觉、游玩、其他（AUDIO / VISUAL / GAMEPLAY / OTHER）。电脑和平板上每页都不用滚动。
+- [ ] 左边四项：音频、视觉、游玩、其他（AUDIO / VISUAL / GAMEPLAY / OTHER）。平板上每页都不用滚动。
 - [ ] 音频：谱面延时（滑条、–10 / –1 / +1 / +10 和左边的「校准…」）、音频预设、音乐音量、打击音效音量、界面音效音量（还没有界面音效，所以是灰的）；几行平分整页的高度。
 - [ ] 视觉：目押校准（默认 0 px：判定线横穿按键中间）、游戏界面（调整…）、减少动态、背景细节、背景亮度、界面缩放、额外边距、显示帧率。
 - [ ] 游戏界面（单独一个画面，左上角返回）：中间是实时预览，一局 12 组（单、单、双），分数开局淡蓝、第 5 组变紫、第 9 组变白；下面是判定字样；左列 背景亮度、故障效果强度、减少闪烁、粒子质量，右列 按键缩放、多押辅助、判定位置、FC/AR 指示、判定区提示（拖动条，0 不显示、默认 50% 和以前「开」一样、100% 更明显）。改了马上在预览里看到。
@@ -212,21 +192,21 @@
 
 - [ ] 点地图左上角的头像进个人页（中文标题「账号与统计」，英文 PROFILE）：左栏头像、名字、贝壳和深度，下面 PLAYS 和 PLAY TIME。点名字改名。
 - [ ] STATS：四个难度开关（每次打开只亮地图上选中的那个难度，点亮几个就看几个的合计），CHARTS CLEARED / FULL COMBOS / RESONATED，下面是分数直方图。
-- [ ] DST 10：最上面 DIVE PROFILE 深度曲线（捏合或滚轮放大，拖动平移，双击回到全部，点圆点看那一次的详情）；下面 DEEPEST 10 和 OVERFLOW（第 11–15 深，不算进深度），不满的用「—」占位。
+- [ ] DST 10：最上面 DIVE PROFILE 深度曲线（捏合放大，拖动平移，双击回到全部，点圆点看那一次的详情）；下面 DEEPEST 10 和 OVERFLOW（第 11–15 深，不算进深度），不满的用「—」占位。
 - [ ] RECENT：最近的成绩，全连的后面标 FC 或 AR。
 - [ ] PLAYER：一行三张卡片，上面写「N / 12 位玩家」；不到 12 个时有「新建玩家」卡片和「导入」按钮，满 12 个时都不显示；点卡片只切换玩家（删除玩家暂时没有入口）。英文模式写 PLAYER、`NEW PLAYER`、`UP TO 12 ON THIS DEVICE`。
 
 ### 7.8 存档
 
-- [ ] 打几局后关掉游戏再打开：成绩、贝壳、深度和设置都还在（桌面版在 `KandKGame/profiles/`）。
+- [ ] 打几局后关掉游戏再打开：成绩、贝壳、深度和设置都还在。
 - [ ] 设置 → 其他 → 备份存档 → 导出：得到一串 `KK1:` 开头的备份码；在 个人页 → PLAYER → 导入 能用它导回来。
 - [ ] 手机：`installDebug` 覆盖安装以后，成绩还在。
 
 ## 8. 许可证 License
 
-* 源代码（`core/`、`lwjgl3/`、`android/` 和 Gradle 脚本）和文档按 [MIT 许可证](LICENSE) 开源。
+* 源代码（`core/`、`android/` 和 Gradle 脚本）和文档按 [MIT 许可证](LICENSE) 开源。
 * `assets/` 里的素材不在 MIT 范围内：音乐、音效、曲绘、图片和谱面的版权归各自的作者所有，保留所有权利，未经许可不能使用。
 * 字体按各自的许可证：Chakra Petch、Noto Sans SC 和 Rubik Glitch 都是 SIL Open Font License 1.1（见 `assets/fonts/OFL-*.txt`）。
-* 游戏里用到的开源软件（libGDX、FreeType、LWJGL 等）的许可证全文在 `assets/licenses/`，游戏里在 设置 → OTHER → OPEN-SOURCE LICENSES 可以看到。
+* 游戏里用到的开源软件（libGDX、FreeType 等）的许可证全文在 `assets/licenses/`，游戏里在 设置 → OTHER → OPEN-SOURCE LICENSES 可以看到。
 
-The source code (`core/`, `lwjgl3/`, `android/` and the Gradle scripts) and the documentation are released under the [MIT License](LICENSE). The assets in `assets/` are not: music, sound effects, cover art, images and charts belong to their respective owners, all rights reserved. Fonts keep their own licenses: Chakra Petch, Noto Sans SC and Rubik Glitch are under the SIL Open Font License 1.1 (`assets/fonts/OFL-*.txt`).
+The source code (`core/`, `android/` and the Gradle scripts) and the documentation are released under the [MIT License](LICENSE). The assets in `assets/` are not: music, sound effects, cover art, images and charts belong to their respective owners, all rights reserved. Fonts keep their own licenses: Chakra Petch, Noto Sans SC and Rubik Glitch are under the SIL Open Font License 1.1 (`assets/fonts/OFL-*.txt`).

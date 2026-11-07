@@ -49,7 +49,7 @@ import java.util.zip.GZIPOutputStream;
  *
  * <p>Local multi-profile storage (ARCHITECTURE §7, DESIGN §8).
  *
- * <p>Layout under the root (Android {@code Gdx.files.local("profiles/")}, desktop
+ * <p>Layout under the root (Android {@code Gdx.files.local("profiles/")}; test runs off a phone use
  * {@code Gdx.files.external("KandKGame/profiles/")}):
  * <pre>
  *   index.json   {schemaVersion, activeProfileId, firstRunDone, profiles:[{id,name,createdAt}]}
@@ -1109,22 +1109,6 @@ public final class ProfileStore {
         return adoptImported(p, json);
     }
 
-    /** Imports a profile from an exported JSON file (desktop export folder). */
-    public Profile importFile(FileHandle file) throws ImportException {
-        if (!canCreate()) {
-            throw new ImportException(ImportException.Reason.LIMIT_REACHED, "Profile limit reached", null);
-        }
-        Profile p;
-        byte[] raw;
-        try {
-            raw = file.readBytes();
-            p = PlainJson.read(raw, Profile.class);
-        } catch (IOException | RuntimeException e) {
-            throw new ImportException(ImportException.Reason.INVALID_CODE, "Unreadable file", e);
-        }
-        return adoptImported(p, raw);
-    }
-
     /** @param raw the imported JSON as read (kept as the scale-1 backup when it is migrated) */
     private Profile adoptImported(Profile p, byte[] raw) throws ImportException {
         if (p == null) throw new ImportException(ImportException.Reason.INVALID_CODE, "Empty profile", null);
@@ -1221,45 +1205,6 @@ public final class ProfileStore {
             }
             return out.toByteArray();
         }
-    }
-
-    /**
-     * Desktop only: writes {@code KandKGame/export/<name>-<yyyymmdd>[-n].json} (never overwrites).
-     *
-     * @return the written file, or null on other platforms or failure
-     */
-    public FileHandle exportToFile(String id) {
-        Profile p = profiles.get(id);
-        if (p == null || Gdx.app == null || Gdx.app.getType() != Application.ApplicationType.Desktop) return null;
-        try {
-            // Letters and digits of any script stay (CJK names are first-class); a second export of
-            // the same name on the same day gets -2, -3 … instead of overwriting the first.
-            String safe = p.name.replaceAll("[^\\p{L}\\p{N}_-]", "_");
-            String base = safe + "-" + localDay(System.currentTimeMillis());
-            FileHandle f = exportDir().child(base + ".json");
-            for (int n = 2; f.exists(); n++) f = exportDir().child(base + "-" + n + ".json");
-            f.parent().mkdirs();
-            f.writeBytes(PlainJson.write(p, true), false);
-            return f;
-        } catch (IOException | RuntimeException e) {
-            log("Export file failed: " + e.getMessage());
-            return null;
-        }
-    }
-
-    /** @return exported JSON files in the desktop export folder (empty elsewhere). */
-    public FileHandle[] listExportFiles() {
-        if (Gdx.app == null || Gdx.app.getType() != Application.ApplicationType.Desktop) return new FileHandle[0];
-        try {
-            FileHandle dir = exportDir();
-            return dir.exists() ? dir.list(".json") : new FileHandle[0];
-        } catch (RuntimeException e) {
-            return new FileHandle[0];
-        }
-    }
-
-    private static FileHandle exportDir() {
-        return Gdx.files.external("KandKGame/export/");
     }
 
     // ------------------------------------------------------------------ saving

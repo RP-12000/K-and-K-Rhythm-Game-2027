@@ -212,7 +212,7 @@ final class DescendButton extends Pressable {
         if (!visible || alpha <= 0.002f) return;
         float a = alpha * alphaMul();
         float s = visualScale();
-        float cx = centerX() + shakeX(), cy = centerY() + liftY() - 4f * k * press;
+        float cx = centerX() + shakeX(), cy = centerY() - 4f * k * press;
         float bw = w * s, bh = h * s, bx = cx - bw * 0.5f, by = cy - bh * 0.5f;
         float rad = Button.RADIUS * k * s;
         if (buy) {
@@ -279,7 +279,7 @@ final class DescendButton extends Pressable {
         if (!visible || alpha <= 0.002f) return;
         if (buy) {
             float s = visualScale();
-            float cx = centerX() + shakeX(), cy = centerY() + liftY() - 4f * k * press;
+            float cx = centerX() + shakeX(), cy = centerY() - 4f * k * press;
             float cap = lockCap(s), gap = 10f * k * s, icon = 30f * k * s;
             float w1 = r.boldWidth(buyPre, cap), w2 = r.boldWidth(buyPost, cap);
             float x0 = cx - (w1 + w2 + icon + 2f * gap) * 0.5f;
@@ -291,7 +291,7 @@ final class DescendButton extends Pressable {
         }
         if (!locked) return;
         float s = visualScale();
-        float cx = centerX() + shakeX(), cy = centerY() + liftY();
+        float cx = centerX() + shakeX(), cy = centerY();
         float rw = lockRowW(s), x0 = cx - rw * 0.5f + 44f * k * s, cap = condCap(s), tw = rw - 44f * k * s;
         float a = lockA * alpha * alphaMul(), dy = lockText2.length() > 0 ? cap * 0.75f : 0f;
         r.boldFit(b, lockText, cap, x0, cy + dy, Align.left | Fonts.VCENTER, tw, 0.7f, Theme.INK1, a);
@@ -303,7 +303,7 @@ final class DescendButton extends Pressable {
         if (!visible || locked || buy || alpha <= 0.002f) return;
         float a = alpha * alphaMul();
         float s = visualScale();
-        float cx = centerX() + shakeX(), cy = centerY() + liftY() - 4f * k * press;
+        float cx = centerX() + shakeX(), cy = centerY() - 4f * k * press;
         float cap = labelCap() * s;
         float maxW = (w - 150f * k) * s;
         float lw = labelWidth() * s;

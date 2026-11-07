@@ -14,12 +14,12 @@ import java.util.Calendar;
 
 /**
  * 下潜曲线 DIVE PROFILE：横轴是时间，带日期刻度；纵轴是深度，越往下越深。
- * 双指捏合（电脑上用滚轮）放大缩小、拖动平移，放大后刻度细到小时和分钟；点一个圆点，显示那次下潜的时间和之后的深度。
+ * 双指捏合放大缩小、拖动平移，放大后刻度细到小时和分钟；点一个圆点，显示那次下潜的时间和之后的深度。
  *
  * <p>The dive profile on the DST 10 tab: the depth history ({@link DiverStats#history}, each point
  * stamped with its play time in {@link DiverStats#historyT}) on a time axis (Kelvin 2026-10-18 00:38:
  * 「Dive Profile横坐标要有日期」), depth going down, a polyline over a gradient fill with a dot per
- * play. Pinch, or the mouse wheel over the chart, zooms around the fingers / the cursor, a drag
+ * play. Pinch zooms around the fingers, a drag
  * pans, and a double tap shows everything again; the narrowest window is {@link #MIN_SPAN} (00:40:
  * 「中间可以放大查看具体时间点」). The axis picks its tick step from one minute to a year so labels
  * stay {@link #TICK_GAP} apart; below sub-day ticks the date is written under the first tick and
@@ -74,7 +74,6 @@ public final class DiveChart {
     private boolean moved;
     private float pinchD0;
     private double pinchSpan0, pinchFocus;
-    private float mouseX = -1f, mouseY = -1f;
     private long lastTapAt;
     private float lastTapX, lastTapY;
 
@@ -170,15 +169,6 @@ public final class DiveChart {
         return viewA + (px - px0) / pw * (viewB - viewA);
     }
 
-    /** Zooms by {@code factor} (> 1 = out) keeping time {@code at} under screen x {@code px}. */
-    private void zoom(double factor, double at, float px) {
-        double span = (viewB - viewA) * factor;
-        viewA = at - (px - px0) / pw * span;
-        viewB = viewA + span;
-        following = false;
-        clampView();
-    }
-
     // ------------------------------------------------------------------ input
     /** Touch down; true when the chart takes the pointer. */
     public boolean touchDown(float px, float py, int pointer) {
@@ -270,21 +260,6 @@ public final class DiveChart {
             p0 = -1;
             p1 = -1;
         }
-    }
-
-    /** Desktop hover position (for the wheel). */
-    public void mouseMoved(float px, float py) {
-        mouseX = px;
-        mouseY = py;
-    }
-
-    /** Mouse wheel; zooms around the cursor while it is over the chart. */
-    public boolean scrolled(float amountY) {
-        if (count() < 2 || !contains(mouseX, mouseY) || amountY == 0f) return false;
-        updateRange();
-        float mx = Math.max(px0, Math.min(px0 + pw, mouseX));
-        zoom(Math.pow(1.25, amountY), tOf(mx), mx);
-        return true;
     }
 
     private void tap(float px, float py) {
