@@ -230,7 +230,7 @@ public class VisualsScreen extends ShellScreen {
             }));
         p.add(new ChoiceRow(game, Lang.of("JUDGEMENT POSITION", "判定位置"),
             Lang.of("WHERE TO DISPLAY THE JUDGEMENT WORD", "共鸣 / 回响 / 迷失显示在哪里"), false,
-            Lang.list("CENTRE", "中央", "AT LANE", "轨道上", "OFF", "关"), new ChoiceRow.Value() {
+            Lang.list("CENTRE", "中央", "AT NOTE", "键上", "OFF", "关"), new ChoiceRow.Value() {
                 @Override
                 public int get() {
                     return s().judgementDisplay;
@@ -429,8 +429,4 @@ public class VisualsScreen extends ShellScreen {
         for (SettingsPage p : cols) p.cancel();
     }
 
-    @Override
-    protected void contentMouseMoved(float x, float y) {
-        for (SettingsPage p : cols) p.mouseMoved(x, y);
-    }
 }

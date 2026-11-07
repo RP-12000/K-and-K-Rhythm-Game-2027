@@ -1,11 +1,9 @@
 package org.kelvinizer.screens;
 
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.Input;
 import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.Batch;
-import com.badlogic.gdx.graphics.g2d.NinePatch;
 import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.TimeUtils;
 import org.kelvinizer.Main;
@@ -899,14 +897,12 @@ final class CalibrationPanel {
             0.06f * a);
         d.sprite(d.glowV(), Ui.CX, GROUND_Y, w, 48f, Theme.GROUND_SIG, 0.18f * a);
         d.sprite(d.glowV(), Ui.CX, SKY_Y, w, 48f, Theme.SKY_SIG, 0.18f * a);
-        d.rect(left, GROUND_Y - 2f, w, 4f, Theme.GROUND_SIG, 0.95f * a);
-        d.rect(left, SKY_Y - 2f, w, 4f, Theme.SKY_SIG, 0.95f * a);
+        d.rect(left, GROUND_Y - 3f, w, 6f, Theme.GROUND_SIG, 0.95f * a);
+        d.rect(left, SKY_Y - 3f, w, 6f, Theme.SKY_SIG, 0.95f * a);
         // notes
         if (track != null) {
             double vt = track.nowMs() - candidate;
-            NinePatch note = d.note9();
             float nw = 200f, nh = 40f;
-            float old = b.getPackedColor();
             for (int i = 0; i < VERIFY_NOTES; i++) {
                 if (noteDone[i]) continue;
                 double ahead = noteTime(i) - vt;
@@ -914,12 +910,10 @@ final class CalibrationPanel {
                 boolean sky = isSky(i);
                 float p = (float) (ahead / VERIFY_TRAVEL_MS);
                 float ny = sky ? SKY_Y - p * (SKY_Y - SKY_SPAWN) : GROUND_Y + p * (GROUND_SPAWN - GROUND_Y);
-                Color c = sky ? Theme.SKY_SIG : Theme.GROUND_NOTE;
                 float na = ahead < 0 ? a * (1f + (float) ahead / Judgement.TIER2_MS) : a;
-                b.setColor(c.r, c.g, c.b, na);
-                note.draw(b, laneX(i) - nw * 0.5f, ny - nh * 0.5f, nw, nh);
+                // the game's key, centred on ny: its leading edge faces its line
+                d.noteHead(sky, laneX(i), sky ? ny + nh * 0.5f : ny - nh * 0.5f, nw, nh, na);
             }
-            b.setPackedColor(old);
         }
         game.hitFx().draw(b);
         // judgement word
@@ -991,27 +985,4 @@ final class CalibrationPanel {
         output.cancel();
     }
 
-    void mouseMoved(float x, float y) {
-        output.mouseMoved(x, y);
-    }
-
-    /** A key: a tap during a run or a verify pass, SPACE / ENTER starts from the intro. */
-    boolean keyDown(int keycode) {
-        if (running()) {
-            tap(Ui.CX, Ui.CY, eventNanos());
-            return true;
-        }
-        if (state == VERIFY) {
-            boolean sky = keycode == Input.Keys.UP || keycode == Input.Keys.W || keycode == Input.Keys.J
-                || keycode == Input.Keys.K;
-            verifyTap(Ui.CX, sky ? SKY_Y : GROUND_Y, eventNanos());
-            return true;
-        }
-        if (state == INTRO
-            && (keycode == Input.Keys.SPACE || keycode == Input.Keys.ENTER) && start.isEnabled()) {
-            startRun();
-            return true;
-        }
-        return false;
-    }
 }

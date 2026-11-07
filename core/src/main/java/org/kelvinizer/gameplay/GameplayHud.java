@@ -688,7 +688,8 @@ final class GameplayHud {
 
     /**
      * A judgement for the word / meter (DESIGN §5.6). Centre mode shows the central word,
-     * "At lane" a small word at the lane, "Off" nothing.
+     * "At lane" a small word at the lane (a floating note: {@code line} null, the word standing on
+     * {@code lineY} above it), "Off" nothing.
      */
     void judgement(Judgement j, float dtMs, float x, Line line, float lineY, float now) {
         if (j == null) return;
@@ -702,7 +703,7 @@ final class GameplayHud {
         int mode = settings.judgementDisplay;
         if (mode == Settings.JUDGEMENT_OFF) return;
         if (mode == Settings.JUDGEMENT_AT_LANE) {
-            if (line != null) feedback.laneWord(j, x, line, lineY, now);
+            feedback.laneWord(j, x, line, lineY, now);
             return;
         }
         // The same touch touched a mine first (the engine emits MINE before HIT): keep the red LOST
@@ -781,7 +782,7 @@ final class GameplayHud {
         int mode = settings.judgementDisplay;
         if (mode == Settings.JUDGEMENT_OFF) return;
         if (mode == Settings.JUDGEMENT_AT_LANE) {
-            if (line != null) feedback.mineWord(x, line, lineY, now);
+            feedback.mineWord(x, line, lineY, now);
             return;
         }
         judgement(Judgement.LOST, 0f, x, line, lineY, now);

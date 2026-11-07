@@ -65,7 +65,7 @@ final class TextChip extends Pressable {
         if (!visible || alpha <= 0.002f) return;
         float a = alpha * alphaMul();
         float s = visualScale();
-        float cx = centerX() + shakeX(), cy = centerY() + liftY();
+        float cx = centerX() + shakeX(), cy = centerY();
         float bw = w * s, bh = h * s, bx = cx - bw * 0.5f, by = cy - bh * 0.5f;
         float rad = MapStyle.CHIP_RADIUS * k * s;
         draw.roundRect(bx, by, bw, bh, rad, Theme.PANEL_HI, a);
@@ -74,8 +74,8 @@ final class TextChip extends Pressable {
             draw.roundRect(bx, by, bw, bh, rad, Theme.GROUND_SIG, selK * a);
         }
         draw.roundRectStroke(bx, by, bw, bh, rad, 2f, selK > 0.5f ? Theme.GROUND_SIG : Theme.STROKE, a);
-        if (press > 0f || hover > 0f) {
-            draw.roundRect(bx, by, bw, bh, rad, Theme.INK1, (0.10f * press + 0.05f * hover) * a);
+        if (press > 0f) {
+            draw.roundRect(bx, by, bw, bh, rad, Theme.INK1, 0.10f * press * a);
         }
         ripple.color(selK > 0.5f ? Theme.BTN_LABEL : Theme.INK1);
         drawRipple(a);
@@ -89,7 +89,7 @@ final class TextChip extends Pressable {
         if (!visible || alpha <= 0.002f) return;
         float a = alpha * alphaMul();
         float s = visualScale();
-        float cx = centerX() + shakeX(), cy = centerY() + liftY();
+        float cx = centerX() + shakeX(), cy = centerY();
         float left = (icon != null ? 72f : 12f) * k * s;
         float avail = w * s - left - 12f * k * s;
         float lx = icon != null ? cx - w * s * 0.5f + left + avail * 0.5f : cx;

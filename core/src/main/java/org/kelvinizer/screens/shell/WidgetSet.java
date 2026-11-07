@@ -70,11 +70,6 @@ public final class WidgetSet {
         for (int i = 0; i < count; i++) items[i].cancel();
     }
 
-    /** Desktop hover. */
-    public void mouseMoved(float x, float y) {
-        for (int i = 0; i < count; i++) items[i].mouseMoved(x, y);
-    }
-
     /** Advances every widget. */
     public void update(float dt) {
         for (int i = 0; i < count; i++) items[i].update(dt);

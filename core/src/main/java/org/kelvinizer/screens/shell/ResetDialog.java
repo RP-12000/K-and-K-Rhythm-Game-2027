@@ -47,7 +47,6 @@ public final class ResetDialog extends Modal {
         avatar = new AvatarView(game);
         field = widgets.add(new TextField(draw, fonts, Lang.of("TAP TO TYPE THE NAME", "点这里输入玩家名")));
         field.setMode(TextField.Mode.KEYBOARD).setMaxLength(ProfileStore.MAX_NAME_CODEPOINTS);
-        host.registerField(field);
         cancel = widgets.add(new Button(draw, fonts, Button.Variant.SECONDARY, Lang.of("CANCEL", "取消")));
         cancel.setOnTap(new Runnable() {
             @Override
@@ -90,12 +89,10 @@ public final class ResetDialog extends Modal {
     @Override
     protected void onClosed() {
         field.closeKeyboard(false);
-        field.cancelEdit();
     }
 
     private void showStep(boolean type) {
         field.closeKeyboard(false);
-        field.cancelEdit();
         typing = type;
         field.setText("");
         field.setVisible(type);
@@ -120,7 +117,7 @@ public final class ResetDialog extends Modal {
     @Override
     protected void onUpdate(float dt) {
         avatar.update(dt);
-        if (typing) reset.setEnabled(matches(field.displayText()));
+        if (typing) reset.setEnabled(matches(field.text()));
     }
 
     @Override
@@ -141,7 +138,6 @@ public final class ResetDialog extends Modal {
     }
 
     private void tryReset() {
-        if (field.isEditing() && !field.commit()) return;
         if (!matches(field.text())) {
             field.reject();
             return;

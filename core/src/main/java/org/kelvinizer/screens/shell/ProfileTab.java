@@ -139,12 +139,4 @@ public abstract class ProfileTab {
     public void cancel(int pointer) {
     }
 
-    /** Desktop hover. */
-    public void mouseMoved(float px, float py) {
-    }
-
-    /** Mouse wheel; true when taken (before the list scrolls). */
-    public boolean scrolled(float amountY) {
-        return false;
-    }
 }

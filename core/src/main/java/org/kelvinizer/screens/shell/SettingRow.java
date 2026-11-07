@@ -311,10 +311,6 @@ public abstract class SettingRow {
     public void cancel() {
     }
 
-    /** Desktop hover. */
-    public void mouseMoved(float px, float py) {
-    }
-
     /** True while a slider of this row is grabbed (the list must not scroll that pointer). */
     public boolean isGrabbing() {
         return false;

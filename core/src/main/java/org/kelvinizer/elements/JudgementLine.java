@@ -19,6 +19,9 @@ import java.util.List;
  * every lane right. It replaces the window ({@code leftBound} / {@code rightBound} and their
  * events): the lanes show across the whole screen. Format v1 windows load as a lane scale and a
  * camera frame ({@link ChartMapper}).
+ *
+ * <p>Layers (叠加层, Kelvin 2026-11-05): the two line heights and the camera frame can also have additive layers
+ * ({@link Layers}), whose sum is added to the value of their channel.
  */
 public final class JudgementLine {
     /**
@@ -41,6 +44,9 @@ public final class JudgementLine {
     private final List<Events> laneScaleEvents;
     private final float cameraBase;
     private final List<Events> cameraEvents;
+    private final Layers upperLayers;
+    private final Layers lowerLayers;
+    private final Layers cameraLayers;
 
     /**
      * @param upper             base sky line y
@@ -55,6 +61,22 @@ public final class JudgementLine {
     public JudgementLine(float upper, float lower, List<Events> upperEvents, List<Events> lowerEvents,
                          float laneScale, List<Events> laneScaleEvents, float cameraFrame,
                          List<Events> cameraFrameEvents) {
+        this(upper, lower, upperEvents, lowerEvents, laneScale, laneScaleEvents, cameraFrame, cameraFrameEvents, null,
+            null, null);
+    }
+
+    /**
+     * Same as the constructor without layers, plus the additive layers of the two lines and the camera frame (叠加层,
+     * Kelvin 2026-11-05).
+     *
+     * @param upperLayers  sky line y layers (null = none)
+     * @param lowerLayers  ground line y layers (null = none)
+     * @param cameraLayers camera frame layers (null = none)
+     */
+    public JudgementLine(float upper, float lower, List<Events> upperEvents, List<Events> lowerEvents,
+                         float laneScale, List<Events> laneScaleEvents, float cameraFrame,
+                         List<Events> cameraFrameEvents, List<Events> upperLayers, List<Events> lowerLayers,
+                         List<Events> cameraLayers) {
         this.upperBase = upper;
         this.lowerBase = lower;
         this.upperEvents = Events.sortedCopy(upperEvents);
@@ -63,6 +85,9 @@ public final class JudgementLine {
         this.laneScaleEvents = Events.sortedCopy(laneScaleEvents);
         this.cameraBase = cameraFrame;
         this.cameraEvents = Events.sortedCopy(cameraFrameEvents);
+        this.upperLayers = Layers.of(upperLayers);
+        this.lowerLayers = Layers.of(lowerLayers);
+        this.cameraLayers = Layers.of(cameraLayers);
     }
 
     /** @return the defaults: lines at 1080 / 120, lane scale 1, camera frame 0, no events. */
@@ -70,14 +95,16 @@ public final class JudgementLine {
         return new JudgementLine(DEFAULT_UPPER, DEFAULT_LOWER, null, null, 1f, null, 0f, null);
     }
 
-    /** @return sky line y at {@code beat}. */
+    /** @return sky line y at {@code beat}, its layers included. */
     public float upperAt(float beat) {
-        return Events.calculateValue(upperEvents, beat, upperBase);
+        float y = Events.calculateValue(upperEvents, beat, upperBase);
+        return upperLayers.isEmpty() ? y : y + upperLayers.at(beat);
     }
 
-    /** @return ground line y at {@code beat}. */
+    /** @return ground line y at {@code beat}, its layers included. */
     public float lowerAt(float beat) {
-        return Events.calculateValue(lowerEvents, beat, lowerBase);
+        float y = Events.calculateValue(lowerEvents, beat, lowerBase);
+        return lowerLayers.isEmpty() ? y : y + lowerLayers.at(beat);
     }
 
     /** @return y of {@code line} at {@code beat}. */
@@ -105,22 +132,26 @@ public final class JudgementLine {
 
     /**
      * @return the camera frame at {@code beat}: x offset of the lanes' axis from x 960 in ref
-     *         units, positive = right (NaN or infinite → 0)
+     *         units, positive = right, its layers included (NaN or infinite → 0)
      */
     public float cameraFrameAt(float beat) {
         float c = cameraEvents.isEmpty() ? cameraBase : Events.calculateValue(cameraEvents, beat, cameraBase);
+        if (!cameraLayers.isEmpty()) c += cameraLayers.at(beat);
         return c > Float.NEGATIVE_INFINITY && c < Float.POSITIVE_INFINITY ? c : 0f;
     }
 
-    /** @return the smallest camera frame: the base or an event's end value (eased values stay between them). */
+    /**
+     * @return the smallest camera frame: the base or an event's end value (eased values stay between them), plus the
+     *         least its layers add
+     */
     public float cameraFrameMin() {
-        float c = extreme(cameraBase, cameraEvents, false);
+        float c = extreme(cameraBase, cameraEvents, false) + cameraLayers.low();
         return c > Float.NEGATIVE_INFINITY && c < Float.POSITIVE_INFINITY ? c : 0f;
     }
 
-    /** @return the largest camera frame: the base or an event's end value. */
+    /** @return the largest camera frame: the base or an event's end value, plus the most its layers add. */
     public float cameraFrameMax() {
-        float c = extreme(cameraBase, cameraEvents, true);
+        float c = extreme(cameraBase, cameraEvents, true) + cameraLayers.high();
         return c > Float.NEGATIVE_INFINITY && c < Float.POSITIVE_INFINITY ? c : 0f;
     }
 
@@ -160,4 +191,18 @@ public final class JudgementLine {
     public float cameraFrameBase() { return cameraBase; }
     /** @return camera frame events, sorted by start (unmodifiable). */
     public List<Events> cameraFrameEvents() { return cameraEvents; }
+    /** @return sky line y layers, sorted by start (unmodifiable; empty for none). */
+    public List<Events> upperLayers() { return upperLayers.events(); }
+    /** @return ground line y layers, sorted by start (unmodifiable; empty for none). */
+    public List<Events> lowerLayers() { return lowerLayers.events(); }
+    /** @return camera frame layers, sorted by start (unmodifiable; empty for none). */
+    public List<Events> cameraLayers() { return cameraLayers.events(); }
+
+    /** @return the layers of {@code line}'s y ({@link Layers#NONE} for none). */
+    public Layers layersOf(Line line) { return line == Line.UPPER ? upperLayers : lowerLayers; }
+
+    /** @return true when the lines or the camera have a layer. */
+    public boolean hasLayers() {
+        return !upperLayers.isEmpty() || !lowerLayers.isEmpty() || !cameraLayers.isEmpty();
+    }
 }

@@ -81,7 +81,8 @@ public final class TrailGeometry {
         lines = chart.lineEvents();
         past.setLanes(chart);
         pastBeat = Float.NaN;
-        staticLayout = lines.laneScaleEvents().isEmpty() && lines.cameraFrameEvents().isEmpty();
+        staticLayout = lines.laneScaleEvents().isEmpty() && lines.cameraFrameEvents().isEmpty()
+            && lines.cameraLayers().isEmpty();
         Lane[] lanes = chart.lanes();
         for (int i = 0; i < lanes.length && staticLayout; i++) {
             // inserted and deleted lanes (Kelvin 2026-10-15, 2026-10-17) move the others too
@@ -158,11 +159,9 @@ public final class TrailGeometry {
             x = (windowLeft + windowRight) * 0.5f;
             laneWidth = windowRight - windowLeft;
         } else {
-            int lane = n.laneIndex();
-            if (lane < 0 || lane >= lay.count()) return false;
-            laneWidth = lay.width(lane);
+            laneWidth = lay.noteWidth(n);
             if (laneWidth < LaneLayout.MIN_ACTIVE_WIDTH) return false;
-            x = lay.centre(lane);
+            x = lay.noteX(n, look(n, s)); // where the key is (its own x events at the beat it shows)
         }
         boolean hold = n.isSustained();
         if (level) {

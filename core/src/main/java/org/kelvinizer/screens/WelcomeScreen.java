@@ -477,8 +477,8 @@ public class WelcomeScreen extends ShellScreen {
         float x = cx - w * 0.5f;
         d.pill(x, cy - h * 0.5f, w, h, Theme.PANEL, a);
         d.roundRectStroke(x, cy - h * 0.5f, w, h, h * 0.5f, 1.5f, Theme.STROKE, a);
-        if (chip.pressAmount() > 0f || chip.hoverAmount() > 0f) {
-            d.pill(x, cy - h * 0.5f, w, h, Theme.INK1, (0.08f * chip.pressAmount() + 0.05f * chip.hoverAmount()) * a);
+        if (chip.pressAmount() > 0f) {
+            d.pill(x, cy - h * 0.5f, w, h, Theme.INK1, 0.08f * chip.pressAmount() * a);
         }
         chip.drawPress(Theme.INK1, a);
         float avail = w - (28f + 60f) * u;
@@ -597,22 +597,6 @@ public class WelcomeScreen extends ShellScreen {
             dragging = false;
             releaseLean();
         }
-    }
-
-    @Override
-    protected void contentMouseMoved(float x, float y) {
-        int g = glyphAt(x, y);
-        if (g >= 0) {
-            float hw = glyphW[g] * 0.5f;
-            if (Math.abs(x - glyphX[g]) > hw || Math.abs(y - LOGO_Y) > LOGO_CAP * 0.5f) g = -1;
-        }
-        hoverGlyph = g;
-    }
-
-    @Override
-    protected boolean contentKeyDown(int keycode) {
-        if (inputReady()) advance(Ui.CX, LOGO_Y);
-        return true;
     }
 
     private void lean(float fx, float fy) {

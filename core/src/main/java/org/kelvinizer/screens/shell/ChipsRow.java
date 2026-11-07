@@ -92,12 +92,9 @@ public class ChipsRow extends SettingRow {
             float s = t.visualScale(), sw = chipW * s, sh = chipH * s;
             float sx = t.centerX() - sw * 0.5f + t.shakeX(), sy = t.centerY() - sh * 0.5f;
             Panel.card(draw, sx, sy, sw, sh, a);
-            float hover = t.hoverAmount();
             if (lit[i]) {
-                draw.roundRect(sx, sy, sw, sh, Panel.RADIUS, c, (0.10f + 0.06f * hover) * a);
+                draw.roundRect(sx, sy, sw, sh, Panel.RADIUS, c, 0.10f * a);
                 draw.roundRectStroke(sx, sy, sw, sh, Panel.RADIUS, 2f, c, 0.85f * a);
-            } else if (hover > 0f) {
-                draw.roundRectStroke(sx, sy, sw, sh, Panel.RADIUS, 2f, c, 0.35f * hover * a);
             }
             t.drawPress(c, a);
             float lx = sx + sw - 26f * k, ly = sy + sh * 0.5f;
@@ -150,8 +147,4 @@ public class ChipsRow extends SettingRow {
         for (Tappable c : chips) c.cancel();
     }
 
-    @Override
-    public void mouseMoved(float px, float py) {
-        for (Tappable c : chips) c.mouseMoved(px, py);
-    }
 }

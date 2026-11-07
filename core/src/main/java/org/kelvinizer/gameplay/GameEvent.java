@@ -6,29 +6,36 @@ import org.kelvinizer.play.Judgement;
 /**
  * 游戏引擎事件流中的一条：判定、长条开始/结束、水雷接触等，供画面和反馈层读取。
  *
- * <p>One entry of the {@link GameEngine} event stream, for the renderer (judgement word, lane
+ * <p>One entry of the {@link GameEngine} event stream, for the renderer (judgement word, key
  * feedback, hit effects, hold ribbons, mine shocks). The consumer owns one instance and fills it
  * with {@link GameEngine#pollEvent(GameEvent)}, so reading events never allocates.
  *
  * <p>Coordinates are world units at the moment of the event: {@link #x} / {@link #y} are where
- * the feedback belongs (the lane centre on the line for lane notes, the touch x on the line for
- * TIDE notes and mines), {@link #touchX} / {@link #touchY} where the finger was (lane centre and
- * line y for keyboard input and autoplay).
+ * the feedback belongs (the key's centre on the line for taps, holds and mines, the touch x on the line for
+ * TIDE notes), {@link #width} how wide the key is there, {@link #touchX} / {@link #touchY} where the finger was
+ * (the key's centre and line y for autoplay).
  *
  * <p>TIDE STREAMs (ARCHITECTURE §19) use the existing kinds with {@link #FLAG_TIDE_STREAM}: the
  * head is the TIDE group's {@link #HIT} (flag set when a stream of the group started running; the
  * group's drops are scored at once, the streams when they end), its end is a {@link #HOLD_END}
  * with {@link #FLAG_UNIVERSAL} | {@link #FLAG_TIDE_STREAM} ({@link #FLAG_COMPLETED} when
- * completed, LOST when broken), lane −1 and {@link #x} at the window centre. A TIDE STREAM never
+ * completed, LOST when broken), width 0 and {@link #x} at the window centre. A TIDE STREAM never
  * emits {@link #HOLD_START} (nothing owns it, so nothing re-grabs it). A missed group's
  * {@link #LOST} carries the flag too when it held a stream.
  *
- * <p>Joint judging (ARCHITECTURE §20): a tap or lane key that judges a lane note also judges the
+ * <p>Joint judging (ARCHITECTURE §20): a tap that judges a lane note also judges the
  * TIDE group of that line at exactly the same beat; the lane note's {@link #HIT} /
  * {@link #HOLD_START} comes first, then the group's {@link #HIT} with {@link #FLAG_JOINT}.
  *
  * <p>Mines (Kelvin 2026-10-12): every touched MINE and every LANE MINE contact is one {@link #MINE}
  * event; the screen shows the red LOST word ({@code Theme.MINE_LOST}) and the shock for each.
+ *
+ * <p>DRAGs (Kelvin 2026-11-05): a DRAG caught before its time emits a {@link #CATCH} at once ({@link #timeMs} = the
+ * DRAG's time); when it is judged (a finger caught it at or after its time, or its time came) a {@link #HIT} with
+ * {@link #FLAG_DRAG}, RESONANCE, Δt 0; a missed one a {@link #LOST}.
+ *
+ * <p>Floating notes (悬浮键, Kelvin 2026-11-06): every event of a floating note carries {@link #FLAG_FLOAT}, its
+ * centre in {@link #x} / {@link #y}, its diameter in {@link #width} and no {@link #line}.
  */
 public final class GameEvent {
     /**
@@ -55,6 +62,11 @@ public final class GameEvent {
     public static final int MINE = 4;
     /** A touch or key press that judged nothing ({@link #line} null = outside both zones). */
     public static final int EMPTY = 5;
+    /**
+     * A DRAG was caught before its time ({@link #FLAG_DRAG}): it will be a RESONANCE {@link #HIT} at
+     * {@link #timeMs}, its time, so its hit sound can be timed now. Nothing to show.
+     */
+    public static final int CATCH = 6;
 
     /** The judged note was in the neighbouring lane (30 % tolerance). */
     public static final int FLAG_NEIGHBOUR = 1;
@@ -81,8 +93,15 @@ public final class GameEvent {
      * hit by the same tap or key at exactly the same beat (ARCHITECTURE §20 joint judging).
      */
     public static final int FLAG_JOINT = 1 << 8;
+    /** HIT, CATCH or LOST of a DRAG (Kelvin 2026-11-05). */
+    public static final int FLAG_DRAG = 1 << 9;
+    /**
+     * The event concerns a floating note: {@link #x} / {@link #y} are its centre, {@link #width} its diameter,
+     * {@link #line} null.
+     */
+    public static final int FLAG_FLOAT = 1 << 10;
 
-    /** Event type ({@link #HIT} … {@link #EMPTY}). */
+    /** Event type ({@link #HIT} … {@link #CATCH}). */
     public int type;
     /** Grade, or null (MINE, EMPTY). */
     public Judgement judgement;
@@ -96,9 +115,14 @@ public final class GameEvent {
     public float touchX;
     /** Touch y (world units). */
     public float touchY;
-    /** Lane index in the chart's lane order (the resolved lane for EMPTY), or −1. */
+    /**
+     * World width of the key at {@link #x} (taps, holds, mines; one key's width for EMPTY, a bare touch), 0 for
+     * TIDE notes.
+     */
+    public float width;
+    /** Lane index in the chart's lane model (older charts, for the chart editor), or −1; the game does not use it. */
     public int lane;
-    /** Line of the note (or of the zone touched for EMPTY), or null. */
+    /** Line of the note (or of the zone touched for EMPTY), or null (a stray touch; a floating note). */
     public Line line;
     /** Note index in {@code Chart.notes()} (the first member for a TIDE group), or −1. */
     public int note;
@@ -107,7 +131,7 @@ public final class GameEvent {
      * contact the contact number (1, 2, …).
      */
     public int count;
-    /** Pointer id, −1 for keyboard, −2 for autoplay or the engine itself. */
+    /** Pointer id, −2 for autoplay or the engine itself. */
     public int pointer;
     /** Judge time of the event in song ms. */
     public double timeMs;

@@ -1,6 +1,5 @@
 package org.kelvinizer.screens;
 
-import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.utils.Align;
 import org.kelvinizer.Main;
@@ -676,14 +675,11 @@ public class SettingsScreen extends ShellScreen {
         return sb.toString();
     }
 
-    /** One credit: name (or {@code label}), notice · licence (· where it ships), and VIEW for the text. */
+    /** One credit: name (or {@code label}), notice · licence, and VIEW for the text. */
     private void licenseRow(SettingsPage p, final Licenses.Entry e, CharSequence label) {
         String first = e.notice.split("\n")[0];
-        boolean desk = e.platform == Licenses.DESKTOP, droid = e.platform == Licenses.ANDROID;
-        String where = desk ? " · DESKTOP" : droid ? " · ANDROID" : "";
-        String whereZh = desk ? " · 电脑版" : droid ? " · 安卓版" : "";
         ActionRow row = p.add(new ActionRow(game, label != null ? label : e.name,
-            Lang.of(e.licence + where + " · " + first, e.licence + whereZh + " · " + first), false));
+            e.licence + " · " + first, false));
         row.add(new Button(game.draw(), game.fonts(), Button.Variant.SECONDARY, VIEW)).setOnTap(new Runnable() {
             @Override
             public void run() {
@@ -860,24 +856,4 @@ public class SettingsScreen extends ShellScreen {
         page().cancel();
     }
 
-    @Override
-    protected void contentMouseMoved(float x, float y) {
-        page().mouseMoved(x, y);
-    }
-
-    @Override
-    protected boolean contentKeyDown(int keycode) {
-        if (tab > TAB_OTHER) return false; // the pages under OTHER only go BACK
-        int prev = tall ? Input.Keys.LEFT : Input.Keys.UP;
-        int next = tall ? Input.Keys.RIGHT : Input.Keys.DOWN;
-        if (keycode == Input.Keys.PAGE_UP || keycode == prev) {
-            if (tab > 0) showTab(tab - 1, true);
-            return true;
-        }
-        if (keycode == Input.Keys.PAGE_DOWN || keycode == next) {
-            if (tab < TAB_OTHER) showTab(tab + 1, true);
-            return true;
-        }
-        return false;
-    }
 }

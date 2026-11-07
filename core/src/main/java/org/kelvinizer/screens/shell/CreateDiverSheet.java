@@ -95,7 +95,6 @@ public final class CreateDiverSheet extends Modal {
     }
 
     private void create() {
-        if (!form.commitName()) return;
         ProfileStore store = game.profiles();
         Profile p = store.create(form.name());
         if (p == null) {

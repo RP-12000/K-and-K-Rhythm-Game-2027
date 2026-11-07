@@ -138,6 +138,20 @@ public final class ScoreKeeper {
     }
 
     /**
+     * Records a caught DRAG (Kelvin 2026-11-05: 「只有共鸣和迷失」): a RESONANCE that counts as PERFECT and has no
+     * timing of its own, so the early / late counts, the mean offset and the histogram leave it out. A missed DRAG is
+     * {@code record(LOST, 0)}.
+     */
+    public void recordDrag() {
+        counts[Judgement.RESONANCE.ordinal()]++;
+        chain++;
+        if (chain > maxChain) maxChain = chain;
+        perfect++;
+        combo++;
+        if (combo > maxCombo) maxCombo = combo;
+    }
+
+    /**
      * Records a touched mine: the combo drops to 0, {@link #minesTouched()} grows and the score
      * loses {@link Judgement#MINE_PENALTY}; the resonance chain, accuracy and judgement
      * counts are unchanged (ARCHITECTURE §13.2, §18).

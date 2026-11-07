@@ -20,13 +20,13 @@ import org.kelvinizer.ui.Ui;
  * line y and window bounds it evaluates for a frame or an input event (lanes widen with {@code kx}, and the
  * note width follows the lane), every distance from a line (note travel, spawn, tail length) is multiplied
  * by {@code ky} after the {@code HIDDEN_POSITION} test on the raw value (a note still reaches its line at
- * its judgement time), and a judgement zone is {@code ±480·ky}. Not stretched: note thickness, pearls,
- * ripples, glows, particles, text, the corner HUD and the pause control; rotation angles stay as authored
- * (bodies are rigid, only positions stretch). A lane note's or mine's rigid body is centred where its size-1.0
- * reference body's centre lands, away from its line ({@link NoteShapes#centreShiftY}).
+ * its judgement time), and a judgement zone is {@code ±480·ky} ({@link Params#JUDGE_ZONE_HALF}). Not stretched:
+ * note thickness, pearls, ripples, glows, particles, text, the corner HUD and the pause control; rotation angles stay
+ * as authored (bodies are rigid, only positions stretch). A lane note's or mine's rigid body is centred where its
+ * size-1.0 reference body's centre lands, away from its line ({@link NoteShapes#centreShiftY}).
  *
  * <p>Plain static numbers, set by the gameplay screen from the viewport ({@link #fit}) on load and every
- * frame (a desktop resize mid-run is picked up on the next frame). Until the first fit (and after
+ * frame (a resize mid-run is picked up on the next frame). Until the first fit (and after
  * {@link #reset}) the mapping is the identity, {@code kx = ky = 1} about the reference centre, so headless tests
  * and editor previews that never fit see the authored coordinates unchanged.
  */
@@ -128,7 +128,7 @@ public final class Field {
         return (float) Math.sqrt(kx * ky);
     }
 
-    /** @return half height of a judgement zone in world units: {@code 480·ky}. */
+    /** @return half height of a judgement zone in world units: {@code 480·ky} ({@link Params#JUDGE_ZONE_HALF}). */
     public static float zoneHalf() {
         return Params.JUDGE_ZONE_HALF * ky;
     }

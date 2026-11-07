@@ -64,6 +64,20 @@ public final class Theme {
     public static final Color GROUND_NOTE = rgb(0x4FD8FF, 1f);
     /** Sky signal: sky line, sky notes, K2, upper curtain panel. */
     public static final Color SKY_SIG = rgb(0xF2F7FF, 1f);
+    /**
+     * DRAG body on both lines (Kelvin 2026-11-05, mock-up shape B: a thin light-purple bar with a diamond); bar and
+     * diamond run {@link #DRAG_LIGHT} at the far edge to {@link #DRAG_DEEP} at the edge facing the line (baked into
+     * the note skins, {@code SkinBaker}); this middle tone is the DRAG's colour elsewhere (trails, hit effects).
+     */
+    public static final Color DRAG = rgb(0xBF95FF, 1f);
+    /** DRAG bar and diamond, the far edge. */
+    public static final Color DRAG_LIGHT = rgb(0xF4EBFF, 1f);
+    /** DRAG bar and diamond, the edge facing the line. */
+    public static final Color DRAG_DEEP = rgb(0x8552E8, 1f);
+    /** The small tear on a sky DROP head (2026-11-05 look; the ground head's tear is white). */
+    public static final Color SKY_TEAR = rgb(0x2FB8EA, 1f);
+    /** Sky STREAM body (the mock-up's 230, 240, 255): a touch bluer than {@link #SKY_SIG}, under the pearl head. */
+    public static final Color SKY_HOLD = rgb(0xE6F0FF, 1f);
     /** Curtain seam line. */
     public static final Color SEAM = rgb(0x0A1033, 1f);
     /** Cyan RGB-split copy colour. */
@@ -115,6 +129,13 @@ public final class Theme {
     public static final Color MINE = rgb(0xFF3344, 1f);
     /** Mine body fill, drawn at α .92 (DESIGN §5.15 {@code mineCore}). */
     public static final Color MINE_CORE = rgb(0x2A0610, 1f);
+    /** The three rivets across a MINE (2026-11-05 look). */
+    public static final Color MINE_RIVET = rgb(0xFF5A4E, 1f);
+    /**
+     * LONG MINE column fill (2026-11-05 look): the mock-up's {@code rgba(58,6,18,.62)} over its own red glow, which
+     * reads as this deep red at α .74 ({@code NoteShapes.LANE_MINE_FILL_A}).
+     */
+    public static final Color LONG_MINE_FILL = rgb(0x590D1A, 1f);
     /** Universal (TIDE 浪花) notes, their zone hint and hit sweep (DESIGN §5.15 {@code tide}). */
     public static final Color TIDE = rgb(0x8CFFD9, 1f);
     /**

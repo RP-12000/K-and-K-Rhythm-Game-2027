@@ -1,8 +1,8 @@
 package org.kelvinizer.gameplay;
 
 import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.Batch;
-import com.badlogic.gdx.graphics.g2d.NinePatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Matrix4;
@@ -22,6 +22,7 @@ import org.kelvinizer.ui.Ui;
 /**
  * 音符渲染器：画 DROP、STREAM、MINE、轨道水雷、TIDE（T4：天键珍珠串、地键滚浪）和潮汐，并收集它们的发光。
  * 与别的音符同一拍的音符带同步珍珠（DROP、STREAM 头上三颗金色并排，水雷三颗红色，TIDE 金色珍珠）；轨道水雷的柱子画在条带层，不会盖住另一条判定线。
+ * 悬浮键交给 FloatNotes 画，自定义线条交给 StrokeRenderer 画（在键下面，写了 front 的在悬浮键上面）。
  *
  * <p>Note renderer (DESIGN §5.8 notes, §5.15 mines and TIDE notes, §19.1 TIDE STREAM, §20.2
  * LANE MINE, §21.6–21.7, and Kelvin's decisions of 2026-10-12).
@@ -34,7 +35,10 @@ import org.kelvinizer.ui.Ui;
  * {@link NoteShapes}): sky 56 % of the lane, ground 82 %, fill fading head → tail, a tail cap in
  * the ribbon's colour, and where a ground ribbon overlaps a sky ribbon of the same lane the ground
  * fill leaves a hole under it. Missed notes turn grey, jitter for two frames and fade; broken holds
- * fade to grey. Notes glitch only where the chart asks for it.
+ * fade to grey. Notes glitch only where the chart asks for it. The floating notes (CHART_FORMAT §11) are drawn by
+ * {@link FloatNotes}, after all the others, from the same culling window, glitching and bending through this class's
+ * capture ({@link FloatNotes.Host}). The custom lines (CHART_FORMAT §13) are drawn by {@link StrokeRenderer}: under
+ * everything that is judged, or over the floating notes when {@code front}.
  *
  * <p><b>Chart glitches</b> (CHART_FORMAT_v4 §6.9, Kelvin 2026-10-14): while a note's glitch segment is
  * active ({@link NoteGlitch#activeAt}), its sprites go to a {@link GlitchCapture} instead of the
@@ -59,7 +63,8 @@ import org.kelvinizer.ui.Ui;
  * red pearls 0.7× as big the same way across a MINE or LANE MINE head; gold pearls instead of white on a sky
  * TIDE's thread, with gold glows; a row of gold pearls, large and small in turn like the sky thread's,
  * strung on a ground TIDE's wave line (a TIDE STREAM head alike). A note's own glows leave its
- * pearls out (an octagonal hole each), so the pearls stay true gold and red.
+ * pearls out (an octagonal hole each), so the pearls stay true gold and red. A DRAG gets no pearls and no
+ * frame: it only lights up a little ({@link #DRAG_LIGHT_A}, Kelvin 2026-11-06 06:19).
  *
  * <p>Mines turn with {@code angleAt} like lane notes (Kelvin 2026-10-12 03:03). A LANE MINE (DESIGN §20.2) is
  * drawn in two layers: its body in {@link #drawBands} (beneath trails, lane notes and mines): an
@@ -106,7 +111,7 @@ import org.kelvinizer.ui.Ui;
  * live note"); the live-only extras (sync pearls, glows, jitter, the LANE MINE's stripes, studs,
  * veil and line glow, band knock-outs) stay in the {@code draw*} methods.
  */
-final class NoteRenderer {
+final class NoteRenderer implements FloatNotes.Host {
     /** Note body height at note size 1. */
     static final float NOTE_H = 40f;
     /** MINE body height at note size 1.0. */
@@ -125,6 +130,11 @@ final class NoteRenderer {
     private static final byte G_BAND = 4;
     /** Solid disc ({@code disc}): the border round a highlighted sky TIDE pearl. */
     private static final byte G_DISC = 5;
+    /**
+     * A DRAG's sync light ({@link #dragLight}): its bar and diamond drawn again in the additive block, gx, gy its
+     * leading-edge centre, gw × gh its box.
+     */
+    private static final byte G_DRAG = 6;
     /** Most ground TIDE line glows in one frame (two sides each), and most points along them. */
     private static final int CREST_MAX = 128, CREST_PTS = 8192;
     /**
@@ -140,6 +150,11 @@ final class NoteRenderer {
      * the dark field it stays gold instead of washing out to pale yellow next to the white body (Kelvin 13:57).
      */
     private static final float HL_SKY_BAND_A = 1f, HL_SKY_HALO_A = 0.3f;
+    /**
+     * A DRAG that shares its beat lights up a little instead (Kelvin 2026-11-06 06:19 「drag同时的时候轻微高亮就行了不要外面一个
+     * 大框」): its own bar and diamond are added over it at this strength, no frame round its box and no pearls.
+     */
+    static final float DRAG_LIGHT_A = 0.45f;
     /** Highlighted sky TIDE pearl: its solid border's and soft halo's width beyond the pearl. */
     private static final float HL_PEARL_BAND = 6f, HL_DOT_PAD = 28f;
     private static final float APPROACH_MS = 250f;
@@ -157,8 +172,6 @@ final class NoteRenderer {
     private static final float JITTER_MS = 34f;
     /** Jitter offset. */
     private static final float JITTER = 3f;
-    /** Corner radius of a MINE body. */
-    private static final float MINE_RADIUS = 8f;
     /** Corner size of the {@code chip_9p} nine-slice in texels (its corner radius). */
     private static final float CHIP_SPLIT = 12f;
     /** Radius of the {@code disc} sprite as a share of its size ({@code Draw.disc}). */
@@ -187,11 +200,13 @@ final class NoteRenderer {
     private float bendStrength, bendX, bendY;
     /** Second of the water wobble's loop in this frame ({@link VeilRenderer#loopTime}). */
     private float bendT;
-    private final NinePatch nine;
     private final TextureRegion core;
-    private final TextureRegion edgeL;
-    private final TextureRegion edgeR;
     private final TextureRegion chip;
+    /** Note skins of the 2026-11-05 look ({@link Draw#skin}). */
+    private final Draw.Skin skGround, skSky, skNeutral, skDragBar, skDragDiamond, skMine, skTear, skEndFill,
+        skEndLine, skEndGlow, skSideGlow, skRim, skBar;
+    /** Song seconds of this frame: the flow of the light bars inside STREAM bodies ({@link #paintBars}). */
+    private float ribbonClock;
     private final TextureRegion disc;
     private final TextureRegion dot;
     private final Color col = new Color();
@@ -201,6 +216,10 @@ final class NoteRenderer {
     private final float[] verts = new float[9 * 20];
     private final float coreU;
     private final float coreV;
+    /** The floating notes (CHART_FORMAT §11), drawn after the notes on the lines. */
+    private final FloatNotes floats;
+    /** The custom lines (自定义线条, CHART_FORMAT §13): under the notes, or over them when they ask. */
+    private final StrokeRenderer strokes;
 
     private Note[] notes = new Note[0];
     private int count;
@@ -315,27 +334,54 @@ final class NoteRenderer {
     private final boolean[] segHole = new boolean[2 * NoteShapes.MAX_HOLES + 1];
     private int segs;
     private final float[] ov = new float[2];
+    // a STREAM body's knock-outs (rows in holeLo / holeHi): each one's x span, and the round far end of the sky
+    // body making it (local row of its tip, ±1 toward the rows it widens into, its length, 0 for a square hole;
+    // the sky body's half width), so that the hole follows its curve (see fillAround)
+    private final float[] holeX0s = new float[NoteShapes.MAX_HOLES];
+    private final float[] holeX1s = new float[NoteShapes.MAX_HOLES];
+    private final float[] holeTip = new float[NoteShapes.MAX_HOLES];
+    private final float[] holeTipDir = new float[NoteShapes.MAX_HOLES];
+    private final float[] holeCap = new float[NoteShapes.MAX_HOLES];
+    private final float[] holeSkyHr = new float[NoteShapes.MAX_HOLES];
+    /** Rows where {@link #fillAround} cuts a body: its ends, and each hole's ends and the rows of its round end. */
+    private final float[] cuts = new float[2 + (NoteShapes.HOLE_CURVE_ROWS + 3) * NoteShapes.MAX_HOLES];
+    // fillAround's affine map of the piece being filled: u and v across and along, colour and opacity along
+    private float fTexU;
+    private float fSu;
+    private float fXa;
+    private float fTexV;
+    private float fSv;
+    private float fYa;
+    private float fR;
+    private float fG;
+    private float fB;
+    private float fA;
+    private float fSa;
 
     // sky bodies of this frame (world rows), for the ground knock-outs
     private int skyRibs;
-    private final int[] skyRibLane = new int[MAX_SKY];
+    private final float[] skyRibKeyW = new float[MAX_SKY];
     private final float[] skyRibLo = new float[MAX_SKY];
     private final float[] skyRibHi = new float[MAX_SKY];
     private final float[] skyRibCx = new float[MAX_SKY];
     private final float[] skyRibW = new float[MAX_SKY];
+    private final boolean[] skyRibTipLow = new boolean[MAX_SKY];
+    private final float[] skyRibCap = new float[MAX_SKY];
     private int skyBands;
     private final float[] skyBandLo = new float[MAX_SKY];
     private final float[] skyBandHi = new float[MAX_SKY];
 
-    // rotated nine-slice grid and the LANE MINE polygons (local and world stages)
+    // rotated nine-slice grid and the LANE MINE polygons (local and world stages; a clip adds a vertex)
     private final float[] gxs = new float[4];
     private final float[] gys = new float[4];
     private final float[] gus = new float[4];
     private final float[] gvs = new float[4];
-    private final float[] pa = new float[16];
-    private final float[] pb = new float[16];
-    private final float[] pc = new float[16];
-    private final float[] pd = new float[16];
+    private final float[] pa = new float[40];
+    private final float[] pb = new float[40];
+    private final float[] pc = new float[40];
+    private final float[] pd = new float[40];
+    /** A LANE MINE column's round far end ({@link #endPolygon}). */
+    private final float[] pe = new float[12];
     private float gapLo = Float.NaN;
     private float gapHi = Float.NaN;
     private float visLo;
@@ -346,16 +392,27 @@ final class NoteRenderer {
         this.draw = draw;
         this.atlas = draw.batch();
         this.batch = atlas;
-        this.nine = draw.note9();
         core = new TextureRegion(draw.white(), 1, 1, 2, 2);
-        edgeL = new TextureRegion(draw.holdEdge());
-        edgeR = new TextureRegion(draw.holdEdge());
-        edgeR.flip(true, false);
         chip = draw.region(Draw.CHIP_9P);
+        skGround = draw.skin(Draw.SKIN_DROP_GROUND);
+        skSky = draw.skin(Draw.SKIN_DROP_SKY);
+        skNeutral = draw.skin(Draw.SKIN_DROP_NEUTRAL);
+        skDragBar = draw.skin(Draw.SKIN_DRAG_BAR);
+        skDragDiamond = draw.skin(Draw.SKIN_DRAG_DIAMOND);
+        skMine = draw.skin(Draw.SKIN_MINE);
+        skTear = draw.skin(Draw.TEAR);
+        skEndFill = draw.skin(Draw.HOLD_END_FILL);
+        skEndLine = draw.skin(Draw.HOLD_END_LINE);
+        skEndGlow = draw.skin(Draw.HOLD_END_GLOW);
+        skSideGlow = draw.skin(Draw.HOLD_SIDE_GLOW);
+        skRim = draw.skin(Draw.HOLD_RIM);
+        skBar = draw.skin(Draw.HOLD_BAR);
         disc = draw.disc();
         dot = draw.softDot();
         coreU = 0.5f * (core.getU() + core.getU2());
         coreV = 0.5f * (core.getV() + core.getV2());
+        floats = new FloatNotes(draw, this);
+        strokes = new StrokeRenderer(draw);
     }
 
     /**
@@ -467,15 +524,69 @@ final class NoteRenderer {
      * @return true when the note glitches or bends; then {@link #glitchEnd()} must follow its drawing
      */
     private boolean glitchBegin(GameEngine e, int i, Note n, float beat) {
+        if (!glitchStart(i, n, beat)) return false;
+        if (bending) bendAnchor(e, i, n, beat);
+        return true;
+    }
+
+    /**
+     * Sets up note i's glitch and bend at {@code beat} and starts recording its sprites when it does either.
+     *
+     * @return false (nothing started) when it neither glitches nor bends
+     */
+    private boolean glitchStart(int i, Note n, float beat) {
         tearing = tearAt(i, n, beat);
         bendStrength = n.distortions().isEmpty() ? 0f
             : NoteDistortion.strengthAt(n.distortions(), beat, NoteDistortion.NOTE_BASE);
         bending = bendStrength > 0.001f;
         if (!tearing && !bending) return false;
-        if (bending) bendAnchor(e, i, n, beat);
         glitch.begin(atlas);
         batch = glitch;
         glowMark = glows;
+        return true;
+    }
+
+    /**
+     * Floating note i ({@link FloatNotes}): starts recording what {@link Draw} draws when one of its glitch segments
+     * or its distortion is on at {@code beat}, its waves anchored at its centre (x, y).
+     *
+     * @return true when it records; then {@link #floatGlitchEnd()} must follow its drawing
+     */
+    @Override
+    public boolean floatGlitchBegin(int i, Note n, float beat, float x, float y) {
+        if (!glitchStart(i, n, beat)) return false;
+        bendX = x;
+        bendY = y;
+        draw.target(glitch);
+        return true;
+    }
+
+    /** Replays a floating note recorded since {@link #floatGlitchBegin}, torn or bent, into the batch. */
+    @Override
+    public void floatGlitchEnd() {
+        draw.target(null);
+        glitchEnd();
+    }
+
+    /**
+     * The key on a line that a floating note on its beat joins (sync, Kelvin 2026-11-06 19:03): where note k is drawn
+     * now. {@code out} gets the centre of its box (x, y), half its width and height, its turn (degrees) and its
+     * opacity.
+     *
+     * @return false when it is not drawn now ({@code out} unchanged)
+     */
+    @Override
+    public boolean lineKey(GameEngine e, int k, Note n, float beat, float[] out) {
+        if (entry.drawFrom(k) > beat || !geometry(e, n, beat)) return false;
+        float a = n.shownOpacityAt(entry.look(k, beat)) * fadeIn(k, e.lineY(n.line()), n.isUpper());
+        if (a <= MIN_ALPHA) return false;
+        // the box is above its leading edge (sx, sy) in its own frame
+        out[0] = sx - MathUtils.sinDeg(srot) * 0.5f * sh;
+        out[1] = sy + MathUtils.cosDeg(srot) * 0.5f * sh;
+        out[2] = 0.5f * sw;
+        out[3] = 0.5f * sh;
+        out[4] = srot;
+        out[5] = a;
         return true;
     }
 
@@ -496,16 +607,13 @@ final class NoteRenderer {
     }
 
     /**
-     * Anchors the waves of a bending note at its head: its lane's centre (the window's for a TIDE) where its leading
-     * edge crosses that lane, upright. A turned TIDE records in its own frame (the batch is turned), so this is its
+     * Anchors the waves of a bending note at its head: where the key is (the window's centre for a TIDE) where its
+     * leading edge is, upright. A turned TIDE records in its own frame (the batch is turned), so this is its
      * head in that frame too; its glows turn the anchor with them ({@link #glitchEnd}).
      */
     private void bendAnchor(GameEngine e, int i, Note n, float beat) {
         LaneLayout lay = e.layout();
-        int lane = n.laneIndex();
-        bendX = n.type() == NoteType.UNIVERSAL || lane < 0 || lane >= lay.count()
-            ? 0.5f * (lay.windowLeft() + lay.windowRight())
-            : lay.centre(lane) + n.offsetXAt(entry.look(i, beat)) * Field.kx();
+        bendX = !n.hasX() ? 0.5f * (lay.windowLeft() + lay.windowRight()) : lay.noteX(n, entry.look(i, beat));
         float pos = drawPos(i, n, beat);
         if (Float.isNaN(pos)) pos = 0f;
         float lineY = e.lineY(n.line());
@@ -584,17 +692,23 @@ final class NoteRenderer {
         end = start;
         while (end < count && suffixVis[end] <= beat) end++;
         if (!approach) return;
+        LaneLayout lay = e.layout();
         for (int i = start; i < end; i++) {
             if (e.noteState(i) != GameEngine.STATE_PENDING) continue;
             Note n = notes[i];
-            if (n.fake()) continue; // a decoration lights no lane
+            if (n.fake() || n.floats()) continue; // a decoration lights nothing; a floating note has no line
             double dt = n.judgementMs() - vis;
             if (dt <= 0.0 || dt > APPROACH_MS) continue;
             float k = 1f - (float) dt / APPROACH_MS;
             if (n.isTideMine()) continue;
-            if (n.type() == NoteType.UNIVERSAL) field.tideApproach(n.line(), k);
-            else if (n.type() == NoteType.MINE) field.approach(n.line(), n.laneIndex(), 0.20f * k, true);
-            else field.approach(n.line(), n.laneIndex(), 0.25f * k, false);
+            if (n.type() == NoteType.UNIVERSAL) {
+                field.tideApproach(n.line(), k);
+                continue;
+            }
+            // the line lights where the key will be judged
+            float ax = lay.noteX(n, n.judgement());
+            if (n.type() == NoteType.MINE) field.approach(n.line(), ax, lay.noteWidth(n), 0.20f * k, true);
+            else field.approach(n.line(), ax, lay.noteWidth(n), 0.25f * k, false);
         }
     }
 
@@ -624,16 +738,20 @@ final class NoteRenderer {
     int quadsBound(GameEngine e) {
         float beat = e.visualBeat();
         LaneLayout lay = e.layout();
-        int lanes = lay.count();
         int pattern = lay.patternLanes();
         int q = 0;
         int groundHolds = 0;
         int skyHolds = 0;
         int groundBands = 0;
         int skyBandCount = 0;
+        q += strokes.quads(e);
         for (int i = start; i < end; i++) {
             Note n = notes[i];
             if (entry.drawFrom(i) > beat) continue;
+            if (n.floats()) {
+                q += floats.quads(e, i, n, beat);
+                continue;
+            }
             float lb = entry.look(i, beat);
             byte st = e.noteState(i);
             boolean up = n.isUpper();
@@ -644,11 +762,12 @@ final class NoteRenderer {
             boolean bandBody = false;
             switch (n.type()) {
                 case MINE: {
-                    int lane = n.laneIndex();
-                    if (lane < 0 || lane >= lanes || !lay.active(lane)) continue;
+                    if (lay.noteWidth(n) < LaneLayout.MIN_ACTIVE_WIDTH) continue;
                     if (n.isLaneMine()) q += laneMineBody(e, i, n, beat, 0, true);
-                    nq = MINE_QUADS + (NoteShapes.showsPearl(n, st) ? SYNC_QUADS : 0);
-                    float pad = 0.5f * lay.width(lane) * GameEngine.MINE_BOX; // any rotation
+                    nq = (n.isLaneMine() ? LANE_MINE_HEAD_QUADS : MINE_QUADS)
+                        + (NoteShapes.showsPearl(n, st) ? SYNC_QUADS : 0);
+                    // any rotation; a LANE MINE's head bar is wider than the body
+                    float pad = 0.5f * lay.noteWidth(n) * (n.isLaneMine() ? 1f : GameEngine.MINE_BOX);
                     far = mineHeight() + pad;
                     // as drawMine: a body turned toward its line also reaches its height
                     near = FLAT_CULL + pad + turnReach(up, n.angleAt(lb) + (up ? 180f : 0f), 0f, mineHeight());
@@ -674,18 +793,19 @@ final class NoteRenderer {
                 }
                 default: {
                     if (st == GameEngine.STATE_HIT || st == GameEngine.STATE_COMPLETED) continue;
-                    int lane = n.laneIndex();
-                    if (lane < 0 || lane >= lanes || lay.width(lane) < LaneLayout.MIN_ACTIVE_WIDTH) continue;
+                    if (lay.noteWidth(n) < LaneLayout.MIN_ACTIVE_WIDTH) continue;
                     boolean hold = n.type() == NoteType.HOLD;
                     float tail = hold ? tailDraw(n, lb) : 0f;
                     if (hold && st != GameEngine.STATE_PENDING && tail <= 0f && beat > n.endBeat()) continue;
                     holdBody = hold && tail > 0f;
-                    nq = (hold ? HOLD_QUADS : TAP_QUADS) + (NoteShapes.showsPearl(n, st) ? SYNC_QUADS : 0);
+                    boolean drag = n.type() == NoteType.DRAG;
+                    nq = (hold ? HOLD_QUADS + barBound(tail) : drag ? DRAG_QUADS : TAP_QUADS)
+                        + (!drag && NoteShapes.showsPearl(n, st) ? SYNC_QUADS : 0);
                     far = noteHeight() + tail + LANE_CULL;
                     near = LANE_CULL;
                     if (entry.entering(i)) { // as drawLaneNote: a slide keeps what its turned body reaches
                         float rot = n.angleAt(lb) + (up ? 180f : 0f);
-                        float w = headWidth(lay.width(lane));
+                        float w = headWidth(lay.noteWidth(n));
                         far += rotPad(rot, w);
                         near += turnReach(up, rot, w, noteHeight() + tail);
                     }
@@ -698,7 +818,7 @@ final class NoteRenderer {
             float y = up ? lineY - pos : lineY + pos;
             if (n.type().inLane()) { // where drawLaneNote and drawMine put it
                 boolean mine = n.type() == NoteType.MINE;
-                y = NoteShapes.anchorY(n, lb, lay.centre(n.laneIndex()) + n.offsetXAt(lb) * Field.kx(), y, pos,
+                y = NoteShapes.anchorY(n, lb, lay.noteX(n, lb), y, pos,
                     mine ? MINE_H : NOTE_H, mine ? mineHeight() : noteHeight(), n.angleAt(lb) + (up ? 180f : 0f));
             }
             // as drawTide and drawBand: a turned TIDE is not culled
@@ -791,6 +911,7 @@ final class NoteRenderer {
     }
 
     private boolean done(GameEngine e, int i, double vis) {
+        if (notes[i].floats()) return FloatNotes.done(e, i, notes[i], vis); // its hit effects last longer
         if (notes[i].fake()) return vis > notes[i].endMs() + 500.0; // never judged: gone after its end
         byte st = e.noteState(i);
         if (st == GameEngine.STATE_PENDING || st == GameEngine.STATE_HOLDING) return false;
@@ -815,6 +936,7 @@ final class NoteRenderer {
         fadeBeat = beat;
         bendT = VeilRenderer.loopTime(now);
         int frame = (int) (now * 60f);
+        ribbonClock = NoteShapes.songSeconds(e);
         collectSkyRibbons(e, beat);
         // TIDE heads first (T4 drops and TIDE STREAM heads): lane notes and mines read on top of them
         for (int i = end - 1; i >= start; i--) {
@@ -827,12 +949,15 @@ final class NoteRenderer {
         }
         for (int i = end - 1; i >= start; i--) {
             Note n = notes[i];
-            if (entry.drawFrom(i) > beat || !n.type().inLane()) continue;
+            if (entry.drawFrom(i) > beat || !n.type().inLane() || n.floats()) continue;
             boolean g = glitchBegin(e, i, n, beat);
             if (n.type() == NoteType.MINE) drawMine(e, i, n, beat, now, frame);
             else drawLaneNote(e, i, n, beat, now, frame);
             if (g) glitchEnd();
         }
+        // the floating notes over everything on the lines, then the custom lines that go over the notes
+        floats.draw(e, notes, start, end, beat);
+        strokes.draw(e, bendT, true);
         batch.setColor(Color.WHITE);
     }
 
@@ -909,20 +1034,18 @@ final class NoteRenderer {
      * Computes the geometry of lane note i into the scratch fields: {@code sx, sy} leading-edge
      * centre, {@code sw × sh} body, {@code srot} rotation.
      *
-     * @return false when it is not drawable (hidden, inactive lane)
+     * @return false when it is not drawable (hidden, narrower than {@link LaneLayout#MIN_ACTIVE_WIDTH})
      */
     private boolean geometry(GameEngine e, Note n, float beat) {
         LaneLayout lay = e.layout();
-        int lane = n.laneIndex();
-        if (lane < 0 || lane >= lay.count()) return false;
-        float lw = lay.width(lane);
+        float lw = lay.noteWidth(n);
         if (lw < LaneLayout.MIN_ACTIVE_WIDTH) return false;
         float pos = drawPos(n, beat);
         if (Float.isNaN(pos)) return false;
         boolean up = n.isUpper();
         float lineY = e.lineY(n.line());
         float lb = entry.look(n, beat);
-        sx = lay.centre(lane) + n.offsetXAt(lb) * Field.kx();
+        sx = lay.noteX(n, lb);
         sy = up ? lineY - pos : lineY + pos;
         sw = lw * 5f / 6f * Math.min(noteSize, 1.15f);
         sh = NOTE_H * noteSize;
@@ -950,8 +1073,8 @@ final class NoteRenderer {
     }
 
     /**
-     * Collects the sky STREAM ribbons this frame draws upright (world rows, lane, centre, width),
-     * for the ground ribbons' knock-out (DESIGN §21.7). A turned ribbon knocks nothing out.
+     * Collects the sky STREAM bodies this frame draws upright (world rows from the head's middle, lane, centre,
+     * width), for the ground bodies' knock-out (DESIGN §21.7). A turned body knocks nothing out.
      */
     private void collectSkyRibbons(GameEngine e, float beat) {
         skyRibs = 0;
@@ -962,8 +1085,8 @@ final class NoteRenderer {
             if (n.fake() && beat >= n.endBeat()) continue; // as drawLaneNote
             byte st = e.noteState(i);
             if (st == GameEngine.STATE_HIT || st == GameEngine.STATE_COMPLETED) continue;
-            int lane = n.laneIndex();
-            if (lane < 0 || lane >= lay.count() || lay.width(lane) < LaneLayout.MIN_ACTIVE_WIDTH) continue;
+            float kw = lay.noteWidth(n);
+            if (kw < LaneLayout.MIN_ACTIVE_WIDTH) continue;
             float lb = entry.look(i, beat);
             float tail = tailDraw(n, lb);
             if (!(tail > 0f)) continue;
@@ -973,40 +1096,85 @@ final class NoteRenderer {
             if (Math.abs(MathUtils.sinDeg(rot)) > NoteShapes.UPRIGHT_SIN) continue;
             float lineY = e.lineY(n.line());
             if (n.shownOpacityAt(lb) * fadeIn(i, lineY, true) <= MIN_ALPHA) continue;
-            float bx = lay.centre(lane) + n.offsetXAt(lb) * Field.kx();
-            float y = NoteShapes.anchorY(n, lb, bx, lineY - pos, pos, NOTE_H, noteHeight(), rot);
+            float bx = lay.noteX(n, lb);
+            // the body starts at the head's middle
+            float y = NoteShapes.anchorY(n, lb, bx, lineY - pos, pos, NOTE_H, noteHeight(), rot)
+                + MathUtils.cosDeg(rot) * 0.5f * noteHeight();
             float y2 = y + MathUtils.cosDeg(rot) * tail;
             int k = skyRibs++;
-            skyRibLane[k] = lane;
+            skyRibKeyW[k] = kw;
             skyRibLo[k] = Math.min(y, y2);
             skyRibHi[k] = Math.max(y, y2);
             skyRibCx[k] = NoteShapes.anchorX(n, lb, bx, lineY - pos, pos, NOTE_H, noteHeight(), rot);
-            skyRibW[k] = NoteShapes.ribbonWidth(lay.width(lane), true);
+            skyRibW[k] = NoteShapes.ribbonWidth(kw, true);
+            skyRibTipLow[k] = y2 < y; // its round far end, at the low world end or the high one
+            skyRibCap[k] = Math.min(NoteShapes.RIBBON_END_LEN, tail);
         }
     }
 
     /**
-     * Sets the knock-outs of a ground ribbon (leading edge {@code (x, y)}, turned {@code rot},
-     * {@code tail} long): the rows where a sky ribbon of its lane overlaps it, and the hole's
-     * local x span (the sky ribbon plus {@link NoteShapes#SKY_HOLE_PAD} on each side).
+     * Sets the knock-outs of a ground STREAM body (starting at {@code (x, y)}, the head's middle, turned
+     * {@code rot}, {@code tail} long): the rows where a sky body in its place overlaps it, each hole's local x span
+     * (the sky body plus {@link NoteShapes#SKY_HOLE_PAD} on each side) and the sky body's round far end, which the
+     * hole follows. Holes that overlap each other are merged into one square hole over both.
      */
     private void ribbonHoles(Note n, float x, float y, float rot, float tail) {
         holes = 0;
         if (skyRibs == 0 || !(tail > 0f)) return;
         if (Math.abs(MathUtils.sinDeg(rot)) > NoteShapes.UPRIGHT_SIN) return;
         float dir = MathUtils.cosDeg(rot) > 0f ? 1f : -1f;
-        int lane = n.laneIndex();
+        // the round end's line reaches a little past the tip (its outer half and the sprite's margin)
+        float len = tail + skEndLine.y1 - Draw.HOLD_END_LEN;
         for (int k = 0; k < skyRibs && holes < NoteShapes.MAX_HOLES; k++) {
-            if (skyRibLane[k] != lane) continue;
-            if (!NoteShapes.overlapRows(y, dir, tail, skyRibLo[k], skyRibHi[k], ov)) continue;
-            holeLo[holes] = ov[0];
-            holeHi[holes] = ov[1];
-            holes++;
+            if (!GameEngine.samePlace(Math.abs(skyRibCx[k] - x), skyRibKeyW[k], skyRibKeyW[k])) continue;
+            if (!NoteShapes.overlapRows(y, dir, len, skyRibLo[k], skyRibHi[k], ov)) continue;
+            int h = holes++;
+            holeLo[h] = ov[0];
+            holeHi[h] = ov[1];
             float half = NoteShapes.holeHalf(skyRibW[k], NoteShapes.SKY_HOLE_PAD);
-            float cx = (skyRibCx[k] - x) * dir; // local x of the sky ribbon's centre
-            holeX0 = cx - half;
-            holeX1 = cx + half;
+            float cx = (skyRibCx[k] - x) * dir; // local x of the sky body's centre
+            holeX0s[h] = cx - half;
+            holeX1s[h] = cx + half;
+            holeTip[h] = ((skyRibTipLow[k] ? skyRibLo[k] : skyRibHi[k]) - y) * dir;
+            holeTipDir[h] = skyRibTipLow[k] ? dir : -dir;
+            holeCap[h] = skyRibCap[k];
+            holeSkyHr[h] = 0.5f * skyRibW[k];
         }
+        // in row order; overlapping holes become one square hole
+        for (int k = 1; k < holes; k++) {
+            for (int j = k; j > 0 && holeLo[j - 1] > holeLo[j]; j--) swapHoles(j - 1, j);
+        }
+        int m = 0;
+        for (int k = 0; k < holes; k++) {
+            if (m > 0 && holeLo[k] < holeHi[m - 1]) {
+                holeHi[m - 1] = Math.max(holeHi[m - 1], holeHi[k]);
+                holeX0s[m - 1] = Math.min(holeX0s[m - 1], holeX0s[k]);
+                holeX1s[m - 1] = Math.max(holeX1s[m - 1], holeX1s[k]);
+                holeCap[m - 1] = 0f;
+            } else {
+                if (m != k) swapHoles(m, k);
+                m++;
+            }
+        }
+        holes = m;
+    }
+
+    /** Swaps knock-outs {@code a} and {@code b} of the body being painted. */
+    private void swapHoles(int a, int b) {
+        swap(holeLo, a, b);
+        swap(holeHi, a, b);
+        swap(holeX0s, a, b);
+        swap(holeX1s, a, b);
+        swap(holeTip, a, b);
+        swap(holeTipDir, a, b);
+        swap(holeCap, a, b);
+        swap(holeSkyHr, a, b);
+    }
+
+    private static void swap(float[] v, int a, int b) {
+        float t = v[a];
+        v[a] = v[b];
+        v[b] = t;
     }
 
     private void drawLaneNote(GameEngine e, int i, Note n, float beat, float now, int frame) {
@@ -1016,6 +1184,7 @@ final class NoteRenderer {
         if (!geometry(e, n, beat)) return;
         boolean up = n.isUpper();
         boolean hold = n.type() == NoteType.HOLD;
+        boolean drag = n.type() == NoteType.DRAG;
         float lineY = e.lineY(n.line());
         float lb = entry.look(i, beat);
         // Tails longer than any screen (Abyss has 100000-unit holds) are drawn screen-sized.
@@ -1032,9 +1201,10 @@ final class NoteRenderer {
         if (offScreen(up, sy, far, near)) return;
         float alpha = n.shownOpacityAt(lb) * fadeIn(i, lineY, up);
         if (alpha <= MIN_ALPHA) return;
-        Color base = up ? Theme.SKY_SIG : Theme.GROUND_NOTE;
+        Color base = drag ? Theme.DRAG : up ? (hold ? Theme.SKY_HOLD : Theme.SKY_SIG) : Theme.GROUND_NOTE;
         float x = sx;
         float headMul = 1f;
+        float grey = 0f;
         boolean heldNow = hold && e.isHoldHeld(i);
         float ribHead = NoteShapes.ribbonHeadAlpha(heldNow);
         float ribTail = NoteShapes.ribbonTailAlpha(heldNow);
@@ -1049,6 +1219,7 @@ final class NoteRenderer {
             if (Float.isNaN(age)) age = 0f;
             float k = MathUtils.clamp(age / MISS_FADE_MS, 0f, 1f);
             Theme.mix(base, Theme.MISSED, k, col);
+            grey = k;
             headMul = 1f - 0.70f * k;
             ribHead += (NoteShapes.RIBBON_BROKEN_HEAD_A - ribHead) * k;
             ribTail += (NoteShapes.RIBBON_BROKEN_TAIL_A - ribTail) * k;
@@ -1060,116 +1231,455 @@ final class NoteRenderer {
         float y = sy;
         float w = sw;
         float h = sh;
-        float rw = hold ? NoteShapes.ribbonWidth(e.layout().width(n.laneIndex()), up) : 0f;
-        if (hold && !up) ribbonHoles(n, x, y, rot, tail);
-        paintLaneNote(x, y, w, h, rot, col, alpha, headMul, ribHead, ribTail, tail, rw, NoteShapes.ribbonEdge(rw, up),
-            lost);
+        float rw = hold ? NoteShapes.ribbonWidth(e.layout().noteWidth(n), up) : 0f;
+        if (hold && !up) { // the body starts at the head's middle
+            ribbonHoles(n, x - MathUtils.sinDeg(rot) * 0.5f * h, y + MathUtils.cosDeg(rot) * 0.5f * h, rot, tail);
+        }
+        if (drag) paintDrag(x, y, w, h, rot, grey, alpha);
+        else paintLaneNote(x, y, w, h, rot, up, grey, col, alpha, headMul, ribHead, ribTail, tail, rw, heldNow, true);
         holes = 0;
         float cos = fcos;
         float sin = fsin;
         float a = alpha * headMul;
         boolean sync = NoteShapes.showsPearl(n, st);
-        boolean pearl = sync && syncPearls();
+        boolean pearl = sync && syncPearls() && !drag;
         if (pearl) syncPearl(x, y, w, h, a);
-        // glows (additive block)
+        // glows (additive block); a pending key's own glow is in its skin
         float gcx = x - sin * h * 0.5f;
         float gcy = y + cos * h * 0.5f;
-        if (sync && syncHalo()) syncFrame(gcx, gcy, w, h, rot, n.isUpper(), a);
-        float pr = NoteShapes.headPearlRadius(NoteShapes.pearlRadius(noteSize), w);
+        if (sync && syncHalo()) {
+            if (drag) dragLight(x, y, w, h, rot, a);
+            else syncFrame(gcx, gcy, w, h, rot, n.isUpper(), a);
+        }
         if (heldNow) {
+            float pr = NoteShapes.headPearlRadius(NoteShapes.pearlRadius(noteSize), w);
             int k = glows;
             addGlow(G_NOTE, gcx, gcy, w + 56f, h + 40f, rot, col, 0.40f * alpha);
-            if (pearl && glows > k) rowGlowHoles(pr);
-        } else if (high && !lost) {
-            int k = glows;
-            addGlow(G_NOTE, gcx, gcy, w + 40f, h + 32f, rot, col, 0.22f * alpha);
             // the pearls sit across the glow's centre line: leave them out, so the glow cannot pale their gold
             if (pearl && glows > k) rowGlowHoles(pr);
         }
     }
 
-    /** Quads of {@link #paintLaneNote} a knock-out adds to a ground ribbon (a plain piece and two side strips). */
-    static final int RIBBON_HOLE_QUADS = 3;
+    /**
+     * Upper bound of the quads a knock-out adds to a ground STREAM body ({@link #fillAround} over its fill, its round
+     * end's fill and its round end's line): a plain piece after it in each of the three, and the pieces it is cut into
+     * (at the {@link NoteShapes#HOLE_CURVE_ROWS} + 1 rows of the sky body's round end and where the ground body's
+     * round end starts), each with two pieces beside it in the fill or in both of the round end's sprites.
+     */
+    static final int RIBBON_HOLE_QUADS = 3 + (NoteShapes.HOLE_CURVE_ROWS + 3) * 4;
 
     /**
-     * Paints a lane note (DROP / STREAM; DESIGN §5.8, §21.7) in its local frame: the hold ribbon
-     * when {@code tail > 0} (fill fading head → tail, split around the knock-outs set by
-     * {@link #ribbonHoles}, {@code hold_edge} sides, a tail cap in the ribbon colour), then the
-     * {@code note_9p} head and the 3 px white leading edge. Normal blend; leaves the batch colour
-     * changed and the local frame set to {@code rot}.
+     * Paints a DROP or STREAM (Kelvin 2026-11-05, 「按这页把水滴、水流…画进游戏，大小和现在一样」) in its local frame:
+     * a STREAM's body ({@link #paintBody}) when {@code tail > 0}, from the head's middle; then the head, the baked
+     * glass skin ({@link Draw#SKIN_DROP_GROUND} cyan, {@link Draw#SKIN_DROP_SKY} pearl white) with its small tear
+     * pointing at the line. A missed look crosses the skin over to the grey ramp ({@link Draw#SKIN_DROP_NEUTRAL} in
+     * {@link Theme#MISSED}) and the tear to that grey. Normal blend; leaves the local frame set to {@code rot}.
      *
      * @param x       leading-edge centre x
      * @param y       leading-edge centre y
      * @param w       head width
      * @param h       head height
      * @param rot     rotation in degrees (+180 for sky notes)
+     * @param up      a sky note (the pearl skin)
+     * @param grey    0..1 toward the missed grey
      * @param c       body colour (line colour, or mixed toward the missed grey)
      * @param alpha   note opacity
      * @param headMul head opacity factor (a broken hold fades its head)
-     * @param ribHead ribbon opacity at the head ({@link NoteShapes#ribbonHeadAlpha})
-     * @param ribTail ribbon opacity at the tail end
-     * @param tail    ribbon length (0 = no ribbon)
-     * @param rw      ribbon width ({@link NoteShapes#ribbonWidth})
-     * @param ew      ribbon edge width ({@link NoteShapes#ribbonEdge})
-     * @param lost    missed look (dimmer edges and cap)
+     * @param ribHead body opacity at the head ({@link NoteShapes#ribbonHeadAlpha})
+     * @param ribTail body opacity at the far end
+     * @param tail    body length (0 = no body)
+     * @param rw      body width ({@link NoteShapes#ribbonWidth})
+     * @param held    held now (a brighter rim and brighter light bars)
+     * @param bars    draw the light bars flowing toward the head (live notes; not afterimage copies)
      * @return quads submitted
      */
-    int paintLaneNote(float x, float y, float w, float h, float rot, Color c, float alpha, float headMul,
-                      float ribHead, float ribTail, float tail, float rw, float ew, boolean lost) {
+    int paintLaneNote(float x, float y, float w, float h, float rot, boolean up, float grey, Color c, float alpha,
+                      float headMul, float ribHead, float ribTail, float tail, float rw, boolean held, boolean bars) {
         frame(rot);
         int quads = 0;
         if (tail > 0f && rw > 0f) {
-            float hr = rw * 0.5f;
-            float aH = ribHead * alpha;
-            float aT = ribTail * alpha;
-            segs = holes > 0 ? NoteShapes.rowSegments(tail, holes, holeLo, holeHi, segLo, segHi, segHole) : 0;
-            float hx0 = MathUtils.clamp(holeX0, -hr, hr);
-            float hx1 = MathUtils.clamp(holeX1, -hr, hr);
-            if (segs == 0 || hx1 <= hx0) {
-                localRect(x, y, -hr, 0f, hr, tail, c, aH, aT);
-                quads++;
-            } else {
-                for (int s = 0; s < segs; s++) {
-                    float r0 = segLo[s];
-                    float r1 = segHi[s];
-                    float a0 = aH + (aT - aH) * (r0 / tail);
-                    float a1 = aH + (aT - aH) * (r1 / tail);
-                    if (!segHole[s]) {
-                        localRect(x, y, -hr, r0, hr, r1, c, a0, a1);
-                        quads++;
-                    } else {
-                        // the ground fill leaves a hole under the sky ribbon; the edges stay
-                        int n = NoteShapes.spansBeside(-hr, hr, hx0, hx1, span);
-                        for (int k = 0; k < n; k++) localRect(x, y, span[2 * k], r0, span[2 * k + 1], r1, c, a0, a1);
-                        quads += n;
-                    }
-                }
-            }
-            float dim = lost ? 0.5f : 1f;
-            batch.setColor(c.r, c.g, c.b, 0.9f * alpha * dim);
-            local(edgeL, x, y, -hr, 0f, ew, tail);
-            local(edgeR, x, y, hr - ew, 0f, ew, tail);
-            float capH = Math.min(NoteShapes.RIBBON_CAP, tail);
-            batch.setColor(c.r, c.g, c.b, NoteShapes.RIBBON_CAP_A * alpha * dim);
-            local(core, x, y, -hr, tail - capH, rw, capH);
-            quads += 3;
+            quads += paintBody(x - fsin * 0.5f * h, y + fcos * 0.5f * h, c, alpha, ribHead, ribTail, tail, rw, grey,
+                held, bars);
         }
         float a = alpha * headMul;
-        batch.setColor(c.r, c.g, c.b, a);
-        if (w >= 24f) {
-            nine.draw(batch, x - w * 0.5f, y, w * 0.5f, 0f, w, h, 1f, 1f, rot);
-            quads += 9;
-        } else {
-            batch.setColor(c.r, c.g, c.b, 0.8f * a);
-            local(core, x, y, -w * 0.5f, 0f, w, h);
-            quads++;
+        float s = h / NOTE_H;
+        if (grey < 1f) {
+            quads += skin(up ? skSky : skGround, x, y, w, s, 0f, Color.toFloatBits(1f, 1f, 1f, a * (1f - grey)));
         }
-        if (w > 16f) {
-            batch.setColor(1f, 1f, 1f, a * (lost ? 0.4f : 1f));
-            local(core, x, y, -w * 0.5f + 6f, 0f, w - 12f, 3f);
+        if (grey > 0f) {
+            Color m = Theme.MISSED;
+            quads += skin(skNeutral, x, y, w, s, 0f, Color.toFloatBits(m.r, m.g, m.b, a * grey));
+        }
+        if (w >= TEAR_MIN_W) {
+            Theme.mix(up ? Theme.SKY_TEAR : Theme.WHITE, Theme.MISSED, grey, col2);
+            quads += plain(skTear, x, y, s, Color.toFloatBits(col2.r, col2.g, col2.b, a));
+        }
+        return quads;
+    }
+
+    /** Narrowest head that shows its tear. */
+    private static final float TEAR_MIN_W = 24f;
+
+    /**
+     * A STREAM's body (Kelvin 2026-11-05, the mock-up's hold) in the current local frame from its start
+     * {@code (ox, oy)} (the head's middle) for {@code tail} away from the line, {@code rw} wide: a fill fading from
+     * {@code aHead} to {@code aTail} (split around the knock-outs set by {@link #ribbonHoles}) with its round far end
+     * ({@link NoteShapes#RIBBON_END_LEN} long, {@link NoteShapes#ribbonEndHalfWidth}), a soft glow outside it in the
+     * same colour, light bars flowing toward the head inside it and a white rim round it; afterimage copies leave
+     * the bars out. The fill and the rim of the round end are cut around a knock-out too ({@link #endAround}).
+     *
+     * @return quads submitted
+     */
+    private int paintBody(float ox, float oy, Color c, float alpha, float aHead, float aTail, float tail, float rw,
+                          float grey, boolean held, boolean bars) {
+        float hr = 0.5f * rw;
+        float cap = Math.min(NoteShapes.RIBBON_END_LEN, tail);
+        float straight = tail - cap;
+        float aH = aHead * alpha;
+        float dA = (aTail - aHead) * alpha / tail;
+        float aS = aH + dA * straight;
+        float ky = cap / Draw.HOLD_END_LEN;
+        float aTop = Math.max(0f, aS + dA * skEndFill.y1 * ky);
+        int quads = 0;
+        // the glow outside it
+        float g = NoteShapes.RIBBON_GLOW_K;
+        if (straight > 0f) {
+            float g0 = Color.toFloatBits(c.r, c.g, c.b, g * aH);
+            float g1 = Color.toFloatBits(c.r, c.g, c.b, g * aS);
+            quads += strip(skSideGlow, ox, oy, hr, 1f, 0f, straight, g0, g1);
+            quads += strip(skSideGlow, ox, oy, -hr, -1f, 0f, straight, g0, g1);
+        }
+        quads += endSprite(skEndGlow, ox, oy, hr, straight, ky, Color.toFloatBits(c.r, c.g, c.b, g * aS),
+            Color.toFloatBits(c.r, c.g, c.b, g * aTop));
+        // the fill: the straight part and the round end, leaving out the knock-outs under sky bodies
+        if (straight > 0f) {
+            quads += fillAround(core.getTexture(), ox, oy, -hr, hr, 0f, straight, coreU, coreU, coreV, coreV, c.r, c.g,
+                c.b, aH, aS);
+        }
+        quads += endAround(skEndFill, ox, oy, hr, straight, ky, c.r, c.g, c.b, aS, aTop);
+        if (bars) {
+            float ba = (held ? NoteShapes.RIBBON_BAR_HELD_A : NoteShapes.RIBBON_BAR_A) * alpha * (1f - grey);
+            if (ba > MIN_ALPHA) quads += paintBars(ox, oy, hr, straight, cap, tail, Color.toFloatBits(1f, 1f, 1f, ba));
+        }
+        // the white rim
+        float rimA = (held ? NoteShapes.RIBBON_RIM_HELD_A : NoteShapes.RIBBON_RIM_A) * alpha * (1f - 0.5f * grey);
+        float rc = Color.toFloatBits(1f, 1f, 1f, rimA);
+        if (straight > 0f) {
+            quads += strip(skRim, ox, oy, hr, 1f, 0f, straight, rc, rc);
+            quads += strip(skRim, ox, oy, -hr, -1f, 0f, straight, rc, rc);
+        }
+        return quads + endAround(skEndLine, ox, oy, hr, straight, ky, 1f, 1f, 1f, rimA, rimA);
+    }
+
+    /**
+     * {@link #endSprite} of a STREAM's round end fill or line ({@code r g b}, opacity {@code a0} where the end starts
+     * and {@code a1} at the sprite's top), around the knock-outs ({@link #fillAround}).
+     *
+     * @return quads submitted
+     */
+    private int endAround(Draw.Skin k, float ox, float oy, float hr, float y0, float ky, float r, float g, float b,
+                          float a0, float a1) {
+        float kx = hr / Draw.HOLD_END_HALF_W;
+        float v0 = k.vB + (k.vT - k.vB) * (-k.y0 / (k.y1 - k.y0));
+        return fillAround(k.region.getTexture(), ox, oy, k.x0 * kx, k.x1 * kx, y0, y0 + k.y1 * ky, k.uA, k.uS, v0,
+            k.vT, r, g, b, a0, a1);
+    }
+
+    /**
+     * Fills the local box {@code [xa, xb] × [ya, yb]} of the body being painted with {@code tex} mapped onto it
+     * ({@code u} from {@code ua} to {@code ub} across, {@code v} from {@code va} to {@code vb} along) in {@code r g b}
+     * at opacity {@code a0} at {@code ya} to {@code a1} at {@code yb}, leaving out its knock-outs (DESIGN §21.7): the
+     * rows are cut at each hole's ends and at five rows of the round far end of the sky body making it (spaced as the
+     * square of the distance from its tip, so straight pieces follow the curve closely), and the pieces beside a
+     * hole are drawn as trapezoids. Without knock-outs it is one quad.
+     *
+     * @return quads submitted (with knock-outs at most {@link #RIBBON_HOLE_QUADS} / 3 more for each)
+     */
+    private int fillAround(Texture tex, float ox, float oy, float xa, float xb, float ya, float yb, float ua, float ub,
+                           float va, float vb, float r, float g, float b, float a0, float a1) {
+        if (!(yb > ya) || !(xb > xa)) return 0;
+        fTexU = ua;
+        fSu = (ub - ua) / (xb - xa);
+        fXa = xa;
+        fTexV = va;
+        fSv = (vb - va) / (yb - ya);
+        fYa = ya;
+        fR = r;
+        fG = g;
+        fB = b;
+        fA = a0;
+        fSa = (a1 - a0) / (yb - ya);
+        int n = 0;
+        cuts[n++] = ya;
+        cuts[n++] = yb;
+        for (int h = 0; h < holes; h++) {
+            float lo = holeLo[h];
+            float hi = holeHi[h];
+            if (!(hi > ya && lo < yb)) continue;
+            n = cut(n, lo, ya, yb);
+            n = cut(n, hi, ya, yb);
+            float cap = holeCap[h];
+            for (int s = 0; s <= NoteShapes.HOLE_CURVE_ROWS && cap > 0f; s++) {
+                float row = holeTip[h] + holeTipDir[h] * cap * NoteShapes.holeCurveRow(s);
+                if (row > lo && row < hi) n = cut(n, row, ya, yb);
+            }
+        }
+        for (int k = 1; k < n; k++) { // insertion sort: a few rows
+            float v = cuts[k];
+            int j = k - 1;
+            while (j >= 0 && cuts[j] > v) {
+                cuts[j + 1] = cuts[j];
+                j--;
+            }
+            cuts[j + 1] = v;
+        }
+        int quads = 0;
+        for (int i = 0; i + 1 < n; i++) {
+            float r0 = cuts[i];
+            float r1 = cuts[i + 1];
+            if (!(r1 > r0)) continue;
+            int h = holeAt(0.5f * (r0 + r1));
+            if (h < 0) {
+                fillQuad(tex, ox, oy, xa, r0, xa, r1, xb, r1, xb, r0);
+                quads++;
+                continue;
+            }
+            float cx = 0.5f * (holeX0s[h] + holeX1s[h]);
+            float w0 = holeHalfAt(h, r0);
+            float w1 = holeHalfAt(h, r1);
+            float l0 = MathUtils.clamp(cx - w0, xa, xb);
+            float l1 = MathUtils.clamp(cx - w1, xa, xb);
+            float q0 = MathUtils.clamp(cx + w0, xa, xb);
+            float q1 = MathUtils.clamp(cx + w1, xa, xb);
+            if (l0 > xa || l1 > xa) {
+                fillQuad(tex, ox, oy, xa, r0, xa, r1, l1, r1, l0, r0);
+                quads++;
+            }
+            if (q0 < xb || q1 < xb) {
+                fillQuad(tex, ox, oy, q0, r0, q1, r1, xb, r1, xb, r0);
+                quads++;
+            }
+        }
+        return quads;
+    }
+
+    /** Adds {@code row} to {@link #cuts} when it lies strictly inside {@code (ya, yb)}; @return the new count. */
+    private int cut(int n, float row, float ya, float yb) {
+        if (row > ya && row < yb && n < cuts.length) cuts[n++] = row;
+        return n;
+    }
+
+    /** @return the knock-out of the body being painted over local row {@code row}, or −1 */
+    private int holeAt(float row) {
+        for (int h = 0; h < holes; h++) {
+            if (row >= holeLo[h] && row <= holeHi[h]) return h;
+        }
+        return -1;
+    }
+
+    /** @return half width of knock-out {@code h} at local row {@code row}: narrower over its sky body's round end. */
+    private float holeHalfAt(int h, float row) {
+        return NoteShapes.holeHalfAt(row, 0.5f * (holeX1s[h] - holeX0s[h]), holeSkyHr[h], holeTip[h], holeTipDir[h],
+            holeCap[h]);
+    }
+
+    /** Draws the local quad (x0, y0) … (x3, y3) with {@link #fillAround}'s map. */
+    private void fillQuad(Texture tex, float ox, float oy, float x0, float y0, float x1, float y1, float x2, float y2,
+                          float x3, float y3) {
+        int k = fillVert(0, ox, oy, x0, y0);
+        k = fillVert(k, ox, oy, x1, y1);
+        k = fillVert(k, ox, oy, x2, y2);
+        fillVert(k, ox, oy, x3, y3);
+        batch.draw(tex, verts, 0, 20);
+    }
+
+    private int fillVert(int k, float ox, float oy, float lx, float ly) {
+        float a = MathUtils.clamp(fA + fSa * (ly - fYa), 0f, 1f);
+        return vert(k, ox, oy, lx, ly, Color.toFloatBits(fR, fG, fB, a), fTexU + fSu * (lx - fXa),
+            fTexV + fSv * (ly - fYa));
+    }
+
+    /**
+     * The light bars inside a STREAM body (the mock-up's: {@link NoteShapes#RIBBON_BAR_W} of the body wide, 7 tall,
+     * {@link NoteShapes#RIBBON_BAR_GAP} apart, counted from the far end and flowing toward the head at
+     * {@link NoteShapes#RIBBON_BAR_SPEED} of song time, so they stand still while the song is paused); only the rows on
+     * screen, narrowed inside the round end, none across a knock-out.
+     *
+     * @return quads submitted (at most {@link #barBound})
+     */
+    private int paintBars(float ox, float oy, float hr, float straight, float cap, float tail, float c) {
+        float half = 0.5f * NoteShapes.BAR_H;
+        if (!visibleRows(ox, oy, hr, tail)) return 0;
+        float lo = visLo - half;
+        float hi = visHi + half;
+        float gap = NoteShapes.RIBBON_BAR_GAP;
+        float off = NoteShapes.barOffset(ribbonClock);
+        float bw = NoteShapes.RIBBON_BAR_W * hr;
+        Draw.Skin k = skBar;
+        int quads = 0;
+        for (int b = Math.max(0, (int) Math.ceil((tail - off - hi) / gap)); ; b++) {
+            float yy = tail - off - b * gap;
+            if (yy - half < 0f || yy < lo) break;
+            float bh = bw;
+            float top = yy + half;
+            if (top > straight) bh = Math.min(bh, NoteShapes.ribbonEndHalfWidth(top - straight, hr, cap) - BAR_INSET);
+            if (bh < half || barInHole(yy - half, yy + half)) continue;
+            // the sprite's bar spans [0, 100] × [0, 7] of its units
+            float kx = 2f * bh / NoteShapes.BAR_SPRITE_W;
+            int q = vert(0, ox, oy, -bh + k.x0 * kx, yy - half + k.y0, c, k.uA, k.vB);
+            q = vert(q, ox, oy, -bh + k.x0 * kx, yy - half + k.y1, c, k.uA, k.vT);
+            q = vert(q, ox, oy, -bh + k.x1 * kx, yy - half + k.y1, c, k.uS, k.vT);
+            vert(q, ox, oy, -bh + k.x1 * kx, yy - half + k.y0, c, k.uS, k.vB);
+            batch.draw(k.region.getTexture(), verts, 0, 20);
             quads++;
         }
         return quads;
+    }
+
+    /** How far a light bar stays inside a STREAM's round end. */
+    private static final float BAR_INSET = 1.5f;
+
+    /** @return true when the rows {@code [r0, r1]} of the body being painted cross one of its knock-outs. */
+    private boolean barInHole(float r0, float r1) {
+        for (int k = 0; k < holes; k++) {
+            if (holeHi[k] > r0 && holeLo[k] < r1) return true;
+        }
+        return false;
+    }
+
+    /**
+     * @return upper bound of the light bars of a STREAM body {@code tail} long ({@link #paintBars}): no more than fit
+     *         along it, nor along the screen's diagonal
+     */
+    static int barBound(float tail) {
+        float diag = (float) Math.sqrt(Ui.worldW() * Ui.worldW() + (Ui.top() - Ui.bottom()) * (Ui.top() - Ui.bottom()));
+        return (int) (Math.min(tail, diag + 2f * NoteShapes.BAR_H) / NoteShapes.RIBBON_BAR_GAP) + 2;
+    }
+
+    /**
+     * A strip of sprite {@code k} beside an edge at local x {@code e}: its x span ({@code x0 … x1} of the sprite)
+     * laid outward ({@code sign} 1: to the right, −1: to the left), along the rows {@code [y0, y1]} with colour
+     * {@code c0} at {@code y0} and {@code c1} at {@code y1}; the sprite's rows are all alike, so it is sampled
+     * between them.
+     *
+     * @return quads submitted (1)
+     */
+    private int strip(Draw.Skin k, float ox, float oy, float e, float sign, float y0, float y1, float c0, float c1) {
+        float xa = e + sign * k.x0;
+        float xb = e + sign * k.x1;
+        float v = 0.5f * (k.vB + k.vT);
+        int q = vert(0, ox, oy, xa, y0, c0, k.uA, v);
+        q = vert(q, ox, oy, xa, y1, c1, k.uA, v);
+        q = vert(q, ox, oy, xb, y1, c1, k.uS, v);
+        vert(q, ox, oy, xb, y0, c0, k.uS, v);
+        batch.draw(k.region.getTexture(), verts, 0, 20);
+        return 1;
+    }
+
+    /**
+     * A STREAM far-end sprite ({@link Draw#HOLD_END_FILL} …) over the round end that starts {@code y0} along the body:
+     * stretched to the body's half width {@code hr} and by {@code ky} along it, drawn from the end's start (the
+     * sprite's rows below it only feed the filtering), colour {@code c0} there and {@code c1} at its top.
+     *
+     * @return quads submitted (1)
+     */
+    private int endSprite(Draw.Skin k, float ox, float oy, float hr, float y0, float ky, float c0, float c1) {
+        float kx = hr / Draw.HOLD_END_HALF_W;
+        float v0 = k.vB + (k.vT - k.vB) * (-k.y0 / (k.y1 - k.y0));
+        float yt = y0 + k.y1 * ky;
+        int q = vert(0, ox, oy, k.x0 * kx, y0, c0, k.uA, v0);
+        q = vert(q, ox, oy, k.x0 * kx, yt, c1, k.uA, k.vT);
+        q = vert(q, ox, oy, k.x1 * kx, yt, c1, k.uS, k.vT);
+        vert(q, ox, oy, k.x1 * kx, y0, c0, k.uS, v0);
+        batch.draw(k.region.getTexture(), verts, 0, 20);
+        return 1;
+    }
+
+    /**
+     * Paints a DRAG (Kelvin 2026-11-05, the mock-up's shape B) in its local frame, the box of a DROP: the baked thin
+     * light-purple bar ({@link Draw#SKIN_DRAG_BAR}) across the box's width and its diamond
+     * ({@link Draw#SKIN_DRAG_DIAMOND}, {@link #DRAG_DIAMOND} of the width at most) in the middle, both light at the
+     * far edge and deep at the edge facing the line. A missed afterimage copy darkens toward {@link Theme#MISSED}.
+     * Normal blend; leaves the local frame set to {@code rot}.
+     *
+     * @param x     leading-edge centre x
+     * @param y     leading-edge centre y
+     * @param w     box width (a DROP's head width)
+     * @param h     box height
+     * @param rot   rotation in degrees (+180 for sky notes)
+     * @param grey  0..1 toward the missed grey
+     * @param alpha note opacity
+     * @return quads submitted ({@link #DRAG_QUADS} at most)
+     */
+    int paintDrag(float x, float y, float w, float h, float rot, float grey, float alpha) {
+        Theme.mix(Theme.WHITE, Theme.MISSED, grey, col2);
+        return dragSkins(x, y, w, h, rot, Color.toFloatBits(col2.r, col2.g, col2.b, alpha));
+    }
+
+    /** The bar and diamond of {@link #paintDrag} in packed colour {@code c}; @return quads submitted. */
+    private int dragSkins(float x, float y, float w, float h, float rot, float c) {
+        frame(rot);
+        float s = h / NOTE_H;
+        int quads = skin(skDragBar, x, y, w, s, 0f, c);
+        // a narrow box keeps the diamond within its share of the width, centred where it was
+        float ds = Math.min(s, DRAG_DIAMOND * w / Draw.DRAG_DIAMOND_W);
+        return quads + skin(skDragDiamond, x, y, 0f, ds, 0.5f * NOTE_H * (s - ds), c);
+    }
+
+    /**
+     * Adds the sync light of a DRAG at leading-edge centre {@code (x, y)}, box {@code w × h} turned {@code rot}:
+     * its bar and diamond again in the additive block at {@link #DRAG_LIGHT_A} of {@code a}, so it is a little
+     * brighter and its own glow a little stronger, with no frame round the box.
+     */
+    private void dragLight(float x, float y, float w, float h, float rot, float a) {
+        addGlow(G_DRAG, x, y, w, h, rot, Theme.WHITE, DRAG_LIGHT_A * a);
+    }
+
+    /** Width of a DRAG's diamond as a share of the box width at most (72 of 200). */
+    static final float DRAG_DIAMOND = 0.36f;
+
+    /**
+     * Writes and draws the quads of skin {@code k} for a body {@code w} wide at note size {@code s}, {@code dy} along
+     * the current local frame from {@code (ox, oy)}: a stretchable skin as its cap, its column stretched and the cap
+     * mirrored, or as the cap cut at the middle and mirrored when the body is too narrow for the column ({@code w}
+     * 0: a centred shape baked as its left half); in packed colour {@code c}.
+     *
+     * @return quads submitted (2 or 3)
+     */
+    private int skin(Draw.Skin k, float ox, float oy, float w, float s, float dy, float c) {
+        float hw = 0.5f * w;
+        float l = -hw + k.x0 * s;
+        float m = -hw + k.xs * s;
+        float yb = dy + k.y0 * s;
+        float yt = dy + k.y1 * s;
+        int q;
+        if (m < 0f) {
+            q = skinQuad(0, ox, oy, l, m, yb, yt, k.uA, k.uS, k, c);
+            q = skinQuad(q, ox, oy, m, -m, yb, yt, k.uC, k.uC, k, c);
+            q = skinQuad(q, ox, oy, -m, -l, yb, yt, k.uS, k.uA, k, c);
+        } else {
+            float um = k.uA + (k.uS - k.uA) * (-l) / (m - l);
+            q = skinQuad(0, ox, oy, l, 0f, yb, yt, k.uA, um, k, c);
+            q = skinQuad(q, ox, oy, 0f, -l, yb, yt, um, k.uA, k, c);
+        }
+        batch.draw(k.region.getTexture(), verts, 0, q);
+        return q / 20;
+    }
+
+    /** Writes plain sprite {@code k} at its place at note size {@code s} in the current local frame and draws it. */
+    private int plain(Draw.Skin k, float ox, float oy, float s, float c) {
+        skinQuad(0, ox, oy, k.x0 * s, k.x1 * s, k.y0 * s, k.y1 * s, k.uA, k.uS, k, c);
+        batch.draw(k.region.getTexture(), verts, 0, 20);
+        return 1;
+    }
+
+    /** Writes the local quad {@code [xa, xb] × [yb, yt]} of skin {@code k}, u {@code ua → ub}, at q; @return q + 20. */
+    private int skinQuad(int q, float ox, float oy, float xa, float xb, float yb, float yt, float ua, float ub,
+                         Draw.Skin k, float c) {
+        q = vert(q, ox, oy, xa, yb, c, ua, k.vB);
+        q = vert(q, ox, oy, xa, yt, c, ua, k.vT);
+        q = vert(q, ox, oy, xb, yt, c, ub, k.vT);
+        return vert(q, ox, oy, xb, yb, c, ub, k.vB);
     }
 
     /** Sets the local frame (rotation in degrees) of the next {@code local*} calls. */
@@ -1177,26 +1687,6 @@ final class NoteRenderer {
         srot = rot;
         fcos = MathUtils.cosDeg(rot);
         fsin = MathUtils.sinDeg(rot);
-    }
-
-    /** Draws region r in the note's local frame: rect (lx, ly, w, h) rotated about the origin. */
-    private void local(TextureRegion r, float ox, float oy, float lx, float ly, float w, float h) {
-        batch.draw(r, ox + lx, oy + ly, -lx, -ly, w, h, 1f, 1f, srot);
-    }
-
-    /**
-     * Draws the local rect {@code [lx0, lx1] × [ly0, ly1]} in colour c with opacity {@code a0}
-     * along {@code ly0} and {@code a1} along {@code ly1} (one vertex quad in the local frame).
-     */
-    private void localRect(float ox, float oy, float lx0, float ly0, float lx1, float ly1, Color c, float a0,
-                           float a1) {
-        float c0 = Color.toFloatBits(c.r, c.g, c.b, a0);
-        float c1 = Color.toFloatBits(c.r, c.g, c.b, a1);
-        int k = vert(0, ox, oy, lx0, ly0, c0, coreU, coreV);
-        k = vert(k, ox, oy, lx0, ly1, c1, coreU, coreV);
-        k = vert(k, ox, oy, lx1, ly1, c1, coreU, coreV);
-        vert(k, ox, oy, lx1, ly0, c0, coreU, coreV);
-        batch.draw(core.getTexture(), verts, 0, 20);
     }
 
     /** Writes one vertex of local point (lx, ly) into {@link #verts} at k; @return k + 5. */
@@ -1298,17 +1788,16 @@ final class NoteRenderer {
         byte st = e.noteState(i);
         if (n.fake() && beat >= n.endBeat()) return; // a decoration is gone at its end (Kelvin 2026-11-02)
         LaneLayout lay = e.layout();
-        int lane = n.laneIndex();
-        if (lane < 0 || lane >= lay.count() || !lay.active(lane)) return;
+        float lw = lay.noteWidth(n);
+        if (lw < LaneLayout.MIN_ACTIVE_WIDTH) return;
         boolean up = n.isUpper();
         boolean laneMine = n.isLaneMine();
         float lineY = e.lineY(n.line());
-        float lw = lay.width(lane);
         if (laneMine && !n.fake()) {
-            // the closed lane reads at a glance: its line segment glows while it blocks
+            // the closed place reads at a glance: its line segment glows while it blocks
             float b = NoteShapes.blockLook(e.judgeMs(), n.judgementMs(), n.endMs(), GameEngine.LANE_MINE_LEAD_MS);
             if (b > 0f) {
-                addGlow(G_V, lay.centre(lane), lineY, lw, NoteShapes.LANE_MINE_LINE_GLOW_H, 0f, Theme.MINE,
+                addGlow(G_V, lay.noteX(n), lineY, lw, NoteShapes.LANE_MINE_LINE_GLOW_H, 0f, Theme.MINE,
                     NoteShapes.LANE_MINE_LINE_GLOW_A * b);
             }
         }
@@ -1318,12 +1807,13 @@ final class NoteRenderer {
         float mw = lw * GameEngine.MINE_BOX;
         float mh = mineHeight();
         float rot = n.angleAt(lb) + (up ? 180f : 0f);
-        float bx = lay.centre(lane) + n.offsetXAt(lb) * Field.kx();
+        float bx = lay.noteX(n, lb);
         float by = up ? lineY - pos : lineY + pos;
         float y = NoteShapes.anchorY(n, lb, bx, by, pos, MINE_H, mh, rot);
-        float pad = rotPad(rot, mw);
+        float cw = laneMine ? Math.max(mw, 2f * NoteShapes.laneMineHalfWidth(lw)) : mw; // a LANE MINE's bar is wider
+        float pad = rotPad(rot, cw);
         // toward the line it reaches its turned corners, and its height when turned toward the line
-        if (offScreen(up, y, mh + pad, FLAT_CULL + turnReach(up, rot, mw, mh))) return;
+        if (offScreen(up, y, mh + pad, FLAT_CULL + turnReach(up, rot, cw, mh))) return;
         float alpha = n.shownOpacityAt(lb) * fadeIn(i, lineY, up);
         float x = NoteShapes.anchorX(n, lb, bx, by, pos, MINE_H, mh, rot);
         boolean live;
@@ -1342,53 +1832,94 @@ final class NoteRenderer {
             }
         }
         if (alpha <= MIN_ALPHA) return;
-        paintMine(x, y, mw, mh, rot, alpha);
-        // a MINE or untouched LANE MINE that shares its beat: a light-red halo, three red pearls across its bar
+        // a MINE or untouched LANE MINE that shares its beat: a light-red halo, three red pearls across its body
         boolean sync = NoteShapes.showsPearl(n, st);
         boolean pearl = sync && syncPearls();
-        float pr = NoteShapes.headPearlRadius(NoteShapes.minePearlRadius(noteSize), mw);
+        // the box the pearls, the halo and the pulse sit on: a MINE's body, a LANE MINE's head bar
+        float bw = mw;
+        float bh = mh;
+        float bc = 0.5f * mh;
+        if (laneMine) {
+            paintLaneMineHead(x, y, lw, rot, alpha);
+            bw = 2f * NoteShapes.laneMineHalfWidth(lw);
+            bh = NoteShapes.LANE_MINE_HEAD_H * noteSize;
+            bc = laneMineStart();
+        } else {
+            paintMine(x, y, mw, mh, rot, alpha, !pearl); // the pearls sit where the rivets are
+        }
+        float pr = NoteShapes.headPearlRadius(NoteShapes.minePearlRadius(noteSize), bw);
+        float gx = x - fsin * bc;
+        float gy = y + fcos * bc;
         if (sync && syncHalo()) {
-            frameGlow(x - fsin * mh * 0.5f, y + fcos * mh * 0.5f, mw, mh, rot, Theme.MINE_HIGHLIGHT,
-                HL_MINE_K * HL_BAND_A * alpha, HL_MINE_K * HL_HALO_A * alpha);
+            frameGlow(gx, gy, bw, bh, rot, Theme.MINE_HIGHLIGHT, HL_MINE_K * HL_BAND_A * alpha,
+                HL_MINE_K * HL_HALO_A * alpha);
         }
         if (pearl) {
-            pearlRow(x, y, mh * 0.5f, pr, Theme.MINE_PEARL, Theme.MINE_PEARL_RIM, Theme.MINE_PEARL_LUSTRE, alpha);
+            pearlRow(x, y, bc, pr, Theme.MINE_PEARL, Theme.MINE_PEARL_RIM, Theme.MINE_PEARL_LUSTRE, alpha);
         }
         if (live) {
             float pulse = 0.26f + 0.08f * MathUtils.sin(now * MathUtils.PI2 * 2f);
             int k = glows;
-            addGlow(G_NOTE, x - fsin * mh * 0.5f, y + fcos * mh * 0.5f, mw + 48f, mh + 40f, rot, Theme.MINE,
-                pulse * alpha);
+            addGlow(G_NOTE, gx, gy, bw + 48f, bh + 40f, rot, Theme.MINE, pulse * alpha);
             // the red pulse leaves the pearls out, so they keep their coral bodies
             if (pearl && glows > k) rowGlowHoles(pr);
         }
     }
 
+    /** {@link #paintMine(float, float, float, float, float, float, boolean)} with its rivets. */
+    int paintMine(float x, float y, float mw, float mh, float rot, float alpha) {
+        return paintMine(x, y, mw, mh, rot, alpha, true);
+    }
+
     /**
-     * Paints a MINE body (DESIGN §5.15) in its local frame: rounded {@code mine} rim,
-     * {@code mineCore} fill and three studs on each long edge, turned by {@code rot} about the
-     * leading-edge centre {@code (x, y)} (Kelvin 2026-10-12 03:03: mines turn like DROP and STREAM). Also the
-     * head cap of a LANE MINE. Leaves the local frame set to {@code rot}.
+     * Paints a MINE (Kelvin 2026-11-05, the mock-up's: 「暗红芯、亮红边，两头带尖，中间三颗铆钉」) in its local frame: the
+     * baked body ({@link Draw#SKIN_MINE}: red spikes past both ends, a dark-red core with its red glow and rim) and,
+     * with {@code rivets}, three {@link Theme#MINE_RIVET} rivets across its middle; turned by {@code rot} about the
+     * leading-edge centre {@code (x, y)} (Kelvin 2026-10-12 03:03: mines turn like DROP and STREAM). Leaves the local
+     * frame set to {@code rot}.
      *
      * @return quads submitted (at most {@link #MINE_QUADS})
      */
-    int paintMine(float x, float y, float mw, float mh, float rot, float alpha) {
+    int paintMine(float x, float y, float mw, float mh, float rot, float alpha, boolean rivets) {
         frame(rot);
-        float r = Math.min(MINE_RADIUS, Math.min(mw, mh) * 0.5f);
-        float lx = -mw * 0.5f;
-        rotChip(x, y, lx, 0f, mw, mh, r, Theme.MINE, alpha);
-        if (mw > 8f && mh > 8f) {
-            rotChip(x, y, lx + 3f, 3f, mw - 6f, mh - 6f, Math.max(1f, r - 3f), Theme.MINE_CORE, 0.92f * alpha);
+        float s = mh / MINE_H;
+        int q = skin(skMine, x, y, mw, s, 0f, Color.toFloatBits(1f, 1f, 1f, alpha));
+        if (!rivets || mw < MINE_RIVET_MIN_W) return q;
+        Color r = Theme.MINE_RIVET;
+        batch.setColor(r.r, r.g, r.b, alpha);
+        float size = MINE_RIVET_R * s / DISC_R;
+        float ly = 0.5f * mh;
+        for (int k = -1; k <= 1; k++) {
+            float lx = k * MINE_RIVET_STEP * mw;
+            batch.draw(disc, x + lx * fcos - ly * fsin - 0.5f * size, y + lx * fsin + ly * fcos - 0.5f * size, size,
+                size);
         }
-        // studs on both long edges at 1/4, 1/2, 3/4
-        Color m = Theme.MINE;
-        batch.setColor(m.r, m.g, m.b, m.a * alpha);
-        for (int k = 1; k <= 3; k++) {
-            float cx = lx + mw * k * 0.25f;
-            local(core, x, y, cx - 3f, -3f, 6f, 6f);
-            local(core, x, y, cx - 3f, mh - 3f, 6f, 6f);
-        }
-        return MINE_QUADS;
+        return q + 3;
+    }
+
+    /** MINE rivets: radius at note size 1, spacing as a share of the body's width (48 of 200), narrowest with them. */
+    private static final float MINE_RIVET_R = 4.2f, MINE_RIVET_STEP = 0.24f, MINE_RIVET_MIN_W = 40f;
+
+    /** @return how far along a LANE MINE from its leading edge its head bar's middle and its column's start are. */
+    float laneMineStart() {
+        return 0.5f * NOTE_H * noteSize;
+    }
+
+    /**
+     * Paints a LANE MINE's head (Kelvin 2026-11-05, the mock-up's long mine): a solid {@link Theme#MINE} bar across
+     * its column, {@link NoteShapes#LANE_MINE_HEAD_H} tall with round ends, its middle {@link #laneMineStart()} from
+     * the leading edge {@code (x, y)}, so it lies on the line while the place is closed. Leaves the local frame set to
+     * {@code rot}.
+     *
+     * @return quads submitted (at most {@link #LANE_MINE_HEAD_QUADS})
+     */
+    int paintLaneMineHead(float x, float y, float lw, float rot, float alpha) {
+        frame(rot);
+        float hw = NoteShapes.laneMineHalfWidth(lw);
+        if (!(hw > 0f)) return 0;
+        float bh = NoteShapes.LANE_MINE_HEAD_H * noteSize;
+        rotChip(x, y, -hw, laneMineStart() - 0.5f * bh, 2f * hw, bh, 0.5f * bh, Theme.MINE, alpha);
+        return LANE_MINE_HEAD_QUADS;
     }
 
     /**
@@ -1437,18 +1968,25 @@ final class NoteRenderer {
         if (k > 0) batch.draw(reg.getTexture(), verts, 0, k);
     }
 
-    /** Upper bound of the quads of one {@link #paintMine} (two nine-slices and six studs). */
-    static final int MINE_QUADS = 24;
-    /** Upper bound of the quads of one {@link #paintLaneNote} without a ribbon. */
-    static final int TAP_QUADS = 10;
-    /** Upper bound of the quads of one {@link #paintLaneNote} with a ribbon and no knock-out. */
-    static final int HOLD_QUADS = 14;
+    /** Upper bound of the quads of one {@link #paintMine}: its skin and three rivets. */
+    static final int MINE_QUADS = 6;
+    /** Upper bound of the quads of one {@link #paintLaneNote} without a body: the skin, the grey skin, the tear. */
+    static final int TAP_QUADS = 7;
     /**
-     * Upper bound of the quads of a LANE MINE afterimage copy: its column without stripes and
-     * studs (fill, two rims, tail cap; each split at most in two around the other line) and the
-     * head cap.
+     * Upper bound of the quads of one {@link #paintLaneNote} with a body, no knock-out and no light bars
+     * ({@link #barBound}): the head's, the body's glow (three), fill (two), rim (three).
      */
-    static final int LANE_MINE_COPY_QUADS = 4 * 4 + MINE_QUADS;
+    static final int HOLD_QUADS = TAP_QUADS + 8;
+    /** Upper bound of the quads of one {@link #paintDrag}: the bar's skin and the diamond's. */
+    static final int DRAG_QUADS = 5;
+    /** Upper bound of the quads of one {@link #paintLaneMineHead} (a rounded bar). */
+    static final int LANE_MINE_HEAD_QUADS = 9;
+    /**
+     * Upper bound of the quads of a LANE MINE afterimage copy: its column without stripes and glow (the fill of the
+     * straight part and of the round end, two side rims, five outline segments; each cut to the screen and split
+     * at most in two around the other line) and the head bar.
+     */
+    static final int LANE_MINE_COPY_QUADS = 56 + LANE_MINE_HEAD_QUADS;
 
     /**
      * LANE MINE body in the band layer (DESIGN §20.2): the blocking veil over its lane's part of
@@ -1458,18 +1996,17 @@ final class NoteRenderer {
      */
     private int laneMineBody(GameEngine e, int i, Note n, float beat, int frame, boolean dry) {
         LaneLayout lay = e.layout();
-        int lane = n.laneIndex();
-        if (lane < 0 || lane >= lay.count() || !lay.active(lane)) return 0;
+        float lw = lay.noteWidth(n);
+        if (lw < LaneLayout.MIN_ACTIVE_WIDTH) return 0;
         boolean up = n.isUpper();
         float lineY = e.lineY(n.line());
-        float lw = lay.width(lane);
         int q = 0;
         float b = NoteShapes.blockLook(e.judgeMs(), n.judgementMs(), n.endMs(), GameEngine.LANE_MINE_LEAD_MS);
         if (b > 0f) {
             if (!dry) {
                 Color m = Theme.MINE;
                 batch.setColor(m.r, m.g, m.b, NoteShapes.LANE_MINE_VEIL_A * b);
-                batch.draw(core, lay.left(lane), lineY - Field.zoneHalf(), lw, 2f * Field.zoneHalf());
+                batch.draw(core, lay.noteX(n) - 0.5f * lw, lineY - Field.zoneHalf(), lw, 2f * Field.zoneHalf());
             }
             q++;
         }
@@ -1482,7 +2019,7 @@ final class NoteRenderer {
         if (alpha <= MIN_ALPHA) return q;
         float rot = n.angleAt(lb) + (up ? 180f : 0f);
         float mh = mineHeight();
-        float bx = lay.centre(lane) + n.offsetXAt(lb) * Field.kx();
+        float bx = lay.noteX(n, lb);
         float by = up ? lineY - pos : lineY + pos;
         float y = NoteShapes.anchorY(n, lb, bx, by, pos, MINE_H, mh, rot);
         float x = NoteShapes.anchorX(n, lb, bx, by, pos, MINE_H, mh, rot) + (dry ? 0f : contactJitter(e, i, frame));
@@ -1491,42 +2028,73 @@ final class NoteRenderer {
     }
 
     /**
-     * Paints a LANE MINE column (DESIGN §20.2) in its local frame from the leading edge
-     * {@code (ox, oy)} for {@code tail} away from its line, turned by {@code rot}: {@code mineCore}
-     * fill (α .85) over the lane inset 6 each side, 45° {@code mine} hazard stripes (α .35, period
-     * 24) drifting toward the line at 40 /s of song time, 3 px {@code mine} rims with 6×6 studs
-     * every 64, and a 3 px tail cap. Only the rows on screen are drawn, and nothing within
-     * {@link NoteShapes#OTHER_LINE_GAP} of {@code otherY}, the other judgement line, which stays as
-     * bright across the column as elsewhere (Kelvin 2026-10-12 02:58). Afterimage copies pass
-     * {@code detail = false} (no stripes, no studs). Leaves the local frame set to {@code rot}.
+     * Paints a LANE MINE column (Kelvin 2026-11-05, the mock-up's long mine: 「一段和原来一条轨道差不多宽的红色斜纹带」)
+     * in its local frame, turned by {@code rot}: from {@link #laneMineStart()} past the leading edge {@code (lx, ly)}
+     * (its head bar's middle) for {@code tail} away from its line, {@link NoteShapes#laneMineHalfWidth} each side of
+     * its centre: a deep-red fill ({@link Theme#LONG_MINE_FILL} at {@link NoteShapes#LANE_MINE_FILL_A}) with a soft red
+     * glow beside it, 45° {@link Theme#MINE} hazard stripes drifting toward the line at
+     * {@link NoteShapes#STRIPE_SPEED} of song time and a 3-unit red outline, the far end rounded
+     * ({@link NoteShapes#LANE_MINE_END_R}, two segments a corner). Only the rows on screen are drawn, and nothing
+     * within {@link NoteShapes#OTHER_LINE_GAP} of {@code otherY}, the other judgement line, which stays as bright
+     * across the column as elsewhere (Kelvin 2026-10-12 02:58). Afterimage copies pass {@code detail = false} (no
+     * stripes, no glow). Leaves the local frame set to {@code rot}.
      *
      * @param seconds song seconds of the stripe phase
      * @param dry     count only, draw nothing
      * @return quads submitted (or that would be)
      */
-    int paintLaneMineColumn(float ox, float oy, float rot, float lw, float tail, float alpha, float seconds,
+    int paintLaneMineColumn(float lx, float ly, float rot, float lw, float tail, float alpha, float seconds,
                             float otherY, boolean detail, boolean dry) {
         float hw = NoteShapes.laneMineHalfWidth(lw);
         if (hw <= NoteShapes.LANE_MINE_RIM || !(tail > 0f)) return 0;
         frame(rot);
-        if (!visibleRows(ox, oy, hw + NoteShapes.STUD, tail)) return 0;
+        float c0 = laneMineStart();
+        float ox = lx - fsin * c0;
+        float oy = ly + fcos * c0;
+        float ro = 0.5f * NoteShapes.LANE_MINE_RIM;
+        float reach = hw + (detail ? NoteShapes.LANE_MINE_GLOW_OUT : ro);
+        if (!visibleRows(ox, oy, reach, tail + ro)) return 0;
         float lo = visLo;
         float hi = visHi;
         gapLo = otherY - NoteShapes.OTHER_LINE_GAP;
         gapHi = otherY + NoteShapes.OTHER_LINE_GAP;
-        Color mc = Theme.MINE_CORE;
+        float r = Math.min(NoteShapes.LANE_MINE_END_R, Math.min(tail, hw));
+        float ls = tail - r; // where the round far end starts
+        float sy0 = lo;
+        float sy1 = Math.min(hi, ls);
+        Color f = Theme.LONG_MINE_FILL;
         Color m = Theme.MINE;
-        float cFill = Color.toFloatBits(mc.r, mc.g, mc.b, NoteShapes.LANE_MINE_FILL_A * alpha);
+        float cFill = Color.toFloatBits(f.r, f.g, f.b, NoteShapes.LANE_MINE_FILL_A * alpha);
         float cMine = Color.toFloatBits(m.r, m.g, m.b, alpha);
-        int q = rectPoly(ox, oy, -hw, lo, hw, hi, cFill, dry);
+        int q = 0;
+        if (detail && sy1 > sy0) { // the glow beside the sides, outside the outline
+            float g1 = Color.toFloatBits(m.r, m.g, m.b, NoteShapes.LANE_MINE_GLOW_A1 * alpha);
+            float g2 = Color.toFloatBits(m.r, m.g, m.b, NoteShapes.LANE_MINE_GLOW_A2 * alpha);
+            float e1 = hw + ro;
+            float e2 = hw + NoteShapes.LANE_MINE_GLOW_MID;
+            float e3 = hw + NoteShapes.LANE_MINE_GLOW_OUT;
+            q += rectPoly(ox, oy, e1, sy0, e2, sy1, g1, dry) + rectPoly(ox, oy, -e2, sy0, -e1, sy1, g1, dry);
+            q += rectPoly(ox, oy, e2, sy0, e3, sy1, g2, dry) + rectPoly(ox, oy, -e3, sy0, -e2, sy1, g2, dry);
+        }
+        // the fill: the straight part, then the round end
+        q += rectPoly(ox, oy, -hw, sy0, hw, sy1, cFill, dry);
+        boolean end = hi > ls && r > 0f;
+        if (end) {
+            int n = endPolygon(hw, ls, r, pe);
+            n = clip(pe, n, pb, 0f, -1f, -lo); // keep y ≥ lo
+            n = clip(pb, n, pa, 0f, 1f, hi);   // keep y ≤ hi
+            q += emitLocal(pa, n, ox, oy, cFill, dry);
+        }
         if (detail) {
             float cStripe = Color.toFloatBits(m.r, m.g, m.b, NoteShapes.STRIPE_A * alpha);
             float p = NoteShapes.stripeAxisPeriod();
             float sw = NoteShapes.stripeAxisWidth();
             float off = NoteShapes.stripeOffset(seconds);
+            int ne = end ? endPolygon(hw, ls, r, pe) : 0;
+            float top = Math.min(hi, tail);
             // stripe k lies between the 45° lines y = x + c and y = x + c + sw, c = off + k·p
             int k0 = (int) Math.ceil((lo - hw - sw - off) / p);
-            int k1 = (int) Math.floor((hi + hw - off) / p);
+            int k1 = (int) Math.floor((top + hw - off) / p);
             for (int k = k0; k <= k1; k++) {
                 float c = off + k * p;
                 pa[0] = -hw;
@@ -1538,29 +2106,102 @@ final class NoteRenderer {
                 pa[6] = -hw;
                 pa[7] = -hw + c + sw;
                 int nv = clip(pa, 4, pb, 0f, -1f, -lo); // keep y ≥ lo
-                nv = clip(pb, nv, pa, 0f, 1f, hi);      // keep y ≤ hi
+                nv = clip(pb, nv, pa, 0f, 1f, top);     // keep y ≤ top
+                if (ne > 0 && hw + c + sw > ls) nv = clipToEnd(nv, ne);
                 q += emitLocal(pa, nv, ox, oy, cStripe, dry);
             }
         }
-        float rim = NoteShapes.LANE_MINE_RIM;
-        q += rectPoly(ox, oy, -hw, lo, -hw + rim, hi, cMine, dry);
-        q += rectPoly(ox, oy, hw - rim, lo, hw, hi, cMine, dry);
-        if (detail) {
-            float half = NoteShapes.STUD * 0.5f;
-            float step = NoteShapes.STUD_STEP;
-            int j0 = Math.max(0, (int) Math.ceil((lo - half) / step - 0.5f));
-            for (int j = j0; ; j++) {
-                float yc = step * (j + 0.5f);
-                if (yc + half > tail || yc - half > hi) break;
-                float l = -hw + rim * 0.5f;
-                float r = hw - rim * 0.5f;
-                q += rectPoly(ox, oy, l - half, yc - half, l + half, yc + half, cMine, dry);
-                q += rectPoly(ox, oy, r - half, yc - half, r + half, yc + half, cMine, dry);
+        // the outline: both sides, then round the far end
+        if (sy1 > sy0) {
+            q += rectPoly(ox, oy, -hw - ro, sy0, -hw + ro, sy1, cMine, dry);
+            q += rectPoly(ox, oy, hw - ro, sy0, hw + ro, sy1, cMine, dry);
+        }
+        if (hi > ls - ro && r > 0f) {
+            int n = endPolygon(hw, ls, r, pe);
+            // the polygon's path from (hw, ls) round to (−hw, ls): its vertices 1 … n − 1, then vertex 0
+            for (int v = 1; v < n; v++) {
+                int w = v + 1 < n ? v + 1 : 0;
+                q += segmentPoly(ox, oy, pe[2 * v], pe[2 * v + 1], pe[2 * w], pe[2 * w + 1], ro, lo, hi, cMine, dry);
             }
         }
-        float cap = Math.min(NoteShapes.LANE_MINE_CAP, tail);
-        if (tail - cap <= hi) q += rectPoly(ox, oy, -hw, tail - cap, hw, tail, cMine, dry);
         return q;
+    }
+
+    /**
+     * Writes the round far end of a LANE MINE column into {@code p} (counter-clockwise, y up): the row {@code ls} it
+     * starts at across the full width, then each corner of radius {@code r} as two segments, to the far end
+     * {@code ls + r}.
+     *
+     * @return the vertex count (6)
+     */
+    private static int endPolygon(float hw, float ls, float r, float[] p) {
+        float d = r * (1f - 0.70710677f);
+        p[0] = -hw;
+        p[1] = ls;
+        p[2] = hw;
+        p[3] = ls;
+        p[4] = hw - d;
+        p[5] = ls + r - d;
+        p[6] = hw - r;
+        p[7] = ls + r;
+        p[8] = -hw + r;
+        p[9] = ls + r;
+        p[10] = -hw + d;
+        p[11] = ls + r - d;
+        return 6;
+    }
+
+    /**
+     * Clips the polygon in {@link #pa} ({@code n} vertices) to the four corner edges of the round far end in
+     * {@link #pe} ({@code ne} vertices, from {@link #endPolygon}; the half planes inside its edges 1 → 2, 2 → 3,
+     * 4 → 5 and 5 → 0), so a stripe stops at the rounded corners. Leaves the result in {@link #pa}.
+     *
+     * @return the vertex count
+     */
+    private int clipToEnd(int n, int ne) {
+        for (int e = 1; e < ne && n >= 3; e++) {
+            if (e == 3) continue; // the far end's straight edge: the stripes stop at y ≤ tail already
+            int f = e + 1 < ne ? e + 1 : 0;
+            float x0 = pe[2 * e];
+            float y0 = pe[2 * e + 1];
+            float dx = pe[2 * f] - x0;
+            float dy = pe[2 * f + 1] - y0;
+            // inside a counter-clockwise edge: dy·x − dx·y ≤ dy·x0 − dx·y0
+            n = clip(pa, n, pb, dy, -dx, dy * x0 - dx * y0);
+            System.arraycopy(pb, 0, pa, 0, 2 * n);
+        }
+        return n;
+    }
+
+    /**
+     * Emits a stroke {@code 2·half} wide along the local segment {@code (x0, y0) → (x1, y1)}, a little longer at both
+     * ends so that segments meet without a notch, cut to the rows {@code [lo, hi]} (see {@link #emitLocal}).
+     *
+     * @return quads submitted (or that would be)
+     */
+    private int segmentPoly(float ox, float oy, float x0, float y0, float x1, float y1, float half, float lo, float hi,
+                            float c, boolean dry) {
+        float dx = x1 - x0;
+        float dy = y1 - y0;
+        float len = (float) Math.sqrt(dx * dx + dy * dy);
+        if (!(len > 0f)) return 0;
+        dx /= len;
+        dy /= len;
+        float ex = dx * half * 0.5f;
+        float ey = dy * half * 0.5f;
+        float nx = -dy * half;
+        float ny = dx * half;
+        pb[0] = x0 - ex + nx;
+        pb[1] = y0 - ey + ny;
+        pb[2] = x0 - ex - nx;
+        pb[3] = y0 - ey - ny;
+        pb[4] = x1 + ex - nx;
+        pb[5] = y1 + ey - ny;
+        pb[6] = x1 + ex + nx;
+        pb[7] = y1 + ey + ny;
+        int n = clip(pb, 4, pa, 0f, -1f, -lo);
+        n = clip(pa, n, pb, 0f, 1f, hi);
+        return emitLocal(pb, n, ox, oy, c, dry);
     }
 
     /**
@@ -1901,7 +2542,10 @@ final class NoteRenderer {
         if (glows > k) gpad[k] = HL_INSET + HL_BAND;
     }
 
-    /** The sync frame of a key or TIDE STREAM head: white on the ground line, deep gold on the sky line. */
+    /**
+     * The sync frame of a DROP, STREAM or TIDE STREAM head: white on the ground line, deep gold on the sky line (a
+     * DRAG has {@link #dragLight} instead).
+     */
     private void syncFrame(float cx, float cy, float w, float h, float rot, boolean sky, float a) {
         if (sky) frameGlow(cx, cy, w, h, rot, Theme.SYNC_HIGHLIGHT_SKY, HL_SKY_BAND_A * a, HL_SKY_HALO_A * a);
         else frameGlow(cx, cy, w, h, rot, Theme.SYNC_HIGHLIGHT, HL_BAND_A * a, HL_HALO_A * a);
@@ -2150,6 +2794,7 @@ final class NoteRenderer {
         bendT = VeilRenderer.loopTime(now);
         glitchQuads = 0;
         glitchedNotes = 0;
+        strokes.draw(e, bendT, false); // the custom lines under every note
         collectSkyBands(e, beat);
         for (int i = end - 1; i >= start; i--) {
             Note n = notes[i];
@@ -2162,7 +2807,7 @@ final class NoteRenderer {
         int frame = (int) (now * 60f);
         for (int i = end - 1; i >= start; i--) {
             Note n = notes[i];
-            if (!n.isLaneMine() || entry.drawFrom(i) > beat) continue;
+            if (!n.isLaneMine() || n.floats() || entry.drawFrom(i) > beat) continue; // floating: FloatNotes
             boolean g = glitchBegin(e, i, n, beat);
             laneMineBody(e, i, n, beat, frame, false);
             if (g) glitchEnd();
@@ -2502,6 +3147,10 @@ final class NoteRenderer {
             boolean band = g == G_BAND;
             drawFrame(band ? discSlice : dotSlice, band ? discQuarter : dotQuarter, gx[k], gy[k], w * 0.5f,
                 h * 0.5f, gpad[k], grot[k], gcol[k]);
+            return;
+        }
+        if (g == G_DRAG) {
+            dragSkins(gx[k], gy[k], w, h, grot[k], gcol[k]);
             return;
         }
         TextureRegion r = g == G_NOTE ? ng : g == G_V ? gv : g == G_DISC ? disc : gd;

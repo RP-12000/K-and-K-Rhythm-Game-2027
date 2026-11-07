@@ -13,11 +13,11 @@ import org.kelvinizer.elements.NoteOrbit;
  * caller). {@link NoteRenderer} draws with these numbers and the tests check them directly.
  * <ul>
  *   <li><b>Sky and ground bodies at the same time</b> (DESIGN §21.7; Kelvin kept the redraw on
- *       2026-10-12 04:44, 「长条改的也很自然，先保留吧我再看看」). Lane STREAM ribbons: sky 56 % of
- *       the lane, ground 82 %, sky edges 6 px, fill fading head → tail, a 3 px tail cap in the
- *       ribbon's own colour. Where a ground ribbon overlaps a sky ribbon of the same lane, the
- *       ground fill leaves a hole under the sky ribbon, {@link #SKY_HOLE_PAD} wider on each side;
- *       the ground edges stay. TIDE STREAM bands: the sky band is inset
+ *       2026-10-12 04:44, 「长条改的也很自然，先保留吧我再看看」). STREAM bodies (the 2026-11-05 look): sky
+ *       56 % of the old lane width, ground 82 %, from the head's middle, fill fading head → far end, a round far
+ *       end, a soft glow, a white rim and light bars flowing toward the head. Where a ground body overlaps a sky
+ *       body of the same lane, the ground fill leaves a hole under the sky body, {@link #SKY_HOLE_PAD} wider on
+ *       each side; the ground rims stay. TIDE STREAM bands: the sky band is inset
  *       {@link #SKY_TIDE_STREAM_INSET} from each window end; in the rows where a ground band
  *       overlaps a sky band the ground band draws nothing under it (with an inset, only its side
  *       strips and, when they hold them, its rails). Tail caps always draw. The two constants
@@ -33,8 +33,9 @@ import org.kelvinizer.elements.NoteOrbit;
  *       MINE or LANE MINE head (16:07, 「不是1个珍珠而是3个珍珠并排」); a sky TIDE's pearls turn gold; a ground TIDE wave carries a
  *       row of gold pearls, large and small in turn like the sky thread's, halfway up the wave (a TIDE STREAM
  *       head, drawn as its line's TIDE, alike).</li>
- *   <li><b>LANE MINE column</b> (DESIGN §20.2): inset, hazard stripes drifting toward the line,
- *       studs, and the gap it leaves around the other judgement line (Kelvin 2026-10-12 02:58).</li>
+ *   <li><b>LANE MINE column</b> (DESIGN §20.2; the 2026-11-05 look): inset, a deep-red fill with hazard stripes
+ *       drifting toward the line, a red outline with a round far end, a round head bar on the line, and the gap
+ *       it leaves around the other judgement line (Kelvin 2026-10-12 02:58).</li>
  * </ul>
  */
 public final class NoteShapes {
@@ -253,30 +254,39 @@ public final class NoteShapes {
     }
 
     // ================================================================== §21.7 lane STREAM ribbons
-    /** Ground STREAM ribbon width, share of the lane. */
+    /** Ground STREAM body width, share of the note's width (the old lane). */
     public static final float GROUND_RIBBON = 0.82f;
-    /** Sky STREAM ribbon width, share of the lane (DESIGN §21.7). */
+    /** Sky STREAM body width, share of the note's width (DESIGN §21.7). */
     public static final float SKY_RIBBON = 0.56f;
-    /** Sky ribbon edge width (DESIGN §21.7). */
-    public static final float SKY_RIBBON_EDGE = 6f;
-    /** Largest ground ribbon edge width (a quarter of the ribbon when narrower). */
-    public static final float GROUND_RIBBON_EDGE = 8f;
-    /** Ribbon fill opacity at the head (DESIGN §21.7: .42 → .16). */
-    public static final float RIBBON_HEAD_A = 0.42f;
-    /** Ribbon fill opacity at the tail end. */
-    public static final float RIBBON_TAIL_A = 0.16f;
-    /** Ribbon fill opacity at the head while held (.62 → .30). */
-    public static final float RIBBON_HELD_HEAD_A = 0.62f;
-    /** Ribbon fill opacity at the tail end while held. */
-    public static final float RIBBON_HELD_TAIL_A = 0.30f;
-    /** Head opacity a broken or missed STREAM's ribbon fades to (DESIGN §5.8: grey at α .30). */
+    /**
+     * Body fill opacity at the head (Kelvin 2026-11-05, the mock-up's hold: a fill of α .46 → .14 over its own glow
+     * of α .45, which reads as .57 → .19).
+     */
+    public static final float RIBBON_HEAD_A = 0.57f;
+    /** Body fill opacity at the far end. */
+    public static final float RIBBON_TAIL_A = 0.19f;
+    /** Body fill opacity at the head while held (the mock-up's .62 → .26 over its glow). */
+    public static final float RIBBON_HELD_HEAD_A = 0.73f;
+    /** Body fill opacity at the far end while held. */
+    public static final float RIBBON_HELD_TAIL_A = 0.35f;
+    /** Head opacity a broken or missed STREAM's body fades to (DESIGN §5.8: grey at α .30). */
     public static final float RIBBON_BROKEN_HEAD_A = 0.30f;
-    /** Tail opacity a broken or missed STREAM's ribbon fades to. */
+    /** Far-end opacity a broken or missed STREAM's body fades to. */
     public static final float RIBBON_BROKEN_TAIL_A = 0.12f;
-    /** Ribbon tail cap thickness, in the ribbon's own colour. */
-    public static final float RIBBON_CAP = 3f;
-    /** Ribbon tail cap opacity. */
-    public static final float RIBBON_CAP_A = 0.8f;
+    /** Length of a body's round far end (shorter bodies are all round end). */
+    public static final float RIBBON_END_LEN = 46f;
+    /** Opacity of the glow outside a body as a share of the fill's there (the mock-up's α .45 shadow). */
+    public static final float RIBBON_GLOW_K = 0.35f;
+    /** Opacity of the white rim round a body, and while held. */
+    public static final float RIBBON_RIM_A = 0.75f, RIBBON_RIM_HELD_A = 0.95f;
+    /** Opacity of the light bars flowing inside a body, and while held. */
+    public static final float RIBBON_BAR_A = 0.16f, RIBBON_BAR_HELD_A = 0.30f;
+    /** Half width of a light bar as a share of the body's half width (62 % of the body). */
+    public static final float RIBBON_BAR_W = 0.62f;
+    /** Light bar height, the bars' spacing along the body and their flow toward the head (units per song second). */
+    public static final float BAR_H = 7f, RIBBON_BAR_GAP = 70f, RIBBON_BAR_SPEED = 420f;
+    /** Length of the bar in the light-bar sprite (its units). */
+    public static final float BAR_SPRITE_W = 100f;
     /**
      * Extra knock-out beside an overlapping sky ribbon, on each side of it. 0 = the redraw Kelvin
      * kept on 2026-10-12 04:44 (the hole is exactly the sky ribbon); the first proposal had
@@ -398,26 +408,33 @@ public final class NoteShapes {
     public static final int ROW_PEARL_QUADS = 3;
 
     // ================================================================== LANE MINE column
-    /** Column inset from each lane edge (DESIGN §20.2). */
+    /** Column inset from each edge of the note's width (the old lane; DESIGN §20.2): 228 wide in a 240 one. */
     public static final float LANE_MINE_INSET = 6f;
-    /** Column fill ({@code mineCore}) opacity. */
-    public static final float LANE_MINE_FILL_A = 0.85f;
-    /** Hazard stripe period, measured across the stripes (45°). */
-    public static final float STRIPE_PERIOD = 24f;
+    /**
+     * Column fill ({@code Theme.LONG_MINE_FILL}) opacity (Kelvin 2026-11-05, the mock-up's long mine: a fill of
+     * α .62 over its own red glow).
+     */
+    public static final float LANE_MINE_FILL_A = 0.74f;
+    /** Hazard stripe period, measured across the stripes (45°): 38 along the column. */
+    public static final float STRIPE_PERIOD = 26.870058f;
     /** Hazard stripe width, measured across the stripe. */
-    public static final float STRIPE_WIDTH = 10f;
+    public static final float STRIPE_WIDTH = 12f;
     /** Hazard stripe ({@code mine}) opacity. */
-    public static final float STRIPE_A = 0.35f;
+    public static final float STRIPE_A = 0.32f;
     /** Stripe drift toward the line, units per song second along the column. */
-    public static final float STRIPE_SPEED = 40f;
-    /** Rim width on both long sides. */
+    public static final float STRIPE_SPEED = 60f;
+    /** Width of the red outline round the column (centred on its edge). */
     public static final float LANE_MINE_RIM = 3f;
-    /** Stud side. */
-    public static final float STUD = 6f;
-    /** Stud spacing along each rim. */
-    public static final float STUD_STEP = 64f;
-    /** Tail cap thickness. */
-    public static final float LANE_MINE_CAP = 3f;
+    /** Corner radius of the column's far end. */
+    public static final float LANE_MINE_END_R = 12f;
+    /** Height of the head bar at note size 1 (its ends are round). */
+    public static final float LANE_MINE_HEAD_H = 12f;
+    /**
+     * The red glow beside the column: two bands outside the outline, to {@link #LANE_MINE_GLOW_MID} and
+     * {@link #LANE_MINE_GLOW_OUT} past its edge, at these opacities (the mock-up's soft glow, stepped).
+     */
+    public static final float LANE_MINE_GLOW_MID = 4f, LANE_MINE_GLOW_OUT = 8f, LANE_MINE_GLOW_A1 = 0.07f,
+        LANE_MINE_GLOW_A2 = 0.02f;
     /** The column's fade after its end (ms, DESIGN §20.2). */
     public static final float LANE_MINE_END_FADE_MS = 120f;
     /** Ramp-in of the blocking veil and line glow at the start of the block (ms). */
@@ -441,22 +458,67 @@ public final class NoteShapes {
 
     // ================================================================== ribbons and bands
 
-    /** @return the ribbon width of a STREAM in a lane {@code laneWidth} wide (sky 56 %, ground 82 %). */
+    /** @return the body width of a STREAM {@code laneWidth} wide (sky 56 %, ground 82 %). */
     public static float ribbonWidth(float laneWidth, boolean sky) {
         return laneWidth * (sky ? SKY_RIBBON : GROUND_RIBBON);
     }
 
-    /** @return the edge width of a ribbon {@code rw} wide (sky 6, ground 8; never over a quarter of it). */
-    public static float ribbonEdge(float rw, boolean sky) {
-        return Math.min(sky ? SKY_RIBBON_EDGE : GROUND_RIBBON_EDGE, rw * 0.25f);
+    /**
+     * @return half width of a STREAM body's round far end {@code y} into it ({@code cap} long, the body {@code hr}
+     *         half wide): the mock-up's quadratic sides from the straight body to the tip, {@code hr} at 0, 0 at
+     *         {@code cap}
+     */
+    public static float ribbonEndHalfWidth(float y, float hr, float cap) {
+        if (y <= 0f) return hr;
+        if (y >= cap) return 0f;
+        float u = (cap - y) / cap;
+        float s = (float) Math.sqrt(u);
+        return hr * (2f * s - u);
     }
 
-    /** @return the ribbon fill opacity at the head (held or not). */
+    /** Rows of a sky body's round far end where a ground knock-out bends, {@link #HOLE_CURVE_ROWS} + 1 of them. */
+    public static final int HOLE_CURVE_ROWS = 4;
+
+    /**
+     * @return how far from its tip, as a share of the round end's length, the ground knock-out under a sky body bends
+     *         for the {@code s}-th time ({@code 0 … HOLE_CURVE_ROWS}): spaced as the square of {@code s}, so the
+     *         straight pieces between them stay close to the curve, which is steepest at the tip
+     */
+    public static float holeCurveRow(int s) {
+        float f = (float) s / HOLE_CURVE_ROWS;
+        return f * f;
+    }
+
+    /**
+     * @return half width, at row {@code row} of a ground STREAM body, of its knock-out under a sky body {@code skyHr}
+     *         half wide whose round far end ({@code cap} long, 0 for a square end) has its tip at row {@code tip} and
+     *         widens toward rows {@code dir} (±1): {@code half} (the sky body's half width plus the pad, see
+     *         {@link #holeHalf}) where the sky body is straight, its round end's half width plus the pad toward the
+     *         tip, the pad alone at it
+     */
+    public static float holeHalfAt(float row, float half, float skyHr, float tip, float dir, float cap) {
+        if (!(cap > 0f)) return half;
+        float d = (row - tip) * dir;
+        if (d >= cap) return half;
+        return half - skyHr + ribbonEndHalfWidth(cap - Math.max(0f, d), skyHr, cap);
+    }
+
+    /**
+     * @return how far the light bars in a STREAM body have flowed toward its head at song second {@code seconds},
+     *         in {@code [0, RIBBON_BAR_GAP)}: the bars sit that far nearer the head than their places counted from
+     *         the far end, and stand still with the song on pause
+     */
+    public static float barOffset(float seconds) {
+        float o = (RIBBON_BAR_SPEED * seconds) % RIBBON_BAR_GAP;
+        return o < 0f ? o + RIBBON_BAR_GAP : o;
+    }
+
+    /** @return the body fill opacity at the head (held or not). */
     public static float ribbonHeadAlpha(boolean held) {
         return held ? RIBBON_HELD_HEAD_A : RIBBON_HEAD_A;
     }
 
-    /** @return the ribbon fill opacity at the tail end (held or not). */
+    /** @return the body fill opacity at the far end (held or not). */
     public static float ribbonTailAlpha(boolean held) {
         return held ? RIBBON_HELD_TAIL_A : RIBBON_TAIL_A;
     }
@@ -761,7 +823,7 @@ public final class NoteShapes {
         return o < 0f ? o + p : o;
     }
 
-    /** @return half width of a LANE MINE column in a lane {@code laneWidth} wide (inset 6 each side). */
+    /** @return half width of a LANE MINE column {@code laneWidth} wide (inset 6 each side). */
     public static float laneMineHalfWidth(float laneWidth) {
         return laneWidth * 0.5f - LANE_MINE_INSET;
     }

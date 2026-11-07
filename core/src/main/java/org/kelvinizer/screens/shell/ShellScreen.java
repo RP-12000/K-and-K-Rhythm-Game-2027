@@ -18,7 +18,6 @@ import org.kelvinizer.ui.Haptics;
 import org.kelvinizer.ui.Icons;
 import org.kelvinizer.ui.KkScreen;
 import org.kelvinizer.ui.Lang;
-import org.kelvinizer.ui.TextField;
 import org.kelvinizer.ui.Theme;
 import org.kelvinizer.ui.Ui;
 
@@ -179,11 +178,6 @@ public abstract class ShellScreen extends KkScreen<Main> {
     /** True while a modal is open (not counting its exit animation). */
     public boolean isModalOpen() {
         return modal != null && modal.isActive();
-    }
-
-    /** Registers a text field of this screen or of one of its modals for keyboard routing. */
-    public void registerField(TextField field) {
-        registerTextField(field);
     }
 
     // ------------------------------------------------------------------ helpers
@@ -442,31 +436,6 @@ public abstract class ShellScreen extends KkScreen<Main> {
         contentCancel(pointer);
     }
 
-    @Override
-    protected final boolean onMouseMoved(float x, float y) {
-        if (modal != null && modal.isVisible()) {
-            modal.mouseMoved(x, y);
-            return true;
-        }
-        widgets.mouseMoved(x, y);
-        contentMouseMoved(x, y);
-        return false;
-    }
-
-    @Override
-    protected final boolean onScrolled(float amountX, float amountY) {
-        if (modal != null && modal.isVisible()) return modal.scrolled(amountY);
-        if (contentScrolled(amountY)) return true;
-        ScrollArea s = activeScroll();
-        return s != null && s.scrolled(amountY);
-    }
-
-    @Override
-    protected final boolean onKeyDown(int keycode) {
-        if (modal != null && modal.isVisible()) return true;
-        return contentKeyDown(keycode);
-    }
-
     // ------------------------------------------------------------------ hooks
     /** Whether showing this screen starts the MENU music slot (Calibration does not). */
     protected boolean playsMenuMusic() {
@@ -518,17 +487,4 @@ public abstract class ShellScreen extends KkScreen<Main> {
     protected void contentCancel(int pointer) {
     }
 
-    /** Desktop hover over the content. */
-    protected void contentMouseMoved(float x, float y) {
-    }
-
-    /** Mouse wheel over the content; true when consumed. */
-    protected boolean contentScrolled(float amountY) {
-        return false;
-    }
-
-    /** Key other than BACK / ESC while no modal is open. */
-    protected boolean contentKeyDown(int keycode) {
-        return false;
-    }
 }

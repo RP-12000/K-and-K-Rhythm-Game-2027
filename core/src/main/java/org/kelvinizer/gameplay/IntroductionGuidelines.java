@@ -13,7 +13,8 @@ import java.util.List;
  * 教学关卡的全部定时字幕，英文和中文各一套，按语言设置选用；拍点和位置按 Kelvin 手写的谱面（2026-10-17）手工排好。
  * 最后一潜之后的四句对白暂时是空的占位（2026-10-21），以后补新文案；结尾的标题和游戏名一样是 K &amp; K。
  * The tutorial's timed captions (DESIGN §10.2, §17.3) for {@code Introduction/Surface.json}: 120 BPM,
- * {@code offsetMs} 27. The chart is hand-charted by Kelvin (2026-10-17, 102 notes); the old v3 generator
+ * {@code offsetMs} 27. The chart is hand-charted by Kelvin (2026-10-17, 102 notes; 96 since the TIDE-line lesson
+ * went, 2026-11-06); the old v3 generator
  * no longer owns it or this class. The captions are timed and placed by hand to the chart: a
  * centred caption is gone before notes appear, and a side or half-screen plate sits over lanes that stay free while it
  * shows. After changing the chart or a caption, check that no caption plate covers an unjudged
@@ -21,8 +22,9 @@ import java.util.List;
  *
  * <p>Verse 1 has no notes: the HUD tour (corner HUD; the pause label follows PAUSE INPUT), the judgements
  * with EARLY / LATE, and the two lines. Then one lesson per mechanic: ground DROPs and TIDEs centred before their
- * notes; sky DROPs, STREAMs, TIDE STREAMs, MINEs and LANE MINEs on plates beside them; and a TIDE held in mid-air as
- * a judgement line (DROPs land on it and jump to the line as they are judged, Kelvin 2026-10-16). The gold sync
+ * notes; sky DROPs, STREAMs, TIDE STREAMs, MINEs and LANE MINEs on plates beside them. The lesson on a TIDE held in
+ * mid-air as a judgement line (L12, Kelvin 2026-10-16) is out of the tutorial (Kelvin 2026-11-06 16:09: 「浪花当判定线
+ * 那一段就不要在新手教程里出现了」): its six hovering TIDEs and its captions went, its DROPs stay. The gold sync
  * pearls, the chorus TIDEs with their TIDE + DROP joints and the STREAMs under DROPs play without a caption.
  * Afterimages and moving notes are not mentioned any more (their outro plate MORE TO DISCOVER went on Kelvin
  * 2026-10-20, gallery p.26: 「删了」; Kelvin 2026-10-12: basics only). The requiem plays over the held TIDE STREAM pair
@@ -220,20 +222,14 @@ public final class IntroductionGuidelines {
 
         // L8b LANE MINEs: caption 190-200 (left-edge plate over lanes -4 / -3), lane mines ground -2 192-196 and sky +2
         // 196-200 with DROPs beside them
-        add("LANE MINES", "轨道水雷", LANE_MINE_HINT_START, 199.5f, 0.5f, 0.5f, 228f, 793f, 40f, Style.HEADING,
+        add("LONG MINES", "长水雷", LANE_MINE_HINT_START, 199.5f, 0.5f, 0.5f, 228f, 793f, 40f, Style.HEADING,
             Anchor.SAFE_LEFT);
-        add("THEY CLOSE\nA WHOLE LANE.\nSTAY OUT\nWHILE IT'S RED",
-            "它会封住整条轨道，\n变红的时候别碰", 190f, 199.5f, 0.5f, 0.5f, 228f, 600f, 30f, Style.BODY,
+        add("THEY SEAL\nTHEIR SPOT.\nSTAY OUT\nWHILE IT'S RED",
+            "它会一直封住这里，\n变红的时候别碰", 190f, 199.5f, 0.5f, 0.5f, 228f, 600f, 30f, Style.BODY,
             Anchor.SAFE_LEFT);
 
-        // L12 TIDE line: caption 200.5-214 (left plate over lanes -4..-2, above the sky TIDEs), notes 202-214: ground
-        // TIDEs hover 300 above the line and DROPs in lane +1 land on them, then sky TIDEs 300 under the sky line with
-        // DROPs in lane -1 (Kelvin 2026-10-16)
-        add("A TIDE CAN BE THE LINE",
-            "浪花也能当判定线", 200.5f, 213.5f, 0.5f, 0.5f, 376f, 996f, 40f, Style.HEADING, Anchor.SAFE_LEFT);
-        add("TAP AS NOTES LAND ON IT:\nTHEY JUMP TO THE LINE",
-            "音符碰到浪花时就点，\n它会瞬移到判定线上", 200.5f, 213.5f, 0.5f, 0.5f, 376f, 867f, 30f, Style.BODY,
-            Anchor.SAFE_LEFT);
+        // 200-215: plain DROPs, no caption (the TIDE-line lesson L12 is out of the tutorial, Kelvin 2026-11-06 16:09:
+        // 「浪花当判定线那一段就不要在新手教程里出现了」; its DROPs at 202-206 and 210-214 stay, falling to the line)
 
         // 224-237: dialogue plates, placeholders for new copy (2026-10-21): his over lanes -3..-1 (only the held
         // lane -2 STREAM passes under it), hers over lanes +2 / +3 (free 230-238)

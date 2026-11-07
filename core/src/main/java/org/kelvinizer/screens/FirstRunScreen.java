@@ -462,15 +462,4 @@ public class FirstRunScreen extends ShellScreen {
         audio.cancel();
     }
 
-    @Override
-    protected void contentMouseMoved(float x, float y) {
-        if (step == AUDIO) audio.mouseMoved(x, y);
-    }
-
-    @Override
-    protected boolean contentKeyDown(int keycode) {
-        if (step == AUDIO) return audio.keyDown(keycode);
-        if (step == HIT) return hit.keyDown(keycode);
-        return false;
-    }
 }

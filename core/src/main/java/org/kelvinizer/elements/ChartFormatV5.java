@@ -8,6 +8,8 @@ import com.fasterxml.jackson.core.PrettyPrinter;
 
 import java.io.IOException;
 import java.io.StringWriter;
+import java.math.BigDecimal;
+import java.math.MathContext;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
@@ -29,24 +31,37 @@ import static org.kelvinizer.elements.ChartMapper.*;
  */
 public final class ChartFormatV5 {
     static final int FORMAT = 5;
+    /**
+     * Format 6 (Kelvin 2026-11-05): no lanes; each note has its own x and x events, and every x (notes, orbit
+     * centres, veils, curtains) is from the screen's centre line. Read and written here.
+     */
+    static final int LANELESS = 6;
 
     private ChartFormatV5() {
     }
 
     /** @return true when the JSON object has a top-level {@code "format"} of 5 or more (false for unreadable JSON) */
     static boolean isV5(JsonFactory factory, byte[] json) {
+        return formatOf(factory, json) >= FORMAT;
+    }
+
+    /**
+     * @return the JSON object's top-level {@code "format"} (wherever it is among the keys), or 0 for none, a value
+     *         that is not a number, or unreadable JSON
+     */
+    static double formatOf(JsonFactory factory, byte[] json) {
         try (JsonParser p = factory.createParser(json)) {
-            if (p.nextToken() != JsonToken.START_OBJECT) return false;
+            if (p.nextToken() != JsonToken.START_OBJECT) return 0;
             while (p.nextToken() == JsonToken.FIELD_NAME) {
                 String name = p.currentName();
                 JsonToken v = p.nextToken();
-                if ("format".equals(name)) return v != null && v.isNumeric() && p.getDoubleValue() >= FORMAT;
+                if ("format".equals(name)) return v != null && v.isNumeric() ? p.getDoubleValue() : 0;
                 p.skipChildren();
             }
         } catch (IOException e) {
-            return false; // the old-format reader reports it
+            return 0; // the old-format reader reports it
         }
-        return false;
+        return 0;
     }
 
     // ------------------------------------------------------------------ reading
@@ -54,10 +69,11 @@ public final class ChartFormatV5 {
     /**
      * Reads a v5 chart (the parser is before its first token).
      *
-     * @param song  the song's values (null = none: the chart then has no BPM and fails to load)
-     * @param level the difficulty (the file name), or null
+     * @param song    the song's values (null = none: the chart then has no BPM and fails to load)
+     * @param level   the difficulty (the file name), or null
+     * @param centred format 6: orbit and veil x are from the screen's centre line (read into 1920-wide x)
      */
-    static RawChart parse(JsonParser p, SongInfo song, String level) throws IOException {
+    static RawChart parse(JsonParser p, SongInfo song, String level, boolean centred) throws IOException {
         if (p.nextToken() != JsonToken.START_OBJECT) throw new IOException("chart is not a JSON object");
         RawChart c = new RawChart();
         c.formatVersion = FORMAT;
@@ -74,9 +90,14 @@ public final class ChartFormatV5 {
                 case "laneCount": c.hasLaneCount = true; c.laneCount = intValue(p, v); break;
                 case "lanes": c.lanes = parseLanes(p, v); break;
                 case "lines": c.line = parseLines(p, v); break;
-                case "veils": c.veils = parseVeils(p, v); break;
-                case "curtains": c.curtains = parseVeils(p, v); break;
-                case "notes": parseNotes(p, v, c.notes); break;
+                case "veils": c.veils = parseVeils(p, v, centred); break;
+                case "curtains": c.curtains = parseVeils(p, v, centred); break;
+                // custom lines (自定义线条, CHART_FORMAT §13)
+                case "strokes": parseStrokes(p, v, (q, w) -> parseEvents(q, w, Events.TYPE.Opacity), c); break;
+                case "fixedLanes": c.fixedLanes = ChartMapper.parseFixedLanes(p, v); break;
+                // the retired bubble lines: counted for the load report (CHART_FORMAT §11)
+                case "bubbles": c.bubbles = countEntries(p, v); break;
+                case "notes": parseNotes(p, v, c.notes, centred); break;
                 case "song": {
                     // the song values of a chart away from its folder (backups, tests); song.json wins
                     SongInfo own = v == JsonToken.START_OBJECT ? SongInfo.read(p) : null;
@@ -88,6 +109,7 @@ public final class ChartFormatV5 {
             }
         }
         if (t != JsonToken.END_OBJECT) throw new IOException("truncated chart JSON");
+        if (c.formatVersion >= LANELESS) c.readerFormat = LANELESS;
         return c;
     }
 
@@ -137,7 +159,7 @@ public final class ChartFormatV5 {
                         // the end and final width may be left out (CHART_FORMAT_v4 §3.6)
                         float[] beats = {0f, Float.NaN}, values = {0f, Float.NaN};
                         l.hasInsert = true;
-                        l.insExponent = parseEvent(p, beats, values);
+                        l.insExponent = parseEvent(p, beats, values, false);
                         l.insStart = beats[0];
                         l.insEnd = beats[1];
                         l.insInitial = values[0];
@@ -151,7 +173,7 @@ public final class ChartFormatV5 {
                         }
                         float[] beats = {0f, Float.NaN}, values = {Float.NaN, 0f};
                         l.hasDelete = true;
-                        l.delExponent = parseEvent(p, beats, values);
+                        l.delExponent = parseEvent(p, beats, values, false);
                         l.delStart = beats[0];
                         l.delEnd = beats[1];
                         l.delInitial = values[0];
@@ -184,13 +206,16 @@ public final class ChartFormatV5 {
                 case "scaleEvents": l.laneScaleEvents = parseEvents(p, fv, Events.TYPE.LaneScale); break;
                 case "camera": l.hasCamera = true; l.camera = floatValue(p, fv, Float.NaN); break;
                 case "cameraEvents": l.cameraEvents = parseEvents(p, fv, Events.TYPE.CameraFrame); break;
+                case "upperLayers": l.upperLayers = parseEvents(p, fv, Events.TYPE.JudgementUp); break;
+                case "lowerLayers": l.lowerLayers = parseEvents(p, fv, Events.TYPE.JudgementDown); break;
+                case "cameraLayers": l.cameraLayers = parseEvents(p, fv, Events.TYPE.CameraFrame); break;
                 default: p.skipChildren(); break;
             }
         }
         return l;
     }
 
-    private static void parseNotes(JsonParser p, JsonToken v, List<RawNote> out) throws IOException {
+    private static void parseNotes(JsonParser p, JsonToken v, List<RawNote> out, boolean centred) throws IOException {
         if (v != JsonToken.START_ARRAY) {
             p.skipChildren();
             return;
@@ -223,13 +248,18 @@ public final class ChartFormatV5 {
                     case "waveSpeed": n.waveSpeed = floatValue(p, fv, 0f); break;
                     case "offsetX": n.offsetX = floatValue(p, fv, 0f); break;
                     case "offsetXEvents": n.offsetXEvents = parseEvents(p, fv, null); break;
+                    case "x": n.x = floatValue(p, fv, Float.NaN); break;
+                    case "xEvents": n.xEvents = parseEvents(p, fv, null); break;
                     case "positionEvents": n.movement = parseEvents(p, fv, Events.TYPE.Movement); break;
                     case "rotationEvents": n.rotation = parseEvents(p, fv, Events.TYPE.Rotation); break;
                     case "opacityEvents": n.disappear = parseEvents(p, fv, Events.TYPE.Opacity); break;
                     case "heightEvents": n.heights = parseEvents(p, fv, Events.TYPE.Height); break;
+                    case "xLayers": n.xLayers = parseEvents(p, fv, null); break;
+                    case "positionLayers": n.positionLayers = parseEvents(p, fv, Events.TYPE.Movement); break;
+                    case "rotationLayers": n.rotationLayers = parseEvents(p, fv, Events.TYPE.Rotation); break;
                     case "pivot": parsePivot(p, fv, n); break;
-                    case "orbit": parseOrbit(p, fv, n); break;
-                    case "orbitXEvents": n.orbitXEvents = parseEvents(p, fv, null); break;
+                    case "orbit": parseOrbit(p, fv, n, centred); break;
+                    case "orbitXEvents": n.orbitXEvents = parseEvents(p, fv, null, centred); break;
                     case "orbitYEvents": n.orbitYEvents = parseEvents(p, fv, null); break;
                     case "orbitRadius": n.orbitRadius = floatValue(p, fv, Float.NaN); break;
                     case "orbitRadiusEvents": n.orbitRadiusEvents = parseEvents(p, fv, null); break;
@@ -238,6 +268,15 @@ public final class ChartFormatV5 {
                     case "orbitConflict": n.orbitConflict = orbitConflictOf(text(p, fv)); break;
                     case "orbitRigid": n.orbitRigid = flag(p, fv); break;
                     case "fake": n.fake = flag(p, fv); break;
+                    case "bubble": n.bubble = idText(p, fv) != null; break;
+                    // a floating note (悬浮键, CHART_FORMAT §11): x from the screen's centre line in every format
+                    case "float": n.floating = flag(p, fv); break;
+                    case "y": n.y = floatValue(p, fv, Float.NaN); break;
+                    case "size": n.size = floatValue(p, fv, Float.NaN); break;
+                    case "yEvents": n.yEvents = parseEvents(p, fv, null); break;
+                    case "sizeEvents": n.sizeEvents = parseEvents(p, fv, null); break;
+                    case "fillEvents": n.fillEvents = parseEvents(p, fv, null); break;
+                    case "chain": n.chain = idText(p, fv); break;
                     case "trails": parseTrail(p, fv, n); break;
                     case "glitches": parseGlitch(p, fv, n); break;
                     case "distortions": parseDistortion(p, fv, n); break;
@@ -249,7 +288,7 @@ public final class ChartFormatV5 {
     }
 
     /** Reads {@code veils}: an array of objects; anything else in it becomes a dropped entry. */
-    private static List<RawVeil> parseVeils(JsonParser p, JsonToken v) throws IOException {
+    private static List<RawVeil> parseVeils(JsonParser p, JsonToken v, boolean centred) throws IOException {
         List<RawVeil> out = new ArrayList<>();
         if (v != JsonToken.START_ARRAY) {
             if (v != JsonToken.VALUE_NULL) {
@@ -263,7 +302,7 @@ public final class ChartFormatV5 {
         JsonToken t;
         while ((t = p.nextToken()) != JsonToken.END_ARRAY && t != null) {
             if (t == JsonToken.START_OBJECT) {
-                out.add(parseVeil(p));
+                out.add(parseVeil(p, centred));
             } else {
                 p.skipChildren();
                 RawVeil bad = new RawVeil();
@@ -275,7 +314,7 @@ public final class ChartFormatV5 {
     }
 
     /** Reads one veil object (the parser is on its START_OBJECT); marks values that need sanitising. */
-    private static RawVeil parseVeil(JsonParser p) throws IOException {
+    private static RawVeil parseVeil(JsonParser p, boolean centred) throws IOException {
         RawVeil r = new RawVeil();
         while (p.nextToken() == JsonToken.FIELD_NAME) {
             String name = p.currentName();
@@ -293,7 +332,10 @@ public final class ChartFormatV5 {
                     r.fixed |= !(r.radius >= Veil.MIN_SIZE && r.radius <= Veil.MAX_SIZE);
                     break;
                 case "points": r.points = parseVeilPoints(p, fv, r); break;
-                case "x": r.x = floatValue(p, fv, Float.NaN); r.fixed |= bad(r.x); break;
+                case "x":
+                    r.x = centred ? absoluteX(doubleValue(p, fv, Double.NaN)) : floatValue(p, fv, Float.NaN);
+                    r.fixed |= bad(r.x);
+                    break;
                 case "y": r.y = floatValue(p, fv, Float.NaN); r.fixed |= bad(r.y); break;
                 case "rotation": r.rotation = floatValue(p, fv, Float.NaN); r.fixed |= bad(r.rotation); break;
                 case "opacity":
@@ -308,7 +350,7 @@ public final class ChartFormatV5 {
                     r.endTime = floatValue(p, fv, Float.NaN);
                     r.fixed |= bad(r.endTime) && !isNull;
                     break;
-                case "xEvents": r.xEvents = parseEvents(p, fv, null); break;
+                case "xEvents": r.xEvents = parseEvents(p, fv, null, centred); break;
                 case "yEvents": r.yEvents = parseEvents(p, fv, null); break;
                 case "rotationEvents": r.rotationEvents = parseEvents(p, fv, Events.TYPE.Rotation); break;
                 case "opacityEvents": r.opacityEvents = parseEvents(p, fv, Events.TYPE.Opacity); break;
@@ -340,6 +382,12 @@ public final class ChartFormatV5 {
 
     /** Reads an event list; entries that are not objects are skipped. */
     private static List<Events> parseEvents(JsonParser p, JsonToken v, Events.TYPE type) throws IOException {
+        return parseEvents(p, v, type, false);
+    }
+
+    /** @param centred the values are format v6 x from the screen's centre line (read into 1920-wide x) */
+    private static List<Events> parseEvents(JsonParser p, JsonToken v, Events.TYPE type, boolean centred)
+        throws IOException {
         if (v != JsonToken.START_ARRAY) {
             p.skipChildren();
             return null;
@@ -352,7 +400,7 @@ public final class ChartFormatV5 {
                 continue;
             }
             float[] beats = {0f, 0f}, values = {0f, 0f};
-            float ease = parseEvent(p, beats, values);
+            float ease = parseEvent(p, beats, values, centred);
             out.add(new Events(type, beats[0], beats[1], values[0], values[1], ease));
         }
         return out;
@@ -364,14 +412,14 @@ public final class ChartFormatV5 {
      *
      * @return its {@code ease} (1 when left out)
      */
-    private static float parseEvent(JsonParser p, float[] beats, float[] values) throws IOException {
+    private static float parseEvent(JsonParser p, float[] beats, float[] values, boolean centred) throws IOException {
         float ease = 1f;
         while (p.nextToken() == JsonToken.FIELD_NAME) {
             String name = p.currentName();
             JsonToken fv = p.nextToken();
             switch (name) {
-                case "beats": pair(p, fv, beats); break;
-                case "values": pair(p, fv, values); break;
+                case "beats": pair(p, fv, beats, false); break;
+                case "values": pair(p, fv, values, centred); break;
                 case "ease": ease = floatValue(p, fv, 1f); break;
                 default: p.skipChildren(); break;
             }
@@ -379,8 +427,11 @@ public final class ChartFormatV5 {
         return ease;
     }
 
-    /** Reads up to two numbers of an array into {@code out}; anything else leaves {@code out} as it was. */
-    private static void pair(JsonParser p, JsonToken v, float[] out) throws IOException {
+    /**
+     * Reads up to two numbers of an array into {@code out}; anything else leaves {@code out} as it was.
+     * {@code centred}: they are format v6 x from the screen's centre line ({@link ChartMapper#absoluteX}).
+     */
+    private static void pair(JsonParser p, JsonToken v, float[] out, boolean centred) throws IOException {
         if (v != JsonToken.START_ARRAY) {
             p.skipChildren();
             return;
@@ -388,7 +439,7 @@ public final class ChartFormatV5 {
         int k = 0;
         JsonToken t;
         while ((t = p.nextToken()) != JsonToken.END_ARRAY && t != null) {
-            float f = floatValue(p, t, Float.NaN);
+            float f = centred ? absoluteX(doubleValue(p, t, Double.NaN)) : floatValue(p, t, Float.NaN);
             if (k < 2 && !Float.isNaN(f)) out[k] = f;
             k++;
         }
@@ -409,12 +460,22 @@ public final class ChartFormatV5 {
 
     /**
      * @param withSong also write the song values as a {@code "song"} object, for a chart kept away from its folder
-     * @return {@code chart} as v5 JSON text
+     * @return {@code chart} as JSON text: format 6 for a {@link Chart#laneless()} chart, else format 5
      */
     public static String toJson(Chart chart, EditorData extra, boolean withSong) {
+        return toJson(chart, extra, withSong, chart.laneless());
+    }
+
+    /**
+     * @param withSong also write the song values as a {@code "song"} object, for a chart kept away from its folder
+     * @param laneless write format 6: every tap, hold and mine with its own x ({@link Note#x()}, filled from the
+     *                 lanes for a lane chart), no lanes, every x from the screen's centre line
+     * @return {@code chart} as JSON text
+     */
+    public static String toJson(Chart chart, EditorData extra, boolean withSong, boolean laneless) {
         StringWriter sw = new StringWriter(1 << 16);
         try {
-            write(chart, ChartMapper.FACTORY.createGenerator(sw), extra, withSong);
+            write(chart, ChartMapper.FACTORY.createGenerator(sw), extra, withSong, laneless);
         } catch (IOException e) {
             throw new IllegalStateException(e); // StringWriter does not throw
         }
@@ -422,15 +483,17 @@ public final class ChartFormatV5 {
     }
 
     /**
-     * Writes {@code chart} as v5 JSON and flushes {@code g}.
+     * Writes {@code chart} as v5 (or v6) JSON and flushes {@code g}.
      *
      * @param withSong also write the song values as a {@code "song"} object (in a song folder they belong in
      *                 {@code song.json}: {@link SongInfo#mergeInto})
+     * @param laneless format 6 ({@link #toJson(Chart, EditorData, boolean, boolean)})
      */
-    static void write(Chart chart, JsonGenerator g, EditorData extra, boolean withSong) throws IOException {
+    static void write(Chart chart, JsonGenerator g, EditorData extra, boolean withSong, boolean laneless)
+        throws IOException {
         g.setPrettyPrinter(new Layout());
         g.writeStartObject();
-        g.writeNumberField("format", FORMAT);
+        g.writeNumberField("format", laneless ? LANELESS : FORMAT);
         if (chart.charter() != null && !chart.charter().isEmpty()) g.writeStringField("charter", chart.charter());
         String constant = chart.chartConstant();
         if (constant != null) {
@@ -438,29 +501,49 @@ public final class ChartFormatV5 {
             if (JSON_NUMBER.matcher(constant).matches()) g.writeNumber(constant);
             else g.writeString(constant);
         }
-        if (!chart.unlimitedLanes()) g.writeNumberField("laneCount", chart.laneLimit());
-        List<Lane> lanes = new ArrayList<>();
-        for (Lane lane : chart.lanes()) {
-            if (!lane.implicit()) lanes.add(lane); // implicit lanes are added by the loader, not authored
+        if (!laneless) {
+            if (!chart.unlimitedLanes()) g.writeNumberField("laneCount", chart.laneLimit());
+            List<Lane> lanes = new ArrayList<>();
+            for (Lane lane : chart.lanes()) {
+                if (!lane.implicit()) lanes.add(lane); // implicit lanes are added by the loader, not authored
+            }
+            if (!defaultLanes(lanes)) {
+                g.writeArrayFieldStart("lanes");
+                for (Lane lane : lanes) writeLane(g, lane, extra);
+                g.writeEndArray();
+            }
         }
-        if (!defaultLanes(lanes)) {
-            g.writeArrayFieldStart("lanes");
-            for (Lane lane : lanes) writeLane(g, lane, extra);
+        float[] laneBeats = chart.fixedLaneBeats();
+        if (laneBeats.length > 0) {
+            // 定轨 / 无轨 sections (CHART_FORMAT §12), one per line
+            int[] laneCounts = chart.fixedLaneCounts();
+            g.writeArrayFieldStart("fixedLanes");
+            for (int i = 0; i < laneBeats.length; i++) {
+                g.writeStartObject();
+                numField(g, "beat", laneBeats[i]);
+                g.writeNumberField("count", laneCounts[i]);
+                g.writeEndObject();
+            }
             g.writeEndArray();
         }
         writeLines(g, chart.lineEvents(), extra);
         if (chart.veils().length > 0) {
             g.writeArrayFieldStart("veils");
-            for (Veil v : chart.veils()) writeVeil(g, v, false, extra);
+            for (Veil v : chart.veils()) writeVeil(g, v, false, extra, laneless);
             g.writeEndArray();
         }
         if (chart.curtains().length > 0) {
             g.writeArrayFieldStart("curtains");
-            for (Veil v : chart.curtains()) writeVeil(g, v, true, extra);
+            for (Veil v : chart.curtains()) writeVeil(g, v, true, extra, laneless);
+            g.writeEndArray();
+        }
+        if (chart.strokes().length > 0) {
+            g.writeArrayFieldStart("strokes");
+            for (Stroke s : chart.strokes()) writeStroke(g, s, extra);
             g.writeEndArray();
         }
         g.writeArrayFieldStart("notes");
-        for (Note n : chart.notes()) writeNote(g, n, extra);
+        for (Note n : chart.notes()) writeNote(g, n, extra, laneless);
         g.writeEndArray();
         if (withSong) {
             g.writeFieldName("song");
@@ -511,7 +594,8 @@ public final class ChartFormatV5 {
     private static void writeLines(JsonGenerator g, JudgementLine l, EditorData extra) throws IOException {
         if (l.upperBase() == JudgementLine.DEFAULT_UPPER && l.lowerBase() == JudgementLine.DEFAULT_LOWER
             && l.upperEvents().isEmpty() && l.lowerEvents().isEmpty() && l.laneScaleBase() == 1f
-            && l.laneScaleEvents().isEmpty() && l.cameraFrameBase() == 0f && l.cameraFrameEvents().isEmpty()) {
+            && l.laneScaleEvents().isEmpty() && l.cameraFrameBase() == 0f && l.cameraFrameEvents().isEmpty()
+            && !l.hasLayers()) {
             return;
         }
         g.writeObjectFieldStart("lines");
@@ -523,20 +607,28 @@ public final class ChartFormatV5 {
         writeEvents(g, "scaleEvents", l.laneScaleEvents(), extra);
         if (l.cameraFrameBase() != 0f) numField(g, "camera", l.cameraFrameBase());
         writeEvents(g, "cameraEvents", l.cameraFrameEvents(), extra);
+        writeEvents(g, "upperLayers", l.upperLayers(), extra);
+        writeEvents(g, "lowerLayers", l.lowerLayers(), extra);
+        writeEvents(g, "cameraLayers", l.cameraLayers(), extra);
         g.writeEndObject();
     }
 
-    private static void writeNote(JsonGenerator g, Note n, EditorData extra) throws IOException {
+    private static void writeNote(JsonGenerator g, Note n, EditorData extra, boolean laneless) throws IOException {
+        if (n.floats()) {
+            writeFloating(g, n, extra);
+            return;
+        }
         g.writeStartObject();
         g.writeStringField("type", n.type().json);
         if (n.fake()) g.writeBooleanField("fake", true);
         if (n.line() != Line.LOWER) g.writeStringField("line", n.line().json);
-        if (n.type().inLane()) g.writeNumberField("lane", n.laneId());
+        if (!laneless && n.type().inLane()) g.writeNumberField("lane", n.laneId());
+        if (laneless && n.hasX() && n.x() != 0f) numField(g, "x", n.x());
         numField(g, "beat", n.judgement());
         if (n.duration() != 0f) numField(g, "duration", n.duration());
         if (n.height() != 0f) numField(g, "height", n.height());
         if (n.waveSpeed() != 0f) numField(g, "waveSpeed", n.waveSpeed());
-        if (n.offsetX() != 0f) numField(g, "offsetX", n.offsetX());
+        if (!laneless && n.offsetX() != 0f) numField(g, "offsetX", n.offsetX());
         List<Events> move = n.movementEvents();
         if (move.isEmpty()) {
             if (!n.usesDefaultApproach()) numField(g, "appear", n.appearance()); // no approach (CHART_FORMAT_v4 §9)
@@ -544,9 +636,13 @@ public final class ChartFormatV5 {
             writeEvents(g, "positionEvents", move, extra);
         }
         writeEvents(g, "rotationEvents", n.rotationEvents(), extra);
-        writeEvents(g, "offsetXEvents", n.offsetXEvents(), extra);
+        if (!laneless) writeEvents(g, "offsetXEvents", n.offsetXEvents(), extra);
+        else if (n.hasX()) writeEvents(g, "xEvents", n.xEvents(), extra);
         writeEvents(g, "opacityEvents", n.disappearEvents(), extra);
         writeEvents(g, "heightEvents", n.heightEvents(), extra);
+        writeEvents(g, "xLayers", n.xLayers(), extra);
+        writeEvents(g, "positionLayers", n.positionLayers(), extra);
+        writeEvents(g, "rotationLayers", n.rotationLayers(), extra);
         if (n.hasPivot()) {
             g.writeArrayFieldStart("pivot");
             num(g, n.pivotX());
@@ -556,10 +652,11 @@ public final class ChartFormatV5 {
         NoteOrbit orbit = n.orbit();
         if (orbit != null) {
             g.writeArrayFieldStart("orbit");
-            num(g, orbit.x());
+            if (laneless) numFromCentre(g, orbit.x());
+            else num(g, orbit.x());
             num(g, orbit.y());
             g.writeEndArray();
-            writeEvents(g, "orbitXEvents", orbit.xEvents(), extra);
+            writeEvents(g, "orbitXEvents", orbit.xEvents(), extra, laneless);
             writeEvents(g, "orbitYEvents", orbit.yEvents(), extra);
             if (!Float.isNaN(orbit.radius())) numField(g, "orbitRadius", orbit.radius());
             writeEvents(g, "orbitRadiusEvents", orbit.radiusEvents(), extra);
@@ -580,12 +677,68 @@ public final class ChartFormatV5 {
     }
 
     /**
+     * Writes a floating note (悬浮键, CHART_FORMAT §11): its type, {@code "float": true}, where it is and how full,
+     * values it does not change left out, x from the screen's centre line in every format.
+     */
+    private static void writeFloating(JsonGenerator g, Note n, EditorData extra) throws IOException {
+        Floating f = n.floating();
+        g.writeStartObject();
+        g.writeStringField("type", n.type().json);
+        if (n.fake()) g.writeBooleanField("fake", true);
+        g.writeBooleanField("float", true);
+        if (f.x() != 0f) numField(g, "x", f.x());
+        if (f.y() != Floating.DEFAULT_Y) numField(g, "y", f.y());
+        if (f.size() != Floating.defaultSize(n.type(), n.duration())) numField(g, "size", f.size());
+        numField(g, "beat", n.judgement());
+        if (n.duration() != 0f) numField(g, "duration", n.duration());
+        if (f.appear() != f.defaultAppear(n.judgement())) numField(g, "appear", f.appear());
+        if (f.chain() != null) g.writeStringField("chain", f.chain());
+        writeEvents(g, "xEvents", f.xEvents(), extra);
+        writeEvents(g, "yEvents", f.yEvents(), extra);
+        writeEvents(g, "sizeEvents", f.sizeEvents(), extra);
+        writeEvents(g, "fillEvents", f.fillEvents(), extra);
+        writeEvents(g, "opacityEvents", n.disappearEvents(), extra);
+        writeGlitches(g, n.glitches());
+        writeDistortions(g, n.distortions());
+        g.writeEndObject();
+    }
+
+    /** Writes a custom line (自定义线条, CHART_FORMAT §13), values it does not change left out. */
+    private static void writeStroke(JsonGenerator g, Stroke s, EditorData extra) throws IOException {
+        g.writeStartObject();
+        g.writeArrayFieldStart("points");
+        float[] pts = s.points();
+        for (int i = 0; i + 1 < pts.length; i += 2) {
+            g.writeStartArray();
+            num(g, pts[i]);
+            num(g, pts[i + 1]);
+            g.writeEndArray();
+        }
+        g.writeEndArray();
+        if (s.curve()) g.writeBooleanField("curve", true);
+        if (s.closed()) g.writeBooleanField("closed", true);
+        if (s.front()) g.writeBooleanField("front", true);
+        if (s.from() != Float.NEGATIVE_INFINITY) numField(g, "from", s.from());
+        if (s.to() != Float.POSITIVE_INFINITY) numField(g, "to", s.to());
+        if (s.drawIn() != 0f) numField(g, "drawIn", s.drawIn());
+        if (s.drawOut() != 0f) numField(g, "drawOut", s.drawOut());
+        if (s.width() != Stroke.DEFAULT_WIDTH) numField(g, "width", s.width());
+        if (s.color() != Stroke.DEFAULT_COLOR) g.writeStringField("color", colorText(s.color()));
+        if (s.baseOpacity() != 1f) numField(g, "opacity", s.baseOpacity());
+        writeEvents(g, "opacityEvents", s.opacityEvents(), extra);
+        writeGlitches(g, s.glitches());
+        writeDistortions(g, s.distortions());
+        g.writeEndObject();
+    }
+
+    /**
      * @return true when the movement is just the default approach, which a note without {@code positionEvents} gets
      *         (and no editor key on it but the Charter's {@code "rel": true}, its default for that event)
      */
     private static boolean isDefaultFall(Note n, List<Events> move, EditorData extra) {
         if (move.size() != 1) return false;
-        Events e = move.get(0), d = Note.defaultApproachEvent(n.judgement());
+        Events e = move.get(0);
+        Events d = Note.defaultApproachEvent(n.judgement());
         if (e.startTime() != d.startTime() || e.endTime() != d.endTime() || e.initialValue() != d.initialValue()
             || e.finalValue() != d.finalValue() || e.exponent() != d.exponent()) {
             return false;
@@ -594,8 +747,12 @@ public final class ChartFormatV5 {
         return keys == null || keys.isEmpty() || keys.size() == 1 && Boolean.TRUE.equals(keys.get("rel"));
     }
 
-    /** Writes a veil or a curtain (times only when bounded, event lists only when not empty). */
-    private static void writeVeil(JsonGenerator g, Veil v, boolean curtain, EditorData extra) throws IOException {
+    /**
+     * Writes a veil or a curtain (times only when bounded, event lists only when not empty); {@code laneless}:
+     * format 6, its x from the screen's centre line.
+     */
+    private static void writeVeil(JsonGenerator g, Veil v, boolean curtain, EditorData extra, boolean laneless)
+        throws IOException {
         g.writeStartObject();
         g.writeStringField("shape", v.shape().json);
         if (v.shape() == Veil.Shape.CIRCLE) {
@@ -610,13 +767,17 @@ public final class ChartFormatV5 {
             }
             g.writeEndArray();
         }
-        if (v.baseX() != 960f) numField(g, "x", v.baseX());
+        if (v.baseX() != 960f) {
+            g.writeFieldName("x");
+            if (laneless) numFromCentre(g, v.baseX());
+            else num(g, v.baseX());
+        }
         if (v.baseY() != 600f) numField(g, "y", v.baseY());
         if (v.baseRotation() != 0f) numField(g, "rotation", v.baseRotation());
         if (v.baseOpacity() != 1f) numField(g, "opacity", v.baseOpacity());
         if (v.hasStart()) numField(g, "from", v.startTime());
         if (v.hasEnd()) numField(g, "to", v.endTime());
-        writeEvents(g, "xEvents", v.xEvents(), extra);
+        writeEvents(g, "xEvents", v.xEvents(), extra, laneless);
         writeEvents(g, "yEvents", v.yEvents(), extra);
         writeEvents(g, "rotationEvents", v.rotationEvents(), extra);
         writeEvents(g, "opacityEvents", v.opacityEvents(), extra);
@@ -679,21 +840,36 @@ public final class ChartFormatV5 {
     /** Writes an event list (nothing when it is empty). */
     private static void writeEvents(JsonGenerator g, String field, List<Events> events, EditorData extra)
         throws IOException {
+        writeEvents(g, field, events, extra, false);
+    }
+
+    /** @param centred the values are 1920-wide x written as format v6 x from the centre line */
+    private static void writeEvents(JsonGenerator g, String field, List<Events> events, EditorData extra,
+                                    boolean centred) throws IOException {
         if (events.isEmpty()) return;
         g.writeArrayFieldStart(field);
-        for (int i = 0; i < events.size(); i++) writeEvent(g, events.get(i), extra);
+        for (int i = 0; i < events.size(); i++) writeEvent(g, events.get(i), extra, centred);
         g.writeEndArray();
     }
 
     private static void writeEvent(JsonGenerator g, Events e, EditorData extra) throws IOException {
+        writeEvent(g, e, extra, false);
+    }
+
+    private static void writeEvent(JsonGenerator g, Events e, EditorData extra, boolean centred) throws IOException {
         g.writeStartObject();
         g.writeArrayFieldStart("beats");
         num(g, e.startTime());
         num(g, e.endTime());
         g.writeEndArray();
         g.writeArrayFieldStart("values");
-        num(g, e.initialValue());
-        num(g, e.finalValue());
+        if (centred) {
+            numFromCentre(g, e.initialValue());
+            numFromCentre(g, e.finalValue());
+        } else {
+            num(g, e.initialValue());
+            num(g, e.finalValue());
+        }
         g.writeEndArray();
         if (e.exponent() != 1f) numField(g, "ease", e.exponent());
         Map<String, Object> keys = extra != null ? extra.eventKeys.get(e) : null;
@@ -715,6 +891,33 @@ public final class ChartFormatV5 {
     static void num(JsonGenerator g, float v) throws IOException {
         if (v == Math.rint(v) && Math.abs(v) < 1e9f) g.writeNumber((long) v);
         else g.writeNumber(v);
+    }
+
+    /** Writes a 1920-wide x as a format v6 x from the screen's centre line ({@link #centredText}). */
+    private static void numFromCentre(JsonGenerator g, float x) throws IOException {
+        if (Float.isNaN(x) || Float.isInfinite(x)) {
+            num(g, x); // never: loaded values are finite
+            return;
+        }
+        g.writeNumber(centredText(x));
+    }
+
+    /**
+     * @return {@code x − 960} as the shortest JSON number that the v6 reader ({@link ChartMapper#absoluteX}) turns
+     *         back into exactly {@code x}: usually the plain float text (whole numbers without {@code .0}), else up
+     *         to 17 significant digits (exact for every x but a non-zero one nearer 0 than 2^-20, which no chart has)
+     */
+    static String centredText(float x) {
+        double d = (double) x - LaneLayout.TILE_CENTRE; // exact unless 0 < |x| < 2^-20
+        float f = (float) d;
+        String s = f == Math.rint(f) && Math.abs(f) < 1e9f ? Long.toString((long) f)
+            : new BigDecimal(Float.toString(f)).toPlainString(); // no exponent: -0.000061 rather than -6.1E-5
+        if (absoluteX(Double.parseDouble(s)) == x) return s;
+        for (int digits = 9; digits <= 17; digits++) {
+            s = new BigDecimal(d).round(new MathContext(digits)).stripTrailingZeros().toPlainString();
+            if (absoluteX(Double.parseDouble(s)) == x) return s;
+        }
+        return new BigDecimal(d).toPlainString(); // exact (17 digits always read back)
     }
 
     /** Writes an editor value: a map, list, string, number, boolean or null. */

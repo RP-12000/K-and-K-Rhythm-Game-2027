@@ -315,7 +315,7 @@ final class SongCard {
         return lens;
     }
 
-    /** Sets the shown difficulty after a lens change made elsewhere (keyboard, HUD). */
+    /** Sets the shown difficulty after a lens change made elsewhere (the HUD). */
     void setDifficulty(Difficulty lens) {
         if (node != null && !node.launch) setDiff(fallback(node, lens), true);
     }
@@ -835,20 +835,6 @@ final class SongCard {
         if (dragMode == DRAG_CARD && shown) spring.setValue(pos).setTarget(targetPos());
         dragMode = DRAG_NONE;
         ptr = -1;
-    }
-
-    void mouseMoved(float px, float py) {
-        for (Pressable c : controls) c.mouseMoved(px, py);
-    }
-
-    /** Keyboard Enter on the open card: DESCEND. */
-    void fireDescend() {
-        if (shown && content != null && swap != SWAP_OUT) descend.fire();
-    }
-
-    /** Keyboard: step the difficulty. */
-    void keyStep(int dir) {
-        if (shown) stepDifficulty(dir);
     }
 
     // =================================================================== frame

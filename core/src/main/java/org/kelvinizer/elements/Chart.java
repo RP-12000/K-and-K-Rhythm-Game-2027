@@ -4,6 +4,7 @@ import com.badlogic.gdx.files.FileHandle;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
@@ -26,7 +27,8 @@ import java.util.List;
  *       ascending.</li>
  *   <li>{@link #universals(Line)}: universal notes of one line, ascending, with their
  *       same-time groups ({@link Note#groupStart()} / {@link Note#groupSize()}).</li>
- *   <li>Counts: {@link #totalNotes()} (tap + hold + universal, the score denominator; a TIDE
+ *   <li>{@link #drags(Line)}: the DRAGs of one line, ascending (Kelvin 2026-11-05).</li>
+ *   <li>Counts: {@link #totalNotes()} (tap + hold + universal + drag, the score denominator; a TIDE
  *       STREAM is one note like a hold), {@link #totalMines()} (a LANE MINE is one mine),
  *       {@link #count(NoteType)}, {@link #tideStreamCount()}, {@link #laneMineCount()}.</li>
  *   <li>Timing: beat 0 is song time {@link #offsetMs()} ms (format v2 {@code offsetMs}, default 0).
@@ -37,6 +39,12 @@ import java.util.List;
  *       {@link #lastNoteEndBeat()} / {@link #lastNoteEndMs()}).</li>
  *   <li>{@link #veils()}: the veils (CHART_FORMAT_v4 §6.10), set once by the loader before the chart is
  *       shared.</li>
+ *   <li>Floating notes (悬浮键, CHART_FORMAT §11, Kelvin 2026-11-06 14:44; {@link Note#floats()}: taps, holds,
+ *       DRAGs and mines) come after the line notes of their beat, left to right, in {@link #floatNotes()} (taps and
+ *       holds), {@link #floatDrags()} and {@link #mines()}, counted like the line notes and sharing their beat with
+ *       them ({@link Note#sharesBeat()}), each in a sync group of its own (never judged together).</li>
+ *   <li>{@link #strokes()}: the custom lines (自定义线条, CHART_FORMAT §13, Kelvin 2026-11-06 18:44), in file order,
+ *       for show only (never judged), set once by the loader.</li>
  * </ul>
  *
  * <p>The arrays returned by the accessors are the chart's own (no copies, so reading them never
@@ -45,6 +53,13 @@ import java.util.List;
 public final class Chart {
     private static final Note[] NO_NOTES = new Note[0];
     private static final Veil[] NO_VEILS = new Veil[0];
+    private static final Stroke[] NO_STROKES = new Stroke[0];
+    private static final float[] NO_BEATS = new float[0];
+    private static final int[] NO_COUNTS = new int[0];
+    /** Most fixed lanes a section can have ({@link #setFixedLanes}). */
+    public static final int MAX_FIXED_LANES = 32;
+    /** Fixed lanes a new chart starts with in the chart editor (Kelvin 2026-11-06 14:55: 「默认定轨数为6K」). */
+    public static final int DEFAULT_FIXED_LANES = 6;
 
     private final String title;
     private final String artist;
@@ -64,8 +79,15 @@ public final class Chart {
     private final JudgementLine lineEvents;
     private final Note[] notes;
     private final Note[][] laneNotes;
+    /** Per line: its taps and holds (not decorations), ascending in time (the laneless engine's streams). */
+    private final Note[][] lineNotes = new Note[Line.COUNT][];
     private final Note[][] laneMines;
     private final Note[][] universals;
+    /** Per line: its DRAGs (not decorations), ascending in time. */
+    private final Note[][] drags = new Note[Line.COUNT][];
+    /** The floating taps and holds (not decorations), ascending in time; the floating DRAGs. */
+    private Note[] floatNotes = NO_NOTES;
+    private Note[] floatDrags = NO_NOTES;
     private final Note[] mines;
     private final int[] typeCounts = new int[NoteType.count()];
     private int tideStreams;
@@ -74,12 +96,18 @@ public final class Chart {
     private final float firstVisibleBeat;
 
     int sourceFormat = ChartMapper.FORMAT_VERSION;
+    /** Set by the loader: format 6 or the chart editor's laneless text ({@link #laneless()}). */
+    boolean laneless;
     LoadReport report = new LoadReport();
     private FileHandle chartFile;
     private FileHandle musicFile;
     private FileHandle jacketFile;
     private Veil[] veils = NO_VEILS;
     private Veil[] curtains = NO_VEILS;
+    private Stroke[] strokes = NO_STROKES;
+    /** 定轨 / 无轨 sections ({@link #fixedLanesAt}): start beats ascending and their lane counts (0 = 无轨). */
+    private float[] fixedLaneBeats = NO_BEATS;
+    private int[] fixedLaneCounts = NO_COUNTS;
 
     /** Same as the full constructor with {@code offsetMs} 0 (beat 0 = song time 0 ms). */
     public Chart(String title, String artist, String illustrator, String charter, String level,
@@ -196,17 +224,21 @@ public final class Chart {
             }
         }
 
-        // Notes: resolve lanes, then sort.
+        // Notes: resolve lanes, place lane notes across the screen, then sort (left to right on one beat, then the
+        // floating notes left to right).
         this.notes = notes != null ? notes.toArray(new Note[0]) : NO_NOTES;
         for (Note n : this.notes) {
             if (n.index != -1) throw new IllegalArgumentException("note already belongs to a chart: " + n);
-            if (n.type().inLane()) {
+            if (n.floats()) {
+                n.laneIndex = -1;
+            } else if (n.type().inLane() && laneCount > 0) {
                 n.laneIndex = laneIndexOf(n.laneId());
                 if (n.laneIndex < 0) throw new IllegalArgumentException("note on undeclared lane: " + n);
             } else {
                 n.laneIndex = -1;
             }
         }
+        LanePlacement.place(this); // lane notes without an x of their own: from their lane (older charts)
         Arrays.sort(this.notes, NOTE_ORDER);
 
         float lastEnd = 0f;
@@ -216,7 +248,7 @@ public final class Chart {
             n.index = i;
             n.judgementMs = beatToMs(n.judgement());
             n.endMs = beatToMs((double) n.judgement() + n.duration());
-            if (!n.fake()) { // decorations are drawn only (Kelvin 2026-11-02)
+            if (playable(n)) { // decorations are drawn only (Kelvin 2026-11-02)
                 typeCounts[n.type().ordinal()]++;
                 if (n.isTideStream()) tideStreams++;
                 if (n.isLaneMine()) laneMineTotal++;
@@ -235,66 +267,120 @@ public final class Chart {
         buildSyncGroups();
     }
 
-    /** Global note order (on one beat decorations after the rest); ties keep the input order (stable sort). */
+    /**
+     * @return true for a note the engine plays (judges, counts, groups, sounds): not a decoration
+     *         ({@link Note#fake()})
+     */
+    public static boolean playable(Note n) {
+        return !n.fake();
+    }
+
+    /**
+     * Global note order: by beat; on one beat the line notes (decorations after the rest), then the floating notes
+     * left to right, then bottom to top (CHART_FORMAT §11); ties keep the input order (stable sort).
+     */
     private static final Comparator<Note> NOTE_ORDER = new Comparator<Note>() {
         @Override
         public int compare(Note a, Note b) {
             int c = Float.compare(a.judgement(), b.judgement());
             if (c != 0) return c;
+            c = Boolean.compare(a.floats(), b.floats());
+            if (c != 0) return c;
+            if (a.floats()) {
+                c = Float.compare(a.floating().xAt(a.judgement()) + 0f, b.floating().xAt(b.judgement()) + 0f);
+                if (c != 0) return c;
+                return Float.compare(a.floating().yAt(a.judgement()) + 0f, b.floating().yAt(b.judgement()) + 0f);
+            }
             c = Boolean.compare(a.fake(), b.fake());
             if (c != 0) return c;
             c = a.line().ordinal() - b.line().ordinal();
             if (c != 0) return c;
             c = (a.type().judged() ? 0 : 1) - (b.type().judged() ? 0 : 1);
             if (c != 0) return c;
-            c = Integer.compare(a.laneIndex, b.laneIndex);
+            // left to right (Kelvin 2026-11-05, laneless: where the lane order was), TIDEs first
+            c = Float.compare(across(a), across(b));
             if (c != 0) return c;
             return a.type().ordinal() - b.type().ordinal();
         }
     };
+
+    /** @return where a note sits across the screen when it is judged; a note without an x (a TIDE) before all */
+    private static float across(Note n) {
+        return n.hasX() ? n.xAt(n.judgement()) + 0f : Float.NEGATIVE_INFINITY; // + 0f: -0 and 0 alike
+    }
 
     /** Fills the per-lane, per-line arrays and slots; returns the global mine array. */
     private Note[] buildStreams(int laneCount) {
         int[] laneCounts = new int[Line.COUNT * laneCount];
         int[] mineCounts = new int[Line.COUNT * laneCount];
         int[] universalCounts = new int[Line.COUNT];
+        int[] lineCounts = new int[Line.COUNT];
+        int[] dragCounts = new int[Line.COUNT];
+        int floating = 0;
+        int floatDragCount = 0;
         for (Note n : notes) {
-            if (n.fake()) continue; // in no stream: nothing judges a decoration
+            if (!playable(n)) continue; // in no stream: nothing judges a decoration
+            if (n.floats() && n.type().judged()) { // a floating mine is with the other mines
+                if (n.type() == NoteType.DRAG) floatDragCount++;
+                else floating++;
+                continue;
+            }
             int line = n.line().ordinal();
             switch (n.type()) {
                 case MINE:
-                    mineCounts[line * laneCount + n.laneIndex]++;
+                    if (n.laneIndex >= 0) mineCounts[line * laneCount + n.laneIndex]++;
                     break;
                 case UNIVERSAL:
                     universalCounts[line]++;
                     break;
                 case TIDE_MINE:
                     break;
+                case DRAG:
+                    dragCounts[line]++;
+                    break;
                 default:
-                    laneCounts[line * laneCount + n.laneIndex]++;
+                    if (n.laneIndex >= 0) laneCounts[line * laneCount + n.laneIndex]++;
+                    lineCounts[line]++;
                     break;
             }
         }
+        for (int l = 0; l < Line.COUNT; l++) lineNotes[l] = lineCounts[l] == 0 ? NO_NOTES : new Note[lineCounts[l]];
+        Arrays.fill(lineCounts, 0);
         for (int k = 0; k < laneNotes.length; k++) {
             laneNotes[k] = laneCounts[k] == 0 ? NO_NOTES : new Note[laneCounts[k]];
             laneMines[k] = mineCounts[k] == 0 ? NO_NOTES : new Note[mineCounts[k]];
         }
         for (int l = 0; l < Line.COUNT; l++) {
             universals[l] = universalCounts[l] == 0 ? NO_NOTES : new Note[universalCounts[l]];
+            drags[l] = dragCounts[l] == 0 ? NO_NOTES : new Note[dragCounts[l]];
         }
+        Arrays.fill(dragCounts, 0);
+        floatNotes = floating == 0 ? NO_NOTES : new Note[floating];
+        floatDrags = floatDragCount == 0 ? NO_NOTES : new Note[floatDragCount];
+        floating = 0;
+        floatDragCount = 0;
         Note[] allMines = totalMines() == 0 ? NO_NOTES : new Note[totalMines()];
         Arrays.fill(laneCounts, 0);
         Arrays.fill(mineCounts, 0);
         Arrays.fill(universalCounts, 0);
         int m = 0;
         for (Note n : notes) {
-            if (n.fake()) continue;
+            if (!playable(n)) continue;
+            if (n.floats() && n.type().judged()) {
+                n.slot = n.type() == NoteType.DRAG ? floatDragCount++ : floating++;
+                (n.type() == NoteType.DRAG ? floatDrags : floatNotes)[n.slot] = n;
+                n.groupStart = n.slot;
+                n.groupSize = 1;
+                continue;
+            }
             int line = n.line().ordinal();
             switch (n.type()) {
                 case MINE: {
-                    int k = line * laneCount + n.laneIndex;
-                    n.slot = mineCounts[k]++;
-                    laneMines[k][n.slot] = n;
+                    if (n.laneIndex >= 0) {
+                        int k = line * laneCount + n.laneIndex;
+                        n.slot = mineCounts[k]++;
+                        laneMines[k][n.slot] = n;
+                    }
                     allMines[m++] = n;
                     break;
                 }
@@ -305,10 +391,17 @@ public final class Chart {
                 case TIDE_MINE:
                     allMines[m++] = n;
                     break;
+                case DRAG:
+                    n.slot = dragCounts[line]++;
+                    drags[line][n.slot] = n;
+                    break;
                 default: {
-                    int k = line * laneCount + n.laneIndex;
-                    n.slot = laneCounts[k]++;
-                    laneNotes[k][n.slot] = n;
+                    if (n.laneIndex >= 0) {
+                        int k = line * laneCount + n.laneIndex;
+                        n.slot = laneCounts[k]++;
+                        laneNotes[k][n.slot] = n;
+                    }
+                    lineNotes[line][lineCounts[line]++] = n;
                     break;
                 }
             }
@@ -335,36 +428,35 @@ public final class Chart {
     }
 
     /**
-     * Sync groups (same line, same beat, judged notes) and the shared-beat flag (any other note of
-     * any type, either line, at exactly the same beat: {@link Note#sharesBeat()}). Decorations
-     * ({@link Note#fake()}, after the rest on their beat) are in neither.
+     * Sync groups (same line, same beat, judged line notes) and the shared-beat flag (any other note of
+     * any type, on a line or floating, at exactly the same beat: {@link Note#sharesBeat()}). Decorations
+     * ({@link Note#fake()}, after the line notes of their beat) are in neither; a floating note is in a sync group of
+     * its own (one press judges one note, Kelvin 2026-11-06 03:44 「打中判定线上的音符不能自动判定圆圈的那些tap」).
      */
     private void buildSyncGroups() {
         int i = 0;
         while (i < notes.length) {
-            if (notes[i].fake()) {
-                notes[i].sharesBeat = false;
-                notes[i].syncStart = i;
-                notes[i].syncSize = 1;
-                i++;
-                continue;
-            }
-            // Cluster of notes with exactly the same judgement beat (both lines).
+            // Cluster of notes with exactly the same judgement beat (both lines, the floating notes, the decorations).
             int end = i + 1;
-            while (end < notes.length && !notes[end].fake() && notes[end].judgement() == notes[i].judgement()) end++;
-            boolean shared = end - i > 1;
-            for (int q = i; q < end; q++) notes[q].sharesBeat = shared;
+            while (end < notes.length && notes[end].judgement() == notes[i].judgement()) end++;
+            int played = 0;
+            for (int q = i; q < end; q++) if (playable(notes[q])) played++;
+            for (int q = i; q < end; q++) {
+                Note n = notes[q];
+                n.sharesBeat = played > 1 && playable(n);
+                n.syncStart = q;
+                n.syncSize = 1;
+            }
+            // judged line notes of one line are contiguous on their beat (NOTE_ORDER), decorations after them
             int k = i;
             while (k < end) {
                 Note n = notes[k];
-                if (!n.type().judged()) {
-                    n.syncStart = k;
-                    n.syncSize = 1;
+                if (!inSyncGroup(n)) {
                     k++;
                     continue;
                 }
                 int r = k + 1;
-                while (r < end && notes[r].type().judged() && notes[r].line() == n.line()) r++;
+                while (r < end && inSyncGroup(notes[r]) && notes[r].line() == n.line()) r++;
                 for (int q = k; q < r; q++) {
                     notes[q].syncStart = k;
                     notes[q].syncSize = r - k;
@@ -373,6 +465,11 @@ public final class Chart {
             }
             i = end;
         }
+    }
+
+    /** @return true for a note that can share a sync group: a played, judged note on a line */
+    private static boolean inSyncGroup(Note n) {
+        return playable(n) && !n.floats() && n.type().judged();
     }
 
     // ------------------------------------------------------------------ metadata
@@ -403,6 +500,13 @@ public final class Chart {
 
     /** @return the format version of the source file (1 = converted from v1, 2 = native). */
     public int sourceFormat() { return sourceFormat; }
+
+    /**
+     * @return true for a chart without lanes (format 6, or the chart editor's laneless working text, Kelvin
+     *         2026-11-05: 「把"轨道"这个概念去掉」): every tap, hold and mine has its own {@link Note#x()}, and
+     *         {@link #lanes()} is empty. A lane chart (format 5 and older) has its notes' x filled from the lanes.
+     */
+    public boolean laneless() { return laneless; }
 
     /** @return what the loader fixed or dropped (never null). */
     public LoadReport loadReport() { return report; }
@@ -518,18 +622,40 @@ public final class Chart {
         return laneMines[line.ordinal() * lanes.length + laneIndex];
     }
 
+    /**
+     * @return the taps and holds of {@code line} (decorations excluded), ascending in time, notes on one beat in
+     *         chart order: what a touch on that line can judge (laneless, Kelvin 2026-11-05)
+     */
+    public Note[] lineNotes(Line line) {
+        return lineNotes[line.ordinal()];
+    }
+
     /** @return universal notes of {@code line}, ascending, groups contiguous (shared). */
     public Note[] universals(Line line) {
         return universals[line.ordinal()];
     }
 
-    /** @return every mine (LANE MINEs included) in chart order (shared). */
+    /** @return the DRAGs of {@code line} (decorations excluded), ascending in time, notes on one beat in chart order. */
+    public Note[] drags(Line line) {
+        return drags[line.ordinal()];
+    }
+
+    /** @return every mine (LANE MINEs and floating mines included) in chart order (shared). */
     public Note[] mines() { return mines; }
 
-    /** @return notes counted for score and combo: tap + hold + universal. */
+    /**
+     * @return the floating taps and holds (decorations excluded), ascending in time, notes on one beat left to right
+     *         (CHART_FORMAT §11)
+     */
+    public Note[] floatNotes() { return floatNotes; }
+
+    /** @return the floating DRAGs (decorations excluded), ascending in time. */
+    public Note[] floatDrags() { return floatDrags; }
+
+    /** @return notes counted for score and combo: tap + hold + universal + drag. */
     public int totalNotes() {
         return typeCounts[NoteType.TAP.ordinal()] + typeCounts[NoteType.HOLD.ordinal()]
-            + typeCounts[NoteType.UNIVERSAL.ordinal()];
+            + typeCounts[NoteType.UNIVERSAL.ordinal()] + typeCounts[NoteType.DRAG.ordinal()];
     }
 
     /** @return number of mines, TIDE MINEs included, each LANE MINE / TIDE STREAM MINE counted once (MINES row). */
@@ -557,7 +683,7 @@ public final class Chart {
         if (laneMineTotal == 0) return 0;
         int count = 0;
         for (Note m : mines) {
-            if (!m.isLaneMine()) continue;
+            if (!m.isLaneMine() || m.laneIndex < 0) continue;
             int k = m.line().ordinal() * lanes.length + m.laneIndex;
             double from = m.judgementMs - leadMs;
             double to = m.endMs;
@@ -603,6 +729,83 @@ public final class Chart {
         veils = keep;
     }
 
+    /**
+     * @return the custom lines (自定义线条, CHART_FORMAT §13) in file order, drawn in that order; the chart's own array,
+     *         callers must not modify it
+     */
+    public Stroke[] strokes() { return strokes; }
+
+    /** Sets the custom lines, as {@link #setVeils} sets the veils (null entries left out). */
+    public void setStrokes(List<Stroke> list) {
+        ArrayList<Stroke> keep = new ArrayList<>(list == null ? 0 : list.size());
+        if (list != null) {
+            for (Stroke s : list) {
+                if (s != null) keep.add(s);
+            }
+        }
+        strokes = keep.isEmpty() ? NO_STROKES : keep.toArray(new Stroke[0]);
+    }
+
+    /**
+     * 定轨 / 无轨 (Kelvin 2026-11-06 14:55, CHART_FORMAT §12): from each section's beat on, the field between the lines
+     * is split into that many equal lanes with vertical dividers (0 = 无轨, no dividers). Lanes are only a guide and a
+     * judging width: notes keep their own x (lane j of k, 1-based and possibly fractional, is at
+     * {@link #fixedLaneX}), and a key on a line is judged at least one lane wide ({@link LaneLayout#judgeWidth}).
+     *
+     * @return the lane count in force at {@code beat}: the last section starting at or before it; before the first
+     *         section that section's count when it starts at beat 0 or earlier, else 0 (无轨, also with no sections)
+     */
+    public int fixedLanesAt(float beat) {
+        float[] b = fixedLaneBeats;
+        int n = b.length;
+        if (n == 0) return 0;
+        if (beat < b[0]) return b[0] <= 0f ? fixedLaneCounts[0] : 0;
+        int lo = 0;
+        int hi = n - 1;
+        while (lo < hi) {
+            int mid = (lo + hi + 1) >>> 1;
+            if (b[mid] <= beat) lo = mid;
+            else hi = mid - 1;
+        }
+        return fixedLaneCounts[lo];
+    }
+
+    /** @return the sections' start beats, ascending (the chart's own array, do not modify it; empty = 无轨). */
+    public float[] fixedLaneBeats() { return fixedLaneBeats; }
+
+    /** @return the sections' lane counts, matching {@link #fixedLaneBeats()} (the chart's own array; 0 = 无轨). */
+    public int[] fixedLaneCounts() { return fixedLaneCounts; }
+
+    /**
+     * Sets the 定轨 / 无轨 sections (copied): beats ascending, each count 0 ({@code 无轨}) to {@link #MAX_FIXED_LANES}.
+     *
+     * @throws IllegalArgumentException when the arrays differ in length, a beat is not finite or not after the one
+     *                                  before, or a count is out of range
+     */
+    public void setFixedLanes(float[] beats, int[] counts) {
+        if (beats == null || counts == null || beats.length != counts.length) {
+            throw new IllegalArgumentException("fixed lane beats and counts differ");
+        }
+        for (int i = 0; i < beats.length; i++) {
+            if (Float.isNaN(beats[i]) || Float.isInfinite(beats[i]) || i > 0 && !(beats[i] > beats[i - 1])) {
+                throw new IllegalArgumentException("fixed lane beats must be finite and ascending");
+            }
+            if (counts[i] < 0 || counts[i] > MAX_FIXED_LANES) {
+                throw new IllegalArgumentException("fixed lane count " + counts[i] + " out of range");
+            }
+        }
+        fixedLaneBeats = beats.length == 0 ? NO_BEATS : beats.clone();
+        fixedLaneCounts = counts.length == 0 ? NO_COUNTS : counts.clone();
+    }
+
+    /**
+     * @return x (from the screen's centre line, 1920 wide) of the middle of lane {@code j} of {@code k} fixed lanes:
+     *         {@code −960 + (j − 0.5)·1920/k}; j is 1-based and may be fractional (lane 5.5 sits on the 5 | 6 divider)
+     */
+    public static float fixedLaneX(float j, int k) {
+        return (j - 0.5f) * LaneLayout.VIEW_RIGHT / k - LaneLayout.TILE_CENTRE;
+    }
+
     // ------------------------------------------------------------------ files
 
     /** Attaches the files this chart was loaded with (any may be null). */
@@ -623,8 +826,9 @@ public final class Chart {
     public String toString() {
         return "Chart(" + title + " " + level + ", v" + sourceFormat + ", " + bpm + " bpm, " + lanes.length
             + " lanes, " + count(NoteType.TAP) + " tap / " + count(NoteType.HOLD) + " hold / "
-            + count(NoteType.MINE) + " mine" + (laneMineTotal > 0 ? " (" + laneMineTotal + " LANE MINE)" : "")
+            + count(NoteType.MINE) + " mine" + (laneMineTotal > 0 ? " (" + laneMineTotal + " LONG MINE)" : "")
             + " / " + count(NoteType.UNIVERSAL) + " universal"
+            + (count(NoteType.DRAG) > 0 ? " / " + count(NoteType.DRAG) + " drag" : "")
             + (tideStreams > 0 ? " (" + tideStreams + " TIDE STREAM)" : "") + ")";
     }
 
@@ -741,7 +945,7 @@ public final class Chart {
             append(sb, "distortion(s) sanitised", distortionsFixed);
             append(sb, "distortion(s) of a v1 chart ignored", distortionsIgnored);
             append(sb, "HeightEvents of a v1 chart ignored", heightEventsIgnored);
-            append(sb, "note(s) inside a LANE MINE's block window", laneMineConflicts);
+            append(sb, "note(s) inside a LONG MINE's block window", laneMineConflicts);
             append(sb, "pivot(s) sanitised", pivotsFixed);
             append(sb, "veil(s) sanitised", veilsFixed);
             append(sb, "veil(s) dropped", veilsDropped);
