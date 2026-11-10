@@ -60,7 +60,7 @@ final class MapCamera {
 
     private final Spring zoomSpring = new Spring(Spring.Preset.CAMERA, 1f);
 
-    /** True on a level that takes no zoom (the hub): pinches only pan. */
+    /** True on a level that takes no zoom (the hub): pinches only pan, the wheel and keys do nothing. */
     boolean zoomLocked;
     /** ALL SONGS: the camera only scrolls up and down (fingers move no x) and never drifts when idle. */
     boolean lockX;
@@ -364,6 +364,36 @@ final class MapCamera {
         prevY = y;
         dispVx = dispVy = 0f;
         flyTo(tx, ty, tz, dur, interp, 0f);
+    }
+
+    /** Zooms by {@code factor} about HUD point (hx, hy) with a short glide (wheel, keys). */
+    void zoomAbout(float hx, float hy, float factor) {
+        if (zoomLocked) return;
+        float base = gliding ? gz1 : zoom;
+        float bx = gliding ? gx1 : x, by = gliding ? gy1 : y;
+        float tz = MathUtils.clamp(base * factor, MapStyle.ZOOM_MIN, zMax);
+        float wx = bx + (hx - HUD_CX) * base, wy = by + (hy - HUD_CY) * base;
+        flyTo(wx - (hx - HUD_CX) * tz, wy - (hy - HUD_CY) * tz, tz, 0.16f, Interpolation.pow2Out, 0f);
+    }
+
+    /**
+     * A zoom-out nudge at the overview (the wheel; Kelvin 2026-10-17 19:40): the zoom gives up to
+     * {@code amount} (× the overview zoom, raw) past it and springs back, as a pinch pulling on
+     * past the overview does.
+     */
+    void bump(float amount) {
+        if (zoomLocked || gliding || held || pinching) return;
+        rz = Math.max(rz, zMax + 1e-3f);
+        zoomSpring.setValue(rz).setTarget(zMax).setVelocity(amount * zMax * Spring.Preset.CAMERA.omega * MathUtils.E);
+    }
+
+    /** Pans by a world delta immediately (keyboard), clamped. */
+    void nudge(float dx, float dy) {
+        gliding = false;
+        rx = clampX(rx + dx);
+        ry = clampY(ry + dy);
+        display();
+        idle = 0f;
     }
 
     // ------------------------------------------------------------------ frame

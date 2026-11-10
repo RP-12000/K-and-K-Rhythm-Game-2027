@@ -19,7 +19,7 @@ public final class Params {
      * Build version shown on Welcome and in Settings → ABOUT. Keep it equal to
      * {@code projectVersion} in gradle.properties and {@code versionName} in android/build.gradle.
      */
-    public static final String VERSION = "0.1.0-beta.6";
+    public static final String VERSION = "0.2.0";
 
     /** Width of the reference frame of the playfield and the charts. */
     public static final float REF_W = 1920f;
@@ -67,10 +67,8 @@ public final class Params {
     public static final int MAX_SCORE = Judgement.MAX_SCORE;
 
     /**
-     * Half height of each judgement zone, in ref units above and below the line: 0.4 of the screen height (Kelvin
-     * 10-12), so the sky line takes the upper half and the ground line the lower half (半垂判). From 7.184 to 7.188 it
-     * was ±160, a key judged only near where it lands (Kelvin 2026-11-06 14:45: 「判定线和这个都不用垂判了」); back to
-     * ±480 in 7.189 (22:23: 「改回半垂判」).
+     * Half height of each judgement zone, in ref units above and below the line: 0.4 of the screen
+     * height (Kelvin 10-12), so the sky line takes the upper half and the ground line the lower half.
      */
     public static final float JUDGE_ZONE_HALF = 480f;
     /**

@@ -1,11 +1,13 @@
 package org.kelvinizer.map;
 
+import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.math.Interpolation;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.math.Vector3;
 import org.kelvinizer.Main;
 import org.kelvinizer.audio.AudioService;
 import org.kelvinizer.library.Difficulty;
@@ -121,6 +123,7 @@ public class MapScreen extends KkScreen<Main>
 
     private float dwell = -1f;
     private boolean arriving, fromWelcome, shownOnce;
+    private float mouseX = Ui.CX, mouseY = Ui.CY;
 
     private float peekT = -1f;
     private boolean peekShown;
@@ -687,7 +690,7 @@ public class MapScreen extends KkScreen<Main>
         float zMax = w.level.overviewZoom > 0f ? w.level.overviewZoom
             : MathUtils.clamp(Math.max(zx, zy), w.isGrid() ? 1.6f : 1.15f, 3.2f);
         cam.setLevel(w.minX, w.maxX, w.minY, w.maxY, zMax);
-        cam.zoomLocked = w.isHub(); // the hub takes no pinch zoom (Kelvin 2026-10-16)
+        cam.zoomLocked = w.isHub(); // the hub takes no pinch or wheel zoom (Kelvin 2026-10-16)
     }
 
     @Override
@@ -1374,6 +1377,40 @@ public class MapScreen extends KkScreen<Main>
         gestures.cancel();
     }
 
+    @Override
+    protected boolean onMouseMoved(float x, float y) {
+        mouseX = x;
+        mouseY = y;
+        sortPanel.mouseMoved(x, y);
+        card.mouseMoved(x, y);
+        hud.mouseMoved(x, y);
+        return false;
+    }
+
+    @Override
+    protected boolean onScrolled(float amountX, float amountY) {
+        if (amountY == 0f) return false;
+        Vector3 v = toWorld(Gdx.input.getX(), Gdx.input.getY());
+        mouseX = v.x;
+        mouseY = v.y;
+        if (story.isOpen()) return true;
+        if (sortPanel.isOpen() && sortPanel.contains(mouseX, mouseY)) return true;
+        if (card.isOpen() && mouseX >= card.left() && !SongCard.sheet()) return true;
+        if (card.isOpen() && SongCard.sheet() && mouseY <= card.top()) return true;
+        if (world.isHub()) return true; // no zoom and nothing to rise to on the hub
+        if (world.isGrid()) { // the grid does not zoom (Kelvin 2026-10-19 21:16): the wheel scrolls it
+            grid.scrollTo(grid.scroll() + amountY * 120f);
+            return true;
+        }
+        if (amountY > 0f && cam.zoom >= cam.zoomMax() * 0.99f && !cam.isGliding()) {
+            cam.bump(0.06f); // at the overview the map gives a little and springs back
+            return true;
+        }
+        cam.zoomAbout(mouseX, mouseY, (float) Math.pow(1.1, amountY));
+        cam.poke();
+        return true;
+    }
+
     /** BACK / Esc: overlays first, then the card, then up one level (nothing on the hub). */
     @Override
     protected void onBack() {
@@ -1396,6 +1433,70 @@ public class MapScreen extends KkScreen<Main>
         rise();
     }
 
+    @Override
+    protected boolean onKeyDown(int keycode) {
+        switch (keycode) {
+            case Input.Keys.PLUS:
+            case Input.Keys.EQUALS:
+            case Input.Keys.NUMPAD_ADD:
+                if (!world.isGrid()) cam.zoomAbout(Ui.CX, Ui.CY, 1f / 1.25f); // the grid does not zoom
+                return true;
+            case Input.Keys.MINUS:
+            case Input.Keys.NUMPAD_SUBTRACT:
+                if (!world.isGrid()) cam.zoomAbout(Ui.CX, Ui.CY, 1.25f);
+                return true;
+            case Input.Keys.PAGE_UP:
+                rise();
+                return true;
+            case Input.Keys.TAB: {
+                if (world.nodes.length == 0) return true;
+                boolean back = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT)
+                    || Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT);
+                int i = selected != null && selected.isSong() ? selected.order : (back ? 0 : -1);
+                for (int step = 0; step < world.nodes.length; step++) {
+                    i = (i + (back ? -1 : 1) + world.nodes.length) % world.nodes.length;
+                    if (opens(world.nodes[i])) break;
+                }
+                if (opens(world.nodes[i])) selectNode(world.nodes[i], true);
+                return true;
+            }
+            case Input.Keys.Q:
+                card.keyStep(-1);
+                return true;
+            case Input.Keys.E:
+                card.keyStep(1);
+                return true;
+            case Input.Keys.NUM_1:
+            case Input.Keys.NUM_2:
+            case Input.Keys.NUM_3:
+            case Input.Keys.NUM_4:
+                lensChanged(Difficulty.byOrdinal(keycode - Input.Keys.NUM_1));
+                return true;
+            case Input.Keys.F:
+                openSort();
+                return true;
+            case Input.Keys.ENTER:
+            case Input.Keys.NUMPAD_ENTER:
+                if (card.isOpen()) card.fireDescend();
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private void keyboardPan(float dt) {
+        if (Gdx.input == null) return;
+        float dx = 0f, dy = 0f;
+        if (Gdx.input.isKeyPressed(Input.Keys.A) || Gdx.input.isKeyPressed(Input.Keys.LEFT)) dx -= 1f;
+        if (Gdx.input.isKeyPressed(Input.Keys.D) || Gdx.input.isKeyPressed(Input.Keys.RIGHT)) dx += 1f;
+        if (Gdx.input.isKeyPressed(Input.Keys.W) || Gdx.input.isKeyPressed(Input.Keys.UP)) dy += 1f;
+        if (Gdx.input.isKeyPressed(Input.Keys.S) || Gdx.input.isKeyPressed(Input.Keys.DOWN)) dy -= 1f;
+        if (world.isGrid()) dx = 0f;
+        if (dx == 0f && dy == 0f) return;
+        float k = MapStyle.KEY_PAN * cam.zoom * dt;
+        cam.nudge(dx * k, dy * k);
+    }
+
     // =================================================================== frame
     /**
      * The rise ring (Kelvin 2026-10-19 18:46, which dropped the overview chip and the double-pinch
@@ -1412,6 +1513,8 @@ public class MapScreen extends KkScreen<Main>
         time += dt;
         gestures.update(dt);
         refreshProfile(false);
+        boolean typing = editingTextField() != null;
+        if (!inputLocked() && !typing && !gestures.active() && !story.isOpen()) keyboardPan(dt);
         if (diving()) updateDive(dt);
         else if (exitK > 0f) exitK = Math.max(0f, exitK - dt / 0.2f);
         fx.update(dt);

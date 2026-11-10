@@ -1,7 +1,6 @@
 package org.kelvinizer.screens.shell;
 
 import org.kelvinizer.profile.Profile;
-import org.kelvinizer.profile.Depth;
 import org.kelvinizer.profile.ProfileStore;
 import org.kelvinizer.ui.Avatar;
 import org.kelvinizer.ui.Fonts;

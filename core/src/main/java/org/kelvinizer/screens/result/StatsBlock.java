@@ -55,11 +55,6 @@ public final class StatsBlock {
         earlyLateW *= earlyLateFit;
     }
 
-    /** @return the width of the EARLY / LATE / AVG line. */
-    public float earlyLateWidth() {
-        return earlyLateW;
-    }
-
     /**
      * Draws the counts, PERFECT, the divider over them (three columns), the chain line and the early / late line
      * (shapes now; the text joins the page groups of the {@link TextQueue}).

@@ -233,10 +233,14 @@ public final class SongLibrary implements Disposable {
         ChartHeaderReader.Header display = null;
         int displayRank = Integer.MAX_VALUE;
         SongInfo info = SongInfo.in(folder); // the song values of v5 charts
+        // Surface.json in the folder = the old file names (Difficulty class notes)
+        boolean oldNames = files != null ? Difficulty.oldNames(files)
+            : folder.child(Difficulty.SURFACE.oldFileName()).exists();
         for (Difficulty d : Difficulty.values()) {
-            FileHandle f = folder.child(d.fileName());
-            if (files != null ? !containsIgnoreCase(files, d.fileName()) : !f.exists()) continue;
-            if (files != null) f = folder.child(actualName(files, d.fileName()));
+            String name = d.fileName(oldNames);
+            FileHandle f = folder.child(name);
+            if (files != null ? !containsIgnoreCase(files, name) : !f.exists()) continue;
+            if (files != null) f = folder.child(actualName(files, name));
             ChartHeaderReader.Header h;
             try {
                 h = ChartHeaderReader.read(f);
@@ -729,7 +733,9 @@ public final class SongLibrary implements Disposable {
     }
 
     private static boolean hasChartFile(List<String> names) {
-        for (Difficulty d : Difficulty.values()) if (containsIgnoreCase(names, d.fileName())) return true;
+        for (Difficulty d : Difficulty.values()) {
+            if (containsIgnoreCase(names, d.fileName()) || containsIgnoreCase(names, d.oldFileName())) return true;
+        }
         return false;
     }
 

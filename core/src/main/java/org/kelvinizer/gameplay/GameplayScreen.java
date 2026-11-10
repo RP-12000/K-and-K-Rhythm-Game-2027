@@ -6,10 +6,13 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Vector2;
 import org.kelvinizer.Main;
 import org.kelvinizer.Params;
 import org.kelvinizer.audio.SongClock;
+import org.kelvinizer.elements.Channels;
 import org.kelvinizer.elements.Chart;
+import org.kelvinizer.elements.Lane;
 import org.kelvinizer.elements.LaneLayout;
 import org.kelvinizer.elements.Line;
 import org.kelvinizer.elements.Note;
@@ -28,6 +31,8 @@ import org.kelvinizer.ui.KkScreen;
 import org.kelvinizer.ui.Pressable;
 import org.kelvinizer.ui.Theme;
 import org.kelvinizer.ui.Ui;
+import space.earlygrey.shapedrawer.JoinType;
+import space.earlygrey.shapedrawer.ShapeDrawer;
 
 import java.util.Arrays;
 
@@ -55,8 +60,9 @@ import java.util.Arrays;
  * also under the HUD corners. Then the {@link PauseControl} sees it: by default two touch-downs on
  * the top-right control within 300 ms pause (the first plays a hint); a touch that judged a note,
  * re-grabbed a hold or covers a running TIDE STREAM does not count and does not cancel a pending
- * first tap. The hit sound plays inside the input handler. BACK and the app going to the background pause
- * instantly; BACK (or RESUME) while paused resumes with a 3-2-1 countdown, a second a digit as at the start (Kelvin 2026-10-21 16:45), during which notes stay
+ * first tap. The hit sound plays inside the input handler. BACK / Esc, the keyboard's Pause key and
+ * the app going to the background pause instantly; BACK / Esc (or RESUME, or Enter) while paused
+ * resume with a 3-2-1 countdown, a second a digit as at the start (Kelvin 2026-10-21 16:45), during which notes stay
  * frozen and nothing is judged. On Android the music runs through it unheard (Kelvin 2026-10-21 15:09): it plays
  * muted from the countdown's length before the pause and sounds at full volume as the count ends at the paused time,
  * already in step with the notes. The chart fades back in through the count, from a twentieth of its opacity as it
@@ -70,7 +76,7 @@ import java.util.Arrays;
  * during the pre-roll restarts it from the 3.
  *
  * <p><b>Stretch</b> (Kelvin 2026-10-12 16:09 / 16:17): the playfield fills the screen at every aspect.
- * {@link #begin} and every frame fit {@link Field} to the visible world; a change (a split-screen resize, also
+ * {@link #begin} and every frame fit {@link Field} to the visible world; a change (a desktop resize, also
  * during the pre-roll or a pause) makes the engine re-evaluate its frame geometry, and the edge entries
  * follow on the next frame. The corner HUD stays pinned to the corners, unstretched.
  */
@@ -84,6 +90,8 @@ public class GameplayScreen extends KkScreen<Main> {
     /** The chart's opacity factor as the resume countdown starts; it rises evenly to 1 as the count ends. */
     public static final float COUNT_FADE_FROM = 0.05f;
     private static final float ABYSS_PULSE_SEC = 0.40f;
+    /** Judging hint ({@link #drawJudgeHint}): chevron arm, stroke, gap from the centre and slide (world units). */
+    private static final float HINT_ARM = 56f, HINT_STROKE = 12f, HINT_GAP = 120f, HINT_SLIDE = 80f;
     private static final float JACKET_WASH_ALPHA = 0.12f;
     private static final float ART_ALPHA = 0.15f;
 
@@ -120,12 +128,20 @@ public class GameplayScreen extends KkScreen<Main> {
     private final FeedbackLayer feedback;
     /** The TIDE hit effect (DESIGN §19.2), block A. */
     private final TideWash tideWash;
+    /** The chart's view (3D camera, 2026-11-07): the field through it while it is not the default one. */
+    private final View3D view = new View3D();
+    /** The press being handled's ray for keys on a sea ({@link #seaRay}): its x at depth 0, x per unit deeper. */
+    private final float[] seaPt = new float[2];
+    /** Where the press being handled lands on the field ({@link #toField}). */
+    private final Vector2 fieldPt = new Vector2();
     /** SHOW TOUCHES: a ring under every finger (Kelvin 2026-10-18 19:52); a veiled finger's glitch mark. */
     private final TouchMarks marks;
     /** The veils over the field and notes, and the glitch mark of a veiled finger (CHART_FORMAT_v4 §6.10). */
     private final VeilRenderer veilFx;
     /** The curtains (水帘): blur everything beneath the pause menu, never judged (CHART_FORMAT §6.1). */
     private final VeilRenderer curtainFx;
+    /** A chart format v7 chart's veils and curtains as they show this frame: drawn and judged on the screen. */
+    private final Volumes7 volumes = new Volumes7();
     private final GameplayHud hud;
     /** Records HUD-under text (and other text passes) so each font page is one draw call. */
     private final DeferredBatch text = new DeferredBatch();
@@ -144,6 +160,9 @@ public class GameplayScreen extends KkScreen<Main> {
     private int[] holdFx = new int[0];
     /** The base point of the STREAM last asked ({@link #holdBase}). */
     private final float[] basePt = new float[2];
+    /** Where {@link #sinkFx} puts a hit effect; where a contact ring on a turned lane shows ({@link #contact}). */
+    private final float[] fxPt = new float[2], ringPt = new float[3];
+    private final float[] hintPath = new float[6];
     /** The faint dot where a touch hits no zone: the tutorial's (players' SHOW TOUCHES draws {@link #marks}). */
     private boolean strayDots;
     private boolean showTouches;
@@ -159,7 +178,9 @@ public class GameplayScreen extends KkScreen<Main> {
     private boolean countIn;
     /** Fades the chart through the resume countdown. */
     private final FadeShader fade = new FadeShader();
-    /** How the last pause opened: "tap" (pause control), "key" (BACK) or "app". */
+    /** The picture drawn smaller and stretched while the frame rate stays low (Kelvin 2026-11-10 01:34). */
+    private final RenderScale renderScale = new RenderScale();
+    /** How the last pause opened: "tap" (pause control), "key" (BACK / Esc / Pause) or "app". */
     @SuppressWarnings("unused")
     private String pausedBy = "";
     @SuppressWarnings("unused")
@@ -271,6 +292,7 @@ public class GameplayScreen extends KkScreen<Main> {
         curtainFx.prewarm();
         // the note size sets how far a turned body reaches, so which notes slide in (DESIGN §5.4)
         notes.setStyle(settings.noteSizeScale, game.hitFx().quality() == HitFx.QUALITY_HIGH);
+        engine.layout().setKeyScale(notes.noteSize()); // the lanes' bases at the key size
         notes.setHitPoint(settings.hitPointPx);
         notes.setSyncHint(settings.syncHint);
         notes.begin(chart);
@@ -290,11 +312,11 @@ public class GameplayScreen extends KkScreen<Main> {
      * The song clock starts before the first note can be drawn (DESIGN §5.11), so the first frame
      * of the game shows nothing of any note: the engine starts at 0 or just before the first
      * visibleFrom, and the screen moves that start before the earliest slide in from the screen
-     * edge (DESIGN §5.4, {@link EdgeEntry}, trails included) and the frame's offsets. The engine
-     * knows nothing of the screen, so the screen moves its start, never later.
+     * edge (DESIGN §5.4, {@link EdgeEntry}, trails included) and the frame's offsets, and before the first judging hint
+     * ({@link #firstHintBeat}). The engine knows nothing of the screen, so the screen moves its start, never later.
      */
     private void startBeforeFirstNote() {
-        float beat = notes.entry().firstDrawBeat();
+        float beat = Math.min(notes.entry().firstDrawBeat(), firstHintBeat());
         if (beat == Float.POSITIVE_INFINITY) return;
         // the first frame draws at visual time lead-in − audio offset + visual offset
         double ms = chart.beatToMs(beat) + Math.min(0f, engine.audioOffsetMs() - engine.visualOffsetMs());
@@ -368,11 +390,6 @@ public class GameplayScreen extends KkScreen<Main> {
         return preroll;
     }
 
-    /** @return seconds left in the resume countdown, or −1. */
-    public float resumeCountdown() {
-        return countdown;
-    }
-
     private void applyOffsets() {
         DeviceSettings d = game.profiles() != null ? game.profiles().device() : null;
         // no visual offset since 2026-10-18 (Kelvin: it overlapped the audio offset)
@@ -437,9 +454,11 @@ public class GameplayScreen extends KkScreen<Main> {
     public void dispose() {
         engine.clock().dispose();
         fade.dispose();
+        renderScale.dispose();
         veilFx.dispose();
         curtainFx.dispose();
         disposeSongArt();
+        view.dispose();
         if (defaultArt != null) game.art().release(DEFAULT_ART);
         defaultArt = null;
     }
@@ -507,11 +526,15 @@ public class GameplayScreen extends KkScreen<Main> {
         int combo = engine.scores().combo();
         game.backdrop().setComboLife(combo);
 
+        // drawn smaller and stretched while the frame rate stays low (Kelvin 2026-11-10 01:34, weaker phones)
+        renderScale.update(runDelta > 0f);
+        boolean small = renderScale.begin();
         batch.begin();
         game.backdrop().render(batch, viewport, runDelta);
         // culling + approach state first: a TIDE approach brightens the zone hint of block A
         field.clearApproach();
         notes.setStyle(settings.noteSizeScale, fx.quality() == HitFx.QUALITY_HIGH);
+        engine.layout().setKeyScale(notes.noteSize()); // the lanes' bases at the key size
         notes.setHitPoint(settings.hitPointPx);
         notes.setSyncHint(settings.syncHint);
         notes.prepare(engine, field, settings.approachGlow);
@@ -522,14 +545,41 @@ public class GameplayScreen extends KkScreen<Main> {
         drawAbyssPressure();
         // the chart fades back in through the resume countdown (Kelvin 2026-10-21 15:40)
         float fadeA = countdown >= 0f ? countFade(countdown) : 1f;
+        // the view (2026-11-07): in 3D (finite lanes always, else off the default) what lies behind the flat picture
+        // first, then the field through it
+        boolean v3 = view.update(chart, engine.visualBeat(), camera);
+        engine.setSolid(v3); // a turned sea is then drawn level and turned in 3D (Kelvin 2026-11-09 00:13)
+        tideWash.setSpace(v3 ? view : null);
+        if (v3) {
+            batch.end();
+            view.drawBack(engine, fadeA * MathUtils.clamp(introT / 0.35f, 0f, 1f)); // with the lanes' intro
+            view.drawSeas(engine, fadeA, NoteShapes.songSeconds(engine));
+            notes.collectBoxes(engine, runTime, view);
+            view.drawBoxes(engine.layout(), fadeA, NoteShapes.songSeconds(engine));
+            batch.setProjectionMatrix(view.combined());
+            batch.begin();
+            game.draw().batch().beginSpace(); // each lane's frame without a draw call (Kelvin 2026-11-10 01:19)
+        }
         boolean faded = fadeA < 1f && fade.begin(batch, fadeA);
+        field.setSpace(v3 ? view : null); // moved columns' depth (Kelvin 2026-11-07 22:54)
         field.drawUnder(engine, zoneStrength(), MathUtils.clamp(introT / 0.35f, 0f, 1f));
+        if (!v3) field.drawSeas(engine, NoteShapes.songSeconds(engine)); // in 3D drawn behind, with the columns
         tideWash.draw(engine);  // above the lane field, beneath notes, judgement word and HUD
+        drawJudgeHint();
         if (faded) fade.end(batch);
         // the veils cover the field and the notes (block B); the HUD beneath the notes stays above the most
         // prominent one: drawn outside it here, inside it again after the veils (CHART_FORMAT_v4 §6.10)
-        boolean veiled = veilFx.prepare(engine.veils(), engine.visualBeat(), runTime, fadeA);
-        boolean curtained = curtainFx.prepare(engine.curtains(), engine.visualBeat(), runTime, fadeA);
+        veilFx.setSpace(v3 ? view : null); // their depth through the view (Kelvin 2026-11-07 22:54)
+        // chart format v7: boxes and ellipsoids, worked out through the view and drawn on the screen
+        volumes.update(chart, engine.visualBeat(), v3 ? view : null);
+        boolean seven = chart != null && !chart.volumes7().isEmpty();
+        boolean veiled = seven ? veilFx.prepare7(volumes, runTime, fadeA)
+            : veilFx.prepare(engine.veils(), engine.visualBeat(), runTime, fadeA);
+        boolean curtained = seven ? curtainFx.prepare7(volumes, runTime, fadeA)
+            : curtainFx.prepare(engine.curtains(), engine.visualBeat(), runTime, fadeA);
+        // in 3D the veils lie on the field, the HUD stays on the screen; v7 volumes are on the screen already
+        veilFx.setView(v3 && !seven ? view.combined() : null);
+        if (v3) flat();
         boolean clipped = veiled && veilFx.clipBegin(batch, false);
         hud.drawUnder(batch, introT, runTime, !menuOpen);
         // ---- HUD-under text (recorded, then one draw call per font page)
@@ -544,13 +594,16 @@ public class GameplayScreen extends KkScreen<Main> {
             text.replay();
         }
         // ---- normal block B
+        if (v3) deep();
         faded = fadeA < 1f && fade.begin(batch, fadeA);
-        field.drawLines(engine, runTime);
+        field.drawLines(engine, runTime, introT);
         notes.drawBands(engine, runTime); // TIDE STREAM bands beneath trails, lane notes and mines
+        trails.setSpace(v3 ? view : null);
         trails.draw(engine);   // afterimages beneath every live note (ARCHITECTURE §17)
         notes.draw(engine, runTime);
         if (faded) fade.end(batch);
-        if (veiled) drawVeils(clipped);
+        if (veiled) drawVeils(clipped, v3, seven, fadeA);
+        if (v3) flat();
         overlay.drawBannerScrim(engine.judgeMs(), engine.endMs());
         // ---- additive block (one blend switch)
         int src = batch.getBlendSrcFunc();
@@ -558,16 +611,25 @@ public class GameplayScreen extends KkScreen<Main> {
         int srcA = batch.getBlendSrcFuncAlpha();
         int dstA = batch.getBlendDstFuncAlpha();
         batch.setBlendFunction(GL20.GL_SRC_ALPHA, GL20.GL_ONE);
+        if (v3) deep();
         faded = fadeA < 1f && fade.begin(batch, fadeA);
         field.drawAdditive(engine, runTime, combo, beatPulse());
         notes.drawGlows();
         if (faded) fade.end(batch);
+        if (v3) flat();
         feedback.drawAdditive(runTime);
         overlay.drawBurst(batch, engine.judgeMs(), engine.endMs());
+        // in 3D the hit effects are spheres round the keys, drawn facing the screen (Kelvin 2026-11-07 17:04)
+        fx.setView(v3 ? view : null);
         faded = fadeA < 1f && fade.begin(batch, fadeA); // the hit effects the pause froze fade with the chart
         fx.draw(batch);
         if (faded) fade.end(batch);
         batch.setBlendFunctionSeparate(src, dst, srcA, dstA);
+        if (small) { // the smaller picture stretched over the screen; the touch marks and the HUD over it as before
+            batch.end();
+            renderScale.end(batch);
+            batch.begin();
+        }
         marks.draw(batch, veilFx, time, showTouches, glitchMarkRadius()); // over the notes and effects, under the HUD
         // ---- HUD-over
         drawExtras(delta);
@@ -594,22 +656,60 @@ public class GameplayScreen extends KkScreen<Main> {
 
     /**
      * Draws the veils over block B, leaving the judgement line strokes crisp, then the HUD beneath the notes
-     * inside the veil it was kept out of ({@code clipped}).
+     * inside the veil it was kept out of ({@code clipped}); in 3D ({@code v3}) the veils through the view, the HUD
+     * on the screen as before them. A chart format v7 chart's ({@code seven}) are drawn on the screen, then their
+     * edges in 3D ({@link View3D#drawVolumes}).
      */
-    private void drawVeils(boolean clipped) {
-        LaneLayout lay = engine.layout();
-        float ly = engine.lineY(Line.LOWER), lh = field.strokeHalf(Line.LOWER, runTime);
-        float uy = engine.lineY(Line.UPPER), uh = field.strokeHalf(Line.UPPER, runTime);
-        veilFx.draw(batch, ly, lh, uy, uh, lay.windowLeft(), lay.windowRight());
-        if (!clipped || !veilFx.clipBegin(batch, true)) return;
+    private void drawVeils(boolean clipped, boolean v3, boolean seven, float fadeA) {
+        if (v3) game.draw().batch().endSpace(); // the veils' shaders as before, through the view's projection
+        if (seven) {
+            if (v3) flat();
+            veilFx.draw(batch);
+            if (v3) {
+                batch.end();
+                view.drawVolumes(volumes, fadeA);
+                batch.begin();
+            }
+        } else {
+            LaneLayout lay = engine.layout();
+            float ly = engine.lineY(Line.LOWER), lh = field.strokeHalf(Line.LOWER, runTime);
+            float uy = engine.lineY(Line.UPPER), uh = field.strokeHalf(Line.UPPER, runTime);
+            veilFx.draw(batch, ly, lh, uy, uh, lay.windowLeft(), lay.windowRight());
+        }
+        if (!clipped) return;
+        if (v3) flat();
+        if (!veilFx.clipBegin(batch, true)) return;
         hud.drawUnder(batch, introT, runTime, !menuOpen);
         text.replay();
         veilFx.clipEnd(batch);
     }
 
-    /** @return radius of a veiled finger's glitch mark: half a note's width (Kelvin 16:55). */
+    /**
+     * Into the 3D field: the view's projection, and the batch's space mode, where each lane's and key's own frame costs
+     * no draw call (Kelvin 2026-11-10 01:19 「我的手机根本带不动这么大的3D建模」).
+     */
+    private void deep() {
+        batch.setProjectionMatrix(view.combined());
+        game.draw().batch().beginSpace();
+    }
+
+    /** Out of the 3D field onto the screen: what space mode holds drawn, then the flat camera's projection. */
+    private void flat() {
+        game.draw().batch().endSpace();
+        batch.setProjectionMatrix(camera.combined);
+    }
+
+    /** @return radius of a veiled finger's glitch mark: half a note's width in the average lane (Kelvin 16:55). */
     private float glitchMarkRadius() {
-        return 0.5f * notes.headWidth(engine.layout().defaultWidth());
+        LaneLayout lay = engine.layout();
+        float sum = 0f;
+        int n = 0;
+        for (int i = 0; i < lay.count(); i++) {
+            if (!lay.active(i)) continue;
+            sum += lay.width(i);
+            n++;
+        }
+        return n > 0 ? 0.5f * notes.headWidth(sum / n) : 64f;
     }
 
     /** Hook for subclasses: per-frame update before drawing (screen delta). */
@@ -668,6 +768,55 @@ public class GameplayScreen extends KkScreen<Main> {
         return ms < 180f ? 1f - ms / 180f : 0f;
     }
 
+    /**
+     * @return where the first judging hint ({@link #drawJudgeHint}) starts: a beat before the chart's first full-screen
+     *         edge, or +∞ without one; the run starts by then (Kelvin 2026-11-08 19:35)
+     */
+    private float firstHintBeat() {
+        float[] r = chart.fullScreenRanges();
+        if (r != null) for (float e : r) if (Float.isFinite(e)) return e - 1f;
+        return Float.POSITIVE_INFINITY;
+    }
+
+    /**
+     * Judging hint (Kelvin 2026-11-07 06:04 「两个箭头向外就是全屏判定，两个箭头向内就是垂直判定」): in the beat before each
+     * edge of the chart's full-screen time, two chevrons between the lines slide apart (‹ ›, a press anywhere from the
+     * edge) or together (› ‹, columns again), fading in over a quarter beat and out over the last fifth, gone as the
+     * edge comes (19:35「-3~-2拍就播放全屏判定的动画，然后-2拍正式进入全屏判定」).
+     */
+    private void drawJudgeHint() {
+        float[] r = chart != null ? chart.fullScreenRanges() : null;
+        if (r == null || r.length == 0) return;
+        float beat = engine.visualBeat();
+        LaneLayout lay = engine.layout();
+        float cx = 0.5f * (lay.windowLeft() + lay.windowRight());
+        float cy = 0.5f * (engine.lineY(Line.LOWER) + engine.lineY(Line.UPPER));
+        ShapeDrawer sd = game.draw().shapes();
+        float old = sd.getPackedColor();
+        for (int i = 0; i < r.length; i++) {
+            float d = beat - r[i];
+            if (!(d >= -1f && d <= 0f)) continue; // also an open end (±∞)
+            float a = Math.min(1f, 4f * (d + 1f)) * Math.min(1f, -5f * d);
+            boolean apart = i % 2 == 0; // a range starts: full screen
+            float p = d + 1f;
+            float gap = HINT_GAP + HINT_SLIDE * (apart ? p : 1f - p);
+            for (int s = -1; s <= 1; s += 2) {
+                float tip = cx + s * gap;
+                float back = tip - (apart ? s : -s) * HINT_ARM;
+                game.draw().glowDot(tip, cy, 4f * HINT_ARM, Theme.WHITE, 0.16f * a);
+                hintPath[0] = back;
+                hintPath[1] = cy + HINT_ARM;
+                hintPath[2] = tip;
+                hintPath[3] = cy;
+                hintPath[4] = back;
+                hintPath[5] = cy - HINT_ARM;
+                sd.setColor(1f, 1f, 1f, 0.9f * a);
+                sd.path(hintPath, HINT_STROKE, JoinType.POINTY, true);
+            }
+        }
+        sd.setColor(old);
+    }
+
     /** Abyss pressure (DESIGN §2.7, P1): the corners pulse {@code #FF2E88 @ .06} on bar downbeats. */
     private void drawAbyssPressure() {
         float t = runTime - abyssT;
@@ -686,21 +835,24 @@ public class GameplayScreen extends KkScreen<Main> {
         HitFx fx = game.hitFx();
         boolean high = fx.quality() == HitFx.QUALITY_HIGH;
         while (engine.pollEvent(ev)) {
-            if (ev.has(GameEvent.FLAG_FLOAT)) {
-                floatEvent();
-                continue;
-            }
             Line line = ev.line;
-            float ly = line != null ? engine.lineY(line) : ev.y;
+            // where the note lands: its line, or its sea (Kelvin 2026-11-07 16:04)
+            float ly = line == null ? ev.y : ev.note >= 0 ? engine.landY(chart.note(ev.note)) : engine.lineY(line);
             boolean sky = line == Line.UPPER; // explicit: lines may cross y = 540 (no guessing from y)
             boolean universal = ev.has(GameEvent.FLAG_UNIVERSAL);
             boolean auto = ev.has(GameEvent.FLAG_AUTO);
             switch (ev.type) {
                 case GameEvent.HIT: {
                     float x = universal ? ev.touchX : ev.x;
-                    if (!universal) fx.tap(x, ly, ev.judgement, 1f, sky); // TIDE: no point effect (DESIGN §19.2)
+                    if (!universal) { // TIDE: no point effect (DESIGN §19.2)
+                        float k = sinkFx(ev.note, x, ly) * keyFx(ev.note);
+                        fx.tap(fxPt[0], fxPt[1], ev.judgement, k, sky);
+                    }
                     hitFeedback(line, ly, x, universal, high);
-                    if (universal) tideWash.hit(line, ev.judgement == Judgement.RESONANCE, runTime);
+                    boolean res = ev.judgement == Judgement.RESONANCE;
+                    Note on = universal && ev.note >= 0 ? chart.note(ev.note) : null;
+                    if (on != null && on.sea() != null) tideWash.hitSea(on.sea(), line, res, runTime); // along its sea
+                    else if (universal) tideWash.hit(line, res, runTime);
                     else contact(line, ly, true, auto); // TIDE: no contact ring at the finger either (§19.2)
                     hud.judgement(ev.judgement, ev.dtMs, ev.x, line, ly, runTime);
                     if (auto && autoHitMs == null) game.audio().playHit(ev.judgement);
@@ -709,17 +861,22 @@ public class GameplayScreen extends KkScreen<Main> {
                     break;
                 }
                 case GameEvent.CATCH:
-                    caught();
+                    // a DRAG caught early is a RESONANCE at its time: time its hit sound now, as autoplay's are
+                    if (game.audio() != null && game.audio().timesHits()) {
+                        playHitAt(ev.timeMs);
+                        dragSound[ev.note] = true;
+                    }
                     break;
                 case GameEvent.HOLD_START: {
                     boolean based = ev.note >= 0 && holdBase(ev.note);
-                    float bx = based ? basePt[0] : ev.x, by = based ? basePt[1] : ly;
+                    float k = sinkFx(ev.note, ev.x, ly) * keyFx(ev.note);
+                    float bx = based ? basePt[0] : fxPt[0], by = based ? basePt[1] : fxPt[1];
                     if (ev.note >= 0) {
                         if (holdFx[ev.note] >= 0) fx.holdEnd(holdFx[ev.note], false);
-                        holdFx[ev.note] = fx.holdStart(bx, by, ev.judgement, 1f, sky);
+                        holdFx[ev.note] = fx.holdStart(bx, by, ev.judgement, k, sky);
                     }
                     if (!ev.has(GameEvent.FLAG_REGRAB)) {
-                        fx.head(bx, by, ev.judgement, 1f, sky); // the head's own splash (LOST heads: nothing)
+                        fx.head(bx, by, ev.judgement, k, sky); // the head's own splash (LOST heads: nothing)
                         hitFeedback(line, ly, ev.x, false, high);
                         hud.judgement(ev.judgement, ev.dtMs, ev.x, line, ly, runTime);
                     }
@@ -736,8 +893,9 @@ public class GameplayScreen extends KkScreen<Main> {
                         holdFx[ev.note] = -1;
                     } else if (completed && !ev.has(GameEvent.FLAG_TIDE_STREAM)) {
                         boolean based = ev.note >= 0 && holdEndBase(ev.note);
+                        float k = sinkFx(ev.note, ev.x, ly) * keyFx(ev.note);
                         // no held stream (effects were off at its head, or every slot was busy): the splash alone
-                        fx.release(based ? basePt[0] : ev.x, based ? basePt[1] : ly, ev.judgement, 1f, sky);
+                        fx.release(based ? basePt[0] : fxPt[0], based ? basePt[1] : fxPt[1], ev.judgement, k, sky);
                     }
                     if (completed) {
                         game.audio().playHoldEnd(); // optional Sounds/hold_end.* (DESIGN §5.14)
@@ -746,7 +904,7 @@ public class GameplayScreen extends KkScreen<Main> {
                         }
                     } else {
                         fx.lost(ev.x, line == Line.UPPER ? ly - 120f : ly + 120f, 1f);
-                        field.flash(line, ev.x, ev.width, false, runTime); // a TIDE STREAM (width 0): the window
+                        field.flash(line, ev.lane, false, runTime); // a TIDE STREAM (lane −1) flashes the window
                         hud.judgement(Judgement.LOST, 0f, ev.x, line, ly, runTime);
                         // a broken TIDE STREAM drains the tide level (unless another one keeps it up)
                         if (ev.has(GameEvent.FLAG_TIDE_STREAM) && !engine.tideRunning(line)) {
@@ -758,13 +916,16 @@ public class GameplayScreen extends KkScreen<Main> {
                 case GameEvent.LOST:
                     fx.lost(ev.x, line == Line.UPPER ? ly - 120f : ly + 120f, 1f);
                     if (universal) field.flashWindow(line, false, runTime);
-                    else field.flash(line, ev.x, ev.width, false, runTime);
+                    else if (ev.lane >= 0) field.flash(line, ev.lane, false, runTime); // a DRAG off the lanes: none
                     hud.judgement(Judgement.LOST, 0f, ev.x, line, ly, runTime);
                     break;
                 case GameEvent.MINE:
-                    mineSound();
+                    if (Gdx.graphics.getFrameId() != mineSoundFrame) {
+                        mineSoundFrame = Gdx.graphics.getFrameId();
+                        game.audio().playMine(); // optional Sounds/mine.* (DESIGN §5.15), silent when absent
+                    }
                     feedback.mineShock(ev.touchX, ly, runTime);
-                    field.flash(line, ev.x, ev.width, true, runTime);
+                    field.flash(line, ev.lane, true, runTime);
                     hud.mineBreak();
                     hud.mineWord(ev.x, line, ly, runTime); // red LOST word (Kelvin 2026-10-12 00:42)
                     break;
@@ -782,61 +943,6 @@ public class GameplayScreen extends KkScreen<Main> {
     }
 
     /**
-     * An event of a floating note ({@link GameEvent#FLAG_FLOAT}, CHART_FORMAT §11): the notes draw their own hit and
-     * miss effects where they are ({@link FloatNotes}), so here only the words (the "At lane" display stands them just
-     * above the note; a touched mine's red LOST), the contact ring at the finger and the sounds.
-     */
-    private void floatEvent() {
-        boolean auto = ev.has(GameEvent.FLAG_AUTO);
-        float foot = ev.y + 0.5f * ev.width + FLOAT_WORD_GAP;
-        switch (ev.type) {
-            case GameEvent.HIT:
-            case GameEvent.HOLD_START:
-                if (!ev.has(GameEvent.FLAG_REGRAB)) hud.judgement(ev.judgement, ev.dtMs, ev.x, null, foot, runTime);
-                if (!auto && ev.pointer >= 0) feedback.contact(ev.touchX, ev.touchY, true, runTime);
-                if (auto && autoHitMs == null) game.audio().playHit(ev.judgement);
-                // a DRAG sounds as it is judged, unless its sound was timed when it was caught early
-                else if (!auto && ev.has(GameEvent.FLAG_DRAG) && !dragSound[ev.note]) playHitAt(ev.timeMs);
-                break;
-            case GameEvent.CATCH:
-                caught();
-                break;
-            case GameEvent.HOLD_END:
-                if (ev.has(GameEvent.FLAG_COMPLETED)) {
-                    game.audio().playHoldEnd();
-                    break;
-                }
-                hud.judgement(Judgement.LOST, 0f, ev.x, null, foot, runTime);
-                break;
-            case GameEvent.LOST:
-                hud.judgement(Judgement.LOST, 0f, ev.x, null, foot, runTime);
-                break;
-            case GameEvent.MINE: // the mine bursts red where it is (FloatNotes)
-                mineSound();
-                hud.mineBreak();
-                hud.mineWord(ev.x, null, foot, runTime);
-                break;
-            default:
-                break;
-        }
-    }
-
-    /** A DRAG caught early is a RESONANCE at its time: its hit sound is timed now, as autoplay's are. */
-    private void caught() {
-        if (game.audio() != null && game.audio().timesHits()) {
-            playHitAt(ev.timeMs);
-            dragSound[ev.note] = true;
-        }
-    }
-
-    /** The mine sound, once a frame however many mines were touched (optional Sounds/mine.*, DESIGN §5.15). */
-    private void mineSound() {
-        if (Gdx.graphics.getFrameId() == mineSoundFrame) return;
-        mineSoundFrame = Gdx.graphics.getFrameId();
-        game.audio().playMine();
-    }
-
-    /**
      * Hit ripple (High) or bead and EARLY/LATE chevron for a judged lane hit (TIDE: the tide wash, in consumeEvents).
      */
     private void hitFeedback(Line line, float ly, float x, boolean universal, boolean high) {
@@ -848,27 +954,30 @@ public class GameplayScreen extends KkScreen<Main> {
         }
     }
 
-    /**
-     * Contact ring and brackets of a touch (DESIGN §5.10): the brackets round the key it judged, or one key's width
-     * round the finger; autoplay pulses the key's column instead.
-     */
+    /** Contact ring and brackets of a touch (DESIGN §5.10); autoplay pulses the lane column instead. */
     private void contact(Line line, float ly, boolean judged, boolean auto) {
         if (line == null) return;
         if (auto) {
-            field.pulseColumn(line, ev.x, ev.width);
+            field.pulseColumn(line, ev.lane);
             return;
         }
         float x = ev.pointer >= 0 ? ev.touchX : ev.x;
+        LaneLayout lay = engine.layout();
+        if (ev.note >= 0 && view.active() && view.keyFrame(lay, chart.note(ev.note)) >= 0) {
+            // on a turned lane or sea (Kelvin 2026-11-09 00:13): where its hit shows on the screen
+            sinkFx(ev.note, ev.x, ly);
+            if (view.project(fxPt[0], fxPt[1], 0f, ringPt)) feedback.contact(ringPt[0], ringPt[1], judged, runTime);
+            return;
+        }
         feedback.contact(x, ly, judged, runTime);
-        if (ev.width >= LaneLayout.MIN_ACTIVE_WIDTH) {
-            feedback.brackets(ev.x - 0.5f * ev.width, ev.x + 0.5f * ev.width, ly, runTime);
+        if (ev.lane >= 0 && ev.lane < lay.count() && lay.active(ev.lane)
+            && engine.chart().lanesShown(lay.beat()) > 0.5f) { // no lane brackets in laneless time
+            feedback.brackets(lay.left(ev.lane), lay.right(ev.lane), ly, runTime);
         }
     }
 
     /** Height of the demo mine's red LOST word above the mine centre (judgement display "At lane"). */
     private static final float MINE_WORD_RISE = 56f;
-    /** Gap between a floating note's top and its "At lane" word. */
-    private static final float FLOAT_WORD_GAP = 14f;
 
     /**
      * Tutorial demo: paints a lane-note head with its leading edge centred on (x, y) (a sky head hangs
@@ -876,16 +985,16 @@ public class GameplayScreen extends KkScreen<Main> {
      * from {@link #drawExtras} (normal blend, atlas batch).
      */
     protected void drawNoteDemo(float x, float y, float laneWidth, boolean upper, float alpha) {
-        float w = notes.headWidth(laneWidth);
+        float w = notes.headWidth(laneWidth * notes.noteSize()); // the lane at the key size
         float h = notes.noteHeight();
         Color c = upper ? Theme.SKY_SIG : Theme.GROUND_NOTE;
-        notes.paintLaneNote(x, y, w, h, upper ? 180f : 0f, upper, 0f, c, alpha, 1f, 0f, 0f, 0f, 0f, false, false);
+        notes.paintLaneNote(x, y, w, h, upper ? 180f : 0f, c, alpha, 1f, 0f, 0f, 0f, 0f, 0f, false);
         notes.batch().setColor(Color.WHITE);
     }
 
     /** Tutorial demo: paints an upright mine body centred on (cx, cy), as wide as in a lane {@code laneWidth} wide. */
     protected void drawMineDemo(float cx, float cy, float laneWidth, float alpha) {
-        float mw = laneWidth * GameEngine.MINE_BOX;
+        float mw = laneWidth * notes.noteSize() * GameEngine.MINE_BOX;
         float mh = notes.mineHeight();
         notes.paintMine(cx, cy - mh * 0.5f, mw, mh, 0f, alpha); // (x, y) is the leading-edge centre
         notes.batch().setColor(Color.WHITE);
@@ -916,6 +1025,45 @@ public class GameplayScreen extends KkScreen<Main> {
             if (holdFx[i] < 0) continue; // TIDE STREAMs have no stream FX slot (no HOLD_START)
             if (holdBase(i)) fx.holdMove(holdFx[i], basePt[0], basePt[1]);
         }
+    }
+
+    /**
+     * How much bigger key {@code note}'s hit effects show than a default key's (Kelvin 2026-11-10 04:35 「76的那个按键的
+     * 打击特效要大一点」「把打击特效的大小和按键大小绑定」): its width over {@link Lane#DEFAULT_WIDTH}, at least 1 (a
+     * narrower key's as before) and at most {@link #FX_KEY_MAX}.
+     */
+    private float keyFx(int note) {
+        if (note < 0) return 1f;
+        LaneLayout lay = engine.layout();
+        return MathUtils.clamp(lay.keyWidth(chart.note(note)) / (Lane.DEFAULT_WIDTH * lay.unitX()), 1f, FX_KEY_MAX);
+    }
+
+    /** The most {@link #keyFx} makes a key's hit effects grow: a key four default keys wide or wider. */
+    private static final float FX_KEY_MAX = 4f;
+
+    /**
+     * Puts into {@link #fxPt} where the hit effect of note {@code note} at (x, y) shows (Kelvin 2026-11-07 22:54): at
+     * its column's and its own depth ({@link LaneLayout#keyMoveZ}, {@link Note#space()}), drawn on the effects' plane
+     * towards the eye ({@link View3D#sinkMiddle}).
+     *
+     * @return the effect's size factor: 1 at the columns' depth, without a note or while the view is flat
+     */
+    private float sinkFx(int note, float x, float y) {
+        fxPt[0] = x;
+        fxPt[1] = y;
+        if (note < 0 || !view.active()) return 1f;
+        Note n = chart.note(note);
+        // at its column's middle, its origin (Kelvin 2026-11-09 05:00: a base shorter than 240 brings its front in)
+        float own = Channels.at(n.space(), Channels.SOLID, Channels.Z, engine.visualBeat())
+            - 0.5f * (LaneLayout.DEFAULT_LENGTH - engine.layout().keyLength(n));
+        int f = view.keyFrame(engine.layout(), n);
+        if (f >= 0) return view.frameFx(f, x, y, own, fxPt); // on its turned lane or sea (Kelvin 2026-11-09 00:13)
+        float z = engine.layout().keyMoveZ(n) + own;
+        if (z == 0f) return 1f;
+        float t = view.sinkMiddle(z);
+        fxPt[0] = view.eyeX() + (x - view.eyeX()) * t;
+        fxPt[1] = view.eyeY() + (y - view.eyeY()) * t;
+        return t;
     }
 
     /**
@@ -951,15 +1099,89 @@ public class GameplayScreen extends KkScreen<Main> {
         return t;
     }
 
+    /** The lanes a press goes to first ({@link View3D#toField}): those with something to judge now. */
+    private final View3D.Awaits awaits = i -> engine.awaitsPress(i);
+
+    /**
+     * Sets {@link #fieldPt} to where a press at (x, y) of the screen lands on the field: the point itself, or while the
+     * view is turned ({@link View3D#toField}) along its ray. The engine judges there; the menus, the pause button and
+     * the touch rings stay on the screen. The other lanes whose areas on the screen hold the press go to the engine
+     * with it ({@link GameEngine#pressOverlap}; Kelvin 2026-11-10 02:19).
+     */
+    private Vector2 toField(float x, float y) {
+        LaneLayout lay = engine.layout();
+        fieldLane = -1;
+        int n = 0;
+        if (view.active()) {
+            view.toField(lay, x, y, fieldPt, awaits); // a lane with a key waiting first (Kelvin 2026-11-10 02:10)
+            fieldLane = view.hitLane();
+            for (int k = 0; k < view.metCount(); k++) {
+                int m = view.metLane(k);
+                if (m == fieldLane || !view.metJoint(k)) continue;
+                if (n == overLane.length) {
+                    overLane = Arrays.copyOf(overLane, 2 * n);
+                    overX = Arrays.copyOf(overX, 2 * n);
+                    overY = Arrays.copyOf(overY, 2 * n);
+                }
+                overLane[n] = m;
+                overX[n] = view.metX(k);
+                overY[n] = onLines(lay, m, view.metY(k));
+                n++;
+            }
+        } else {
+            fieldPt.set(x, y);
+        }
+        engine.pressOverlap(n, overLane, overX, overY);
+        int i = fieldLane >= 0 ? fieldLane : lay.moving() ? lay.indexAtX(fieldPt.x) : -1;
+        if (i >= 0) fieldPt.y = onLines(lay, i, fieldPt.y);
+        return fieldPt;
+    }
+
+    /** @return y on lane i's own lines (Kelvin 2026-11-08 23:10) moved to the chart's, where it is judged */
+    private float onLines(LaneLayout lay, int i, float y) {
+        if (!lay.moving()) return y;
+        float ky = Field.ky();
+        float yl = engine.lineY(Line.LOWER);
+        float yu = engine.lineY(Line.UPPER);
+        float ol = yl + lay.lift(i, Line.LOWER) * ky;
+        float ou = yu + lay.lift(i, Line.UPPER) * ky;
+        return Math.abs(ou - ol) > 1f ? yl + (y - ol) * (yu - yl) / (ou - ol) : y + yl - ol;
+    }
+
+    /** The other lanes the press {@link #toField} mapped last is in, and where ({@link GameEngine#pressOverlap}). */
+    private int[] overLane = new int[16];
+    private float[] overX = new float[16], overY = new float[16];
+
+    /** The lane the press {@link #toField} mapped last met in 3D ({@link View3D#hitLane}), or −1. */
+    private int fieldLane = -1;
+
+    /**
+     * Sets {@link #seaPt} for a press at (x, y) of the screen (Kelvin 2026-11-08 19:43): while the view is turned its
+     * ray, so a key on a sea is judged at its own depth ({@link View3D#seaRay}); else the point's x, the same at any
+     * depth.
+     */
+    private float[] seaRay(float x, float y) {
+        if (view.active()) {
+            view.seaRay(x, y, seaPt);
+        } else {
+            seaPt[0] = x;
+            seaPt[1] = 0f;
+        }
+        return seaPt;
+    }
+
     @Override
     protected boolean onTouchDown(float x, float y, int pointer, int button) {
         long ns = eventNanos();
+        Vector2 f = toField(x, y);
+        float[] s = seaRay(x, y);
+        boolean veiled = volumes.veiled(x, y); // a v7 veil's outline as drawn
         if (menuOpen) {
-            engine.touchDown(pointer, x, y, ns); // tracked only (paused)
+            engine.touchDown(pointer, f.x, f.y, s[0], s[1], fieldLane, veiled, ns); // tracked only (paused)
             menu.touchDown(x, y, pointer);
             return true;
         }
-        int r = engine.touchDown(pointer, x, y, ns);
+        int r = engine.touchDown(pointer, f.x, f.y, s[0], s[1], fieldLane, veiled, ns);
         marks.down(pointer, x, y, r == GameEngine.INPUT_VEILED, time);
         if (r == GameEngine.INPUT_JUDGED) {
             game.audio().playHit(engine.lastInputJudgement(), ns);
@@ -971,7 +1193,7 @@ public class GameplayScreen extends KkScreen<Main> {
         // may belong to a subclass control first (the tutorial's SKIP pill); a touch the pause control would not
         // count (it judged, re-grabbed, touched a mine or covers a running TIDE STREAM) never reaches it
         if ((r == GameEngine.INPUT_STRAY || r == GameEngine.INPUT_IGNORED || r == GameEngine.INPUT_EMPTY
-            || r == GameEngine.INPUT_VEILED) && !PauseControl.judges(engine, r, y)) {
+            || r == GameEngine.INPUT_VEILED) && !PauseControl.judges(engine, r, f.y)) {
             if (extraTouchDown(x, y, pointer)) return true;
         }
         // the touch already reached gameplay; now the pause control may count it
@@ -983,7 +1205,9 @@ public class GameplayScreen extends KkScreen<Main> {
 
     @Override
     protected boolean onTouchDragged(float x, float y, int pointer) {
-        engine.touchDragged(pointer, x, y, eventNanos());
+        Vector2 f = toField(x, y);
+        float[] s = seaRay(x, y);
+        engine.touchDragged(pointer, f.x, f.y, s[0], s[1], fieldLane, eventNanos());
         if (menuOpen) menu.touchDragged(x, y, pointer);
         extraTouchDragged(x, y, pointer);
         pauseControl.touchDragged(pointer, x, y);
@@ -992,7 +1216,9 @@ public class GameplayScreen extends KkScreen<Main> {
 
     @Override
     protected boolean onTouchUp(float x, float y, int pointer, int button) {
-        engine.touchUp(pointer, x, y, eventNanos());
+        Vector2 f = toField(x, y);
+        float[] s = seaRay(x, y);
+        engine.touchUp(pointer, f.x, f.y, s[0], s[1], fieldLane, eventNanos());
         if (menuOpen) menu.touchUp(x, y, pointer);
         extraTouchUp(x, y, pointer);
         if (pauseControl.touchUp(pointer, x, y, settings.pauseMode) == PauseControl.PAUSE && pauseEnabled()) {
@@ -1044,6 +1270,31 @@ public class GameplayScreen extends KkScreen<Main> {
 
     /** Hook: a cancelled pointer. */
     protected void extraTouchCancel(int pointer) {
+    }
+
+    @Override
+    protected boolean onKeyDown(int keycode) {
+        if (keycode == com.badlogic.gdx.Input.Keys.PAUSE) {
+            onBack(); // the keyboard's Pause key works like Esc: pause at once, or resume
+            return true;
+        }
+        if (menuOpen && (keycode == com.badlogic.gdx.Input.Keys.ENTER
+            || keycode == com.badlogic.gdx.Input.Keys.NUMPAD_ENTER)) {
+            startCountdown();
+            return true;
+        }
+        int r = engine.keyDown(keycode, eventNanos());
+        if (r == GameEngine.INPUT_JUDGED) game.audio().playHit(engine.lastInputJudgement());
+        else if (r == GameEngine.INPUT_EMPTY && settings.hitSoundMode == Settings.HIT_ON_ANY_ZONE_TAP) {
+            game.audio().playHit(null);
+        }
+        return GameKeys.slotOf(keycode) >= 0;
+    }
+
+    @Override
+    protected boolean onKeyUp(int keycode) {
+        engine.keyUp(keycode, eventNanos());
+        return GameKeys.slotOf(keycode) >= 0;
     }
 
     @Override
@@ -1103,7 +1354,7 @@ public class GameplayScreen extends KkScreen<Main> {
         Note[] notes = chart.notes();
         double[] t = new double[notes.length];
         int n = 0;
-        for (Note note : notes) if (note.type().judged() && Chart.playable(note)) t[n++] = note.judgementMs();
+        for (Note note : notes) if (note.type().judged() && !note.fake()) t[n++] = note.judgementMs();
         Arrays.sort(t, 0, n);
         int u = 0;
         for (int i = 0; i < n; i++) if (u == 0 || t[i] - t[u - 1] >= 1.0) t[u++] = t[i];

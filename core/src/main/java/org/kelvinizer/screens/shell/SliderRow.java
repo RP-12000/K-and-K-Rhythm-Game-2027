@@ -314,6 +314,12 @@ public class SliderRow extends SettingRow {
     }
 
     @Override
+    public void mouseMoved(float px, float py) {
+        if (nudges != null) for (Button n : nudges) n.mouseMoved(px, py);
+        if (lead != null) lead.mouseMoved(px, py);
+    }
+
+    @Override
     public boolean isGrabbing() {
         return slider.isGrabbed();
     }

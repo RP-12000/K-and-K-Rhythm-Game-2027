@@ -83,9 +83,9 @@ public class ToggleRow extends SettingRow {
 
     @Override
     public void drawShapes(Batch b, float alpha) {
-        if (row.pressAmount() > 0f) {
+        if (row.pressAmount() > 0f || row.hoverAmount() > 0f) {
             draw.roundRect(x - 16f, y + 4f, w + 32f, h - 8f, 16f, Theme.INK1,
-                0.06f * row.pressAmount() * alpha);
+                (0.06f * row.pressAmount() + 0.035f * row.hoverAmount()) * alpha);
         }
         row.drawPress(Theme.INK1, alpha * 0.6f);
         super.drawShapes(b, alpha);
@@ -117,6 +117,12 @@ public class ToggleRow extends SettingRow {
     public void cancel() {
         toggle.cancel();
         row.cancel();
+    }
+
+    @Override
+    public void mouseMoved(float px, float py) {
+        toggle.mouseMoved(px, py);
+        row.mouseMoved(px, py);
     }
 
     /** Current toggle state. */

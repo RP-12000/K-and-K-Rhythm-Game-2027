@@ -14,8 +14,8 @@ import org.kelvinizer.transition.TransitionLayer;
 
 /**
  * 所有画面的基类：1920 × 1080 的扩展世界视口和共用的 SpriteBatch，
- * 把触摸换算成世界坐标，返回键调用 {@link #onBack()}。
- * 转场进行时锁定输入，按下的控件会被取消而不会触发。
+ * 把触摸和鼠标换算成世界坐标，返回键调用 {@link #onBack()}。
+ * 转场进行时锁定输入，按下的控件会被取消而不会触发；正在编辑的文字输入框优先接收键盘。
  *
  * <p>Base class of every new screen (ARCHITECTURE §2 "KkScreen").
  *
@@ -28,13 +28,20 @@ import org.kelvinizer.transition.TransitionLayer;
  *       batch is the shared one from {@code game.draw()} (never dispose it).</li>
  *   <li>{@link #render(float)} clamps delta to ≤ 1/20 s, applies the viewport, sets the batch
  *       projection and calls {@link #draw(float)} (the batch is not begun).</li>
- *   <li>BACK calls {@link #onBack()} unless input is locked; other keys are ignored.</li>
- *   <li>Touch events are unprojected to world units and forwarded to {@link #onTouchDown} /
- *       {@link #onTouchDragged} / {@link #onTouchUp}. While {@link #inputLocked()} (a transition
- *       runs) downs and drags are swallowed and ups arrive as {@link #onTouchCancel(int)} so
- *       presses never fire. A gesture the platform cancels arrives as {@link #onGestureCancel(int)}.</li>
+ *   <li>BACK (Android) and ESCAPE (desktop) call {@link #onBack()} unless input is locked; other
+ *       keys go to {@link #onKeyDown} (not while locked) and {@link #onKeyUp} (always).</li>
+ *   <li>Touch and mouse events are unprojected to world units and forwarded to
+ *       {@link #onTouchDown} / {@link #onTouchDragged} / {@link #onTouchUp} /
+ *       {@link #onMouseMoved}. While {@link #inputLocked()} (a transition runs) downs and drags
+ *       are swallowed and ups arrive as {@link #onTouchCancel(int)} so presses never fire. A gesture the
+ *       platform cancels arrives as {@link #onGestureCancel(int)}.</li>
  *   <li>{@link #show()} is idempotent (sets the input processor, then {@link #onShow()});
  *       {@link #hide()} clears the processor if it is still ours, then {@link #onHide()}.</li>
+ *   <li>Text fields passed to {@link #registerTextField(TextField)} get the keyboard while they
+ *       edit inline: keys go to the field first (ESC cancels the edit instead of calling
+ *       {@link #onBack()}), a touch outside commits or reverts it, and {@link #hide()} reverts
+ *       it. Touches inside still go through {@link #onTouchDown} so the screen forwards them to
+ *       the field like any other widget.</li>
  * </ul>
  *
  * @param <G> the service hub type (Main)
@@ -56,6 +63,8 @@ public abstract class KkScreen<G extends KkServices> extends InputAdapter implem
 
     private final Vector3 tmp = new Vector3();
     private boolean shown;
+    private TextField[] textFields = new TextField[2];
+    private int textFieldCount;
 
     /** Creates the viewport and camera; no other allocation should happen in show(). */
     protected KkScreen(G game) {
@@ -87,6 +96,7 @@ public abstract class KkScreen<G extends KkServices> extends InputAdapter implem
     @Override
     public void hide() {
         if (Gdx.input.getInputProcessor() == inputProcessor()) Gdx.input.setInputProcessor(null);
+        for (int i = 0; i < textFieldCount; i++) textFields[i].cancelEdit();
         shown = false;
         onHide();
     }
@@ -144,7 +154,7 @@ public abstract class KkScreen<G extends KkServices> extends InputAdapter implem
     protected void onResize(int width, int height) {
     }
 
-    /** BACK (not called while input is locked). */
+    /** BACK / ESC (not called while input is locked). */
     protected void onBack() {
     }
 
@@ -183,7 +193,55 @@ public abstract class KkScreen<G extends KkServices> extends InputAdapter implem
         for (int p = 0; p < MAX_POINTERS; p++) onTouchCancel(p);
     }
 
+    /** Mouse move in world units (desktop hover). */
+    protected boolean onMouseMoved(float x, float y) {
+        return false;
+    }
+
+    /** Scroll wheel (desktop); amountY > 0 scrolls down. */
+    protected boolean onScrolled(float amountX, float amountY) {
+        return false;
+    }
+
+    /** Key down other than BACK / ESC. */
+    protected boolean onKeyDown(int keycode) {
+        return false;
+    }
+
+    /**
+     * Key up (not routed while a registered text field edits). Unlike the other hooks it also
+     * arrives while input is locked, so a key held across a transition is never left pressed.
+     */
+    protected boolean onKeyUp(int keycode) {
+        return false;
+    }
+
+    /** Character typed (not routed to an editing text field). */
+    protected boolean onKeyTyped(char character) {
+        return false;
+    }
+
     // ------------------------------------------------------------------ helpers
+    /**
+     * Registers a text field so keyboard input reaches it while it edits inline (call once,
+     * e.g. in the constructor; registering the same field twice is a no-op).
+     */
+    protected void registerTextField(TextField field) {
+        for (int i = 0; i < textFieldCount; i++) if (textFields[i] == field) return;
+        if (textFieldCount == textFields.length) {
+            TextField[] grown = new TextField[textFields.length * 2];
+            System.arraycopy(textFields, 0, grown, 0, textFieldCount);
+            textFields = grown;
+        }
+        textFields[textFieldCount++] = field;
+    }
+
+    /** The registered text field currently editing inline, or null. */
+    protected TextField editingTextField() {
+        for (int i = 0; i < textFieldCount; i++) if (textFields[i].isEditing()) return textFields[i];
+        return null;
+    }
+
     /** Unprojects screen coordinates into world units (the returned vector is reused). */
     protected Vector3 toWorld(int screenX, int screenY) {
         tmp.set(screenX, screenY, 0f);
@@ -194,15 +252,36 @@ public abstract class KkScreen<G extends KkServices> extends InputAdapter implem
     // ------------------------------------------------------------------ InputProcessor
     @Override
     public boolean keyDown(int keycode) {
-        if (keycode != Input.Keys.BACK) return false;
-        if (!inputLocked()) onBack();
-        return true;
+        TextField editing = editingTextField();
+        if (editing != null) return editing.keyDown(keycode);
+        if (keycode == Input.Keys.BACK || keycode == Input.Keys.ESCAPE) {
+            if (!inputLocked()) onBack();
+            return true;
+        }
+        if (inputLocked()) return true;
+        return onKeyDown(keycode);
+    }
+
+    @Override
+    public boolean keyUp(int keycode) {
+        if (editingTextField() != null) return false;
+        return onKeyUp(keycode);
+    }
+
+    @Override
+    public boolean keyTyped(char character) {
+        TextField editing = editingTextField();
+        if (editing != null) return editing.keyTyped(character);
+        if (inputLocked()) return true;
+        return onKeyTyped(character);
     }
 
     @Override
     public boolean touchDown(int screenX, int screenY, int pointer, int button) {
         if (inputLocked()) return true;
         Vector3 v = toWorld(screenX, screenY);
+        TextField editing = editingTextField();
+        if (editing != null && !editing.hit(v.x, v.y)) editing.commitOrRevert();
         return onTouchDown(v.x, v.y, pointer, button);
     }
 
@@ -227,5 +306,18 @@ public abstract class KkScreen<G extends KkServices> extends InputAdapter implem
     public boolean touchCancelled(int screenX, int screenY, int pointer, int button) {
         onGestureCancel(pointer);
         return true;
+    }
+
+    @Override
+    public boolean mouseMoved(int screenX, int screenY) {
+        if (inputLocked()) return false;
+        Vector3 v = toWorld(screenX, screenY);
+        return onMouseMoved(v.x, v.y);
+    }
+
+    @Override
+    public boolean scrolled(float amountX, float amountY) {
+        if (inputLocked()) return true;
+        return onScrolled(amountX, amountY);
     }
 }

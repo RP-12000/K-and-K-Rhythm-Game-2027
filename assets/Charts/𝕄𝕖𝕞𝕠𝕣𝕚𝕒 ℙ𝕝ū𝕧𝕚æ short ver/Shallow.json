@@ -1,6 +1,18 @@
 {
-  "format": 6,
-  "constant": 7,
-  "notes": [],
-  "editor": {"iterations": 1}
+  "format": 5,
+  "constant": 3,
+  "laneCount": 8,
+  "notes": [
+    {"type": "tap", "lane": -2, "beat": 1},
+    {"type": "tap", "lane": -1, "beat": 5},
+    {"type": "tap", "lane": 1, "beat": 9.25},
+    {"type": "tap", "lane": -1, "beat": 17},
+    {"type": "tap", "lane": -2, "beat": 18.5},
+    {"type": "tap", "lane": 1, "beat": 21},
+    {"type": "tap", "lane": -1, "beat": 22.5},
+    {"type": "tap", "lane": 2, "beat": 33},
+    {"type": "tap", "lane": 2, "beat": 41},
+    {"type": "tap", "lane": -2, "beat": 45}
+  ],
+  "editor": {"iterations": 2}
 }

@@ -253,6 +253,18 @@ public abstract class Modal {
         if (ptr == outsidePointer) outsidePointer = -1;
     }
 
+    /** Desktop hover. */
+    public void mouseMoved(float px, float py) {
+        if (active) widgets.mouseMoved(cardX(px), cardY(py));
+    }
+
+    /** Mouse wheel; true when consumed. */
+    public boolean scrolled(float amountY) {
+        ScrollArea s = scroll();
+        if (s != null && active) s.scrolled(amountY);
+        return true;
+    }
+
     /** BACK / ESC: closes the modal. */
     public void onBack() {
         close();

@@ -1,5 +1,6 @@
 package org.kelvinizer.elements;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
@@ -18,7 +19,8 @@ import java.util.Locale;
  * </pre>
  * {@code from} / {@code to} (beats, both inclusive; absent = unbounded; {@code duration} may stand for {@code to}),
  * {@code intensity} (0..{@value #MAX_INTENSITY}, default {@value #DEFAULT_INTENSITY}) eased to {@code intensityEnd}
- * (default = {@code intensity}) with {@code exponent} (default 1), as a glitch segment ramps. Outside every segment a
+ * (default = {@code intensity}) with {@code exponent} (default 1) or a custom ease {@code curve} (7.207), as a glitch
+ * segment ramps. Outside every segment a
  * note is still ({@value #NOTE_BASE}) and a veil keeps its own wobble ({@value #VEIL_BASE}): {@link #strengthAt}.
  * Where segments overlap, the one that started last wins.
  */
@@ -37,13 +39,16 @@ public final class NoteDistortion {
     private final float intensity;
     private final float intensityEnd;
     private final float exponent;
+    /** The custom ease of the ramp ({@link EaseCurve#clean}), or null for {@code p^exponent}. */
+    private final float[] curve;
 
-    private NoteDistortion(float from, float to, float intensity, float intensityEnd, float exponent) {
+    private NoteDistortion(float from, float to, float intensity, float intensityEnd, float exponent, float[] curve) {
         this.from = from;
         this.to = to;
         this.intensity = intensity;
         this.intensityEnd = intensityEnd;
         this.exponent = exponent;
+        this.curve = curve;
     }
 
     /**
@@ -52,6 +57,12 @@ public final class NoteDistortion {
      * clamped to 0..{@link #MAX_INTENSITY}; {@code exponent}: NaN → 1, clamped as a glitch segment's.
      */
     public static NoteDistortion of(float from, float to, float intensity, float intensityEnd, float exponent) {
+        return of(from, to, intensity, intensityEnd, exponent, null);
+    }
+
+    /** {@link #of} with a custom ease of the ramp, as {@link NoteGlitch#of} takes one. */
+    public static NoteDistortion of(float from, float to, float intensity, float intensityEnd, float exponent,
+                                    float[] curve) {
         float lo = Float.isNaN(from) || Float.isInfinite(from) ? Float.NEGATIVE_INFINITY : from;
         float hi = Float.isNaN(to) || Float.isInfinite(to) ? Float.POSITIVE_INFINITY : to;
         if (lo > hi) {
@@ -61,8 +72,10 @@ public final class NoteDistortion {
         }
         float i0 = Float.isNaN(intensity) ? DEFAULT_INTENSITY : clamp(intensity, 0f, MAX_INTENSITY);
         float i1 = Float.isNaN(intensityEnd) ? i0 : clamp(intensityEnd, 0f, MAX_INTENSITY);
-        float ex = Float.isNaN(exponent) ? 1f : clamp(exponent, NoteGlitch.MIN_EXPONENT, NoteGlitch.MAX_EXPONENT);
-        return new NoteDistortion(lo, hi, i0, i1, ex);
+        float[] c = EaseCurve.clean(curve);
+        float ex = c != null || Float.isNaN(exponent) ? 1f
+            : clamp(exponent, NoteGlitch.MIN_EXPONENT, NoteGlitch.MAX_EXPONENT);
+        return new NoteDistortion(lo, hi, i0, i1, ex, c);
     }
 
     private static float clamp(float v, float lo, float hi) {
@@ -81,21 +94,29 @@ public final class NoteDistortion {
     public float intensity() { return intensity; }
     /** @return strength at {@code to} (equal to {@link #intensity()} for a steady segment). */
     public float intensityEnd() { return intensityEnd; }
-    /** @return easing exponent of the ramp. */
+    /** @return easing exponent of the ramp (1 with a custom ease). */
     public float exponent() { return exponent; }
+    /** @return a copy of the custom ease of the ramp ({@link EaseCurve}), or null */
+    public float[] curve() { return curve != null ? curve.clone() : null; }
 
     /** @return true when {@code beat} lies in {@code [from, to]}. */
     public boolean covers(float beat) {
         return beat >= from && beat <= to;
     }
 
-    /** @return the strength at {@code beat} inside the segment (0 outside), ramped like a glitch's intensity. */
+    /**
+     * @return the strength at {@code beat} inside the segment (0 outside), ramped like a glitch's intensity (along a
+     *         custom ease held to 0..{@link #MAX_INTENSITY})
+     */
     public float intensityAt(float beat) {
         if (!covers(beat)) return 0f;
         if (intensityEnd == intensity || !hasFrom() || !hasTo()) return intensity;
         float span = to - from;
         if (!(span > 0f)) return intensityEnd;
         float p = clamp((beat - from) / span, 0f, 1f);
+        if (curve != null) {
+            return clamp(intensity + (intensityEnd - intensity) * EaseCurve.at(curve, p), 0f, MAX_INTENSITY);
+        }
         return intensity + (intensityEnd - intensity) * (float) Math.pow(p, exponent);
     }
 
@@ -126,7 +147,7 @@ public final class NoteDistortion {
         NoteDistortion d = (NoteDistortion) o;
         return Float.compare(from, d.from) == 0 && Float.compare(to, d.to) == 0
             && Float.compare(intensity, d.intensity) == 0 && Float.compare(intensityEnd, d.intensityEnd) == 0
-            && Float.compare(exponent, d.exponent) == 0;
+            && Float.compare(exponent, d.exponent) == 0 && Arrays.equals(curve, d.curve);
     }
 
     @Override
@@ -135,11 +156,13 @@ public final class NoteDistortion {
         h = 31 * h + Float.floatToIntBits(to);
         h = 31 * h + Float.floatToIntBits(intensity);
         h = 31 * h + Float.floatToIntBits(intensityEnd);
-        return 31 * h + Float.floatToIntBits(exponent);
+        h = 31 * h + Float.floatToIntBits(exponent);
+        return curve != null ? 31 * h + Arrays.hashCode(curve) : h;
     }
 
     @Override
     public String toString() {
-        return String.format(Locale.ROOT, "distortion(%s..%s, %s→%s)", from, to, intensity, intensityEnd);
+        return String.format(Locale.ROOT, "distortion(%s..%s, %s→%s%s)", from, to, intensity, intensityEnd,
+            curve != null ? ", curve " + Arrays.toString(curve) : "");
     }
 }

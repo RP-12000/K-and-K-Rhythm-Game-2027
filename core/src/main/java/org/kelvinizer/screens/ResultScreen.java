@@ -1,5 +1,6 @@
 package org.kelvinizer.screens;
 
+import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.utils.Align;
@@ -1125,6 +1126,34 @@ public class ResultScreen extends KkScreen<Main> {
         calibrate.cancel();
         cancel.cancel();
         if (pointer == tapPointer) tapPointer = -1;
+    }
+
+    @Override
+    protected boolean onMouseMoved(float x, float y) {
+        if (sheetOpen) return apply.mouseMoved(x, y) | calibrate.mouseMoved(x, y) | cancel.mouseMoved(x, y);
+        if (!buttonsLive()) return false;
+        return retry.mouseMoved(x, y) | cont.mouseMoved(x, y);
+    }
+
+    @Override
+    protected boolean onKeyDown(int keycode) {
+        if (!presented) return false;
+        switch (keycode) {
+            case Input.Keys.SPACE:
+            case Input.Keys.ENTER:
+            case Input.Keys.NUMPAD_ENTER:
+                if (sheetOpen) return true;
+                if (!choreo.done()) choreo.skip();
+                else if (buttonsLive()) continueToMap();
+                return true;
+            case Input.Keys.R:
+                if (sheetOpen) return true;
+                if (buttonsLive()) retryNow();
+                else if (!choreo.done()) choreo.skip();
+                return true;
+            default:
+                return false;
+        }
     }
 
     @Override

@@ -5,7 +5,7 @@ import com.badlogic.gdx.graphics.g2d.Batch;
 
 /**
  * 所有可按控件的基类：按下时缩小、变亮、从触点泛起波纹并轻震，在控件内（含容差）抬起时才生效，拖出范围则取消。
- * 还处理禁用时点击的摇头动画；触摸区域至少有最小触摸目标那么大。
+ * 还处理桌面悬停和禁用时点击的摇头动画；触摸区域至少有最小触摸目标那么大。
  *
  * <p>Base of every pressable control: the interaction primitives of DESIGN §1.5.
  *
@@ -15,13 +15,14 @@ import com.badlogic.gdx.graphics.g2d.Batch;
  *   <li><b>Release inside</b> (within {@link Ui#slop()} of the hit rect): springs to 1.0 with a
  *       bouncy overshoot (≈ 1.04) and the action fires (the {@link #setOnTap} callback).</li>
  *   <li><b>Drag out beyond slop:</b> the press cancels and springs back with a small wobble.</li>
+ *   <li><b>Hover</b> (desktop, {@link #mouseMoved}): lift 2 units, brightness +8 %.</li>
  *   <li><b>Disabled:</b> α .40; a tap plays the "no" shake (±8, 3 cycles, 240 ms).</li>
  * </ul>
  *
  * <p>Coordinates are world units; {@code (x, y)} is the bottom-left of the visual rect. The hit
  * rect is centred on it and at least {@link Ui#touchTarget()} in both dimensions. Input methods
  * return true when the event was consumed. Subclasses draw in {@link #draw(Batch, float)} using
- * {@link #visualScale()}, {@link #shakeX()}, {@link #brightness()} and
+ * {@link #visualScale()}, {@link #shakeX()}, {@link #liftY()}, {@link #brightness()} and
  * {@link #alphaMul()}. No allocation after construction.
  */
 public abstract class Pressable {
@@ -42,14 +43,14 @@ public abstract class Pressable {
     protected final Spring scale = new Spring(Spring.Preset.SNAPPY, 1f);
     /** Press ripple. */
     protected final Ripple ripple = new Ripple();
-    /** 0..1 press brightness ramp (micro). */
-    protected float press;
+    /** 0..1 press brightness ramp (micro) and hover ramp. */
+    protected float press, hover;
     /** Seconds since construction (idle effects). */
     protected float time;
 
     private float minHitW = -1f, minHitH = -1f;
     private float shakeT = SHAKE_DUR;
-    private boolean tapped, haptic = true;
+    private boolean hovered, tapped, haptic = true;
     private Runnable onTap;
 
     /** Creates a control drawing with the shared {@link Draw}. */
@@ -252,6 +253,16 @@ public abstract class Pressable {
         return touchUp(px, py, 0);
     }
 
+    /** Mouse move (desktop hover); returns true while hovering. */
+    public boolean mouseMoved(float px, float py) {
+        hovered = visible && enabled && hit(px, py) && isOverVisual(px, py);
+        return hovered;
+    }
+
+    private boolean isOverVisual(float px, float py) {
+        return px >= x && px <= x + w && py >= y && py <= y + h;
+    }
+
     private void releaseSpring(boolean inside) {
         scale.setPreset(Spring.Preset.BOUNCY).setTarget(1f);
         if (inside) scale.impulse(RELEASE_KICK);
@@ -266,6 +277,8 @@ public abstract class Pressable {
         if (shakeT < SHAKE_DUR) shakeT += dt;
         float pt = pointer >= 0 ? 1f : 0f;
         press = approach(press, pt, dt / Anim.MICRO);
+        float ht = hovered && pointer < 0 ? 1f : 0f;
+        hover = approach(hover, ht, dt / Anim.SHORT);
         onUpdate(dt);
     }
 
@@ -288,9 +301,14 @@ public abstract class Pressable {
         return Anim.shake(shakeT, SHAKE_DUR, 8f, 3);
     }
 
-    /** Brightness multiplier: 1 + .12 press. */
+    /** Hover lift (0..2 units). */
+    public float liftY() {
+        return 2f * hover;
+    }
+
+    /** Brightness multiplier: 1 + .12 press + .08 hover. */
     public float brightness() {
-        return 1f + 0.12f * press;
+        return 1f + 0.12f * press + 0.08f * hover;
     }
 
     /** Alpha multiplier: 1, or .40 when disabled. */

@@ -20,6 +20,13 @@ import org.kelvinizer.ui.Draw;
  * apart, so the stroke stays within about ± 16 % of it; below the smallest level's radius the line thins with the
  * ring).
  *
+ * <p>Through a 3D view ({@link #setView}) a ring is a shell round its centre: drawn where the centre shows, at the
+ * radius it shows at, so it stays round however the camera turns (Kelvin 2026-11-07 17:04). It is the atlas's clear
+ * sphere ({@link Draw#SHELL}: a thick bright rim, a faint glow inside) shaded 0.85 + 0.15 n·L by {@link HitFx}'s light
+ * (its base, and its lit side {@link Draw#SHELL_LIT} turned towards the light) with the highlight max(n·L, 0)^28 · 0.7
+ * where it faces the light: white and in its colour, squeezed towards the rim as the sphere turns it away (17:52, the
+ * design thread's 3D page v17). Four quads a shell.
+ *
  * <p>State is a fixed struct of arrays ({@value #CAPACITY} rings, more than the densest play needs); a full set
  * recycles its oldest ring. Spawning, updating and drawing allocate nothing. Times are effect seconds, advanced by
  * {@link #update} with the game delta (frozen while paused). The spawning and timing logic needs no GL, so it can be
@@ -47,6 +54,22 @@ final class WaterRings {
 
     private int liveCount;
     private float time;
+    private HitFx.Projection view;
+    private final float[] pt = new float[3];
+    /** The light as the camera sees it this frame (3D). */
+    private final float[] light = new float[3];
+    /** The 3D shell's regions (null in tests: the rings are drawn instead). */
+    private TextureRegion shell, shellLit, spot;
+
+    /** Shading of a shell: 0.85 + 0.15 n·L. */
+    static final float SHADE = 0.85f, SHADE_SPAN = 0.15f;
+    /** Peak α of a shell's highlight (white and in its colour), times the shell's. */
+    static final float SPEC = 0.7f;
+    /**
+     * Width of the highlight's {@code gauss_dot} in shell radii across the line to it (σ of cos^28 is 0.19 rad: 5σ),
+     * and of its white core in shares of that.
+     */
+    static final float SPEC_SIZE = 0.945f, SPEC_WHITE = 0.75f;
     private long spawned;
 
     private final TextureRegion[] water = new TextureRegion[Draw.RING_WATER_LODS];
@@ -59,6 +82,9 @@ final class WaterRings {
     /** Binds the {@code ring_water} levels of the shared atlas; GL thread, load time. */
     void setRegions(Draw draw) {
         for (int i = 0; i < Draw.RING_WATER_LODS; i++) water[i] = draw.ringWater(i);
+        shell = draw.shell();
+        shellLit = draw.shellLit();
+        spot = draw.gaussDot();
     }
 
     /**
@@ -67,6 +93,11 @@ final class WaterRings {
      */
     void setRegions(TextureRegion[] ringWater) {
         for (int i = 0; i < Draw.RING_WATER_LODS; i++) water[i] = ringWater[i];
+    }
+
+    /** Draws through the 3D view {@code p} (null: flat). */
+    void setView(HitFx.Projection p) {
+        view = p;
     }
 
     // ------------------------------------------------------------------ spawning
@@ -143,6 +174,8 @@ final class WaterRings {
      */
     void draw(Batch batch) {
         if (liveCount == 0 || water[0] == null) return;
+        boolean shells = view != null && shell != null;
+        if (shells) view.direction(HitFx.LIGHT_X, HitFx.LIGHT_Y, HitFx.LIGHT_Z, light);
         for (int i = 0; i < CAPACITY; i++) {
             if (!live[i]) continue;
             float age = time - start[i];
@@ -151,9 +184,46 @@ final class WaterRings {
             float r = radius[i] * (1f - (1f - p) * (1f - p));
             float a = alpha[i] * (1f - p);
             if (r < 0.5f || a <= 0.002f) continue;
-            ring(batch, x[i], y[i], r, stroke[i], colour[i], a);
-            ring(batch, x[i], y[i], r, stroke[i] * GLOW_WIDTH, colour[i], a * GLOW);
+            if (shells) {
+                if (view.project(x[i], y[i], 0f, pt)) shell(batch, pt[0], pt[1], r * pt[2], colour[i], a);
+                continue;
+            }
+            float cx = x[i], cy = y[i], k = 1f;
+            if (view != null) {
+                if (!view.project(cx, cy, 0f, pt)) continue;
+                cx = pt[0];
+                cy = pt[1];
+                k = pt[2];
+            }
+            ring(batch, cx, cy, r * k, stroke[i] * k, colour[i], a);
+            ring(batch, cx, cy, r * k, stroke[i] * k * GLOW_WIDTH, colour[i], a * GLOW);
         }
+    }
+
+    /**
+     * One shell of radius {@code r} centred at (cx, cy) on the screen, colour {@code c} at α {@code a}: its base, its
+     * lit side and its highlight (n = L: at the light's x, y on the sphere, squeezed by the light's z towards the rim).
+     */
+    private void shell(Batch batch, float cx, float cy, float r, Color c, float a) {
+        float lx = light[0], ly = light[1];
+        float m = (float) Math.sqrt(lx * lx + ly * ly);
+        float turn = MathUtils.atan2(ly, lx) * MathUtils.radiansToDegrees;
+        float h = r / Draw.SHELL_EDGE;
+        tint(batch, c, a * (SHADE - SHADE_SPAN * m));
+        batch.draw(shell, cx - h, cy - h, 2f * h, 2f * h);
+        tint(batch, c, a * 2f * SHADE_SPAN * m);
+        batch.draw(shellLit, cx - h, cy - h, h, h, 2f * h, 2f * h, 1f, 1f, turn);
+        float sx = cx + lx * r, sy = cy + ly * r, squeeze = Math.max(Math.abs(light[2]), 0.2f);
+        float w = SPEC_SIZE * r;
+        tint(batch, c, a * SPEC);
+        batch.draw(spot, sx - 0.5f * w, sy - 0.5f * w, 0.5f * w, 0.5f * w, w, w, squeeze, 1f, turn);
+        w *= SPEC_WHITE;
+        tint(batch, Color.WHITE, a * SPEC);
+        batch.draw(spot, sx - 0.5f * w, sy - 0.5f * w, 0.5f * w, 0.5f * w, w, w, squeeze, 1f, turn);
+    }
+
+    private static void tint(Batch batch, Color c, float a) {
+        batch.setPackedColor(Color.toFloatBits(c.r, c.g, c.b, Math.min(1f, a)));
     }
 
     /** One {@code ring_water} quad: radius {@code r}, stroke near {@code strokeW}, colour {@code c} at α {@code a}. */
@@ -185,14 +255,14 @@ final class WaterRings {
         return liveCount;
     }
 
-    /** Quads the next {@link #draw} submits (two per started, unfinished ring). */
+    /** Quads the next {@link #draw} submits (two per started, unfinished ring; four as 3D shells). */
     int quads() {
         if (liveCount == 0) return 0;
         int n = 0;
         for (int i = 0; i < CAPACITY; i++) {
             if (!live[i]) continue;
             float age = time - start[i];
-            if (age >= 0f && age < life[i]) n += 2;
+            if (age >= 0f && age < life[i]) n += view != null && shell != null ? 4 : 2;
         }
         return n;
     }

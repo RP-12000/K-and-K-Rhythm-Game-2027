@@ -271,11 +271,6 @@ public final class TransitionLayer implements Disposable {
         return phase != Phase.IDLE;
     }
 
-    /** True while fully covered. */
-    public boolean isCovered() {
-        return phase == Phase.COVERED;
-    }
-
     /** Current phase. */
     public Phase phase() {
         return phase;

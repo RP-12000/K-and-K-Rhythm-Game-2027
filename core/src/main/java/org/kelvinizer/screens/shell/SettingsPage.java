@@ -210,4 +210,13 @@ public final class SettingsPage {
         for (int i = 0; i < count; i++) rows[i].cancel();
     }
 
+    /** Desktop hover. */
+    public void mouseMoved(float px, float py) {
+        for (int i = 0; i < count; i++) rows[i].mouseMoved(px, py);
+    }
+
+    /** Mouse wheel. */
+    public boolean scrolled(float amountY) {
+        return scroll.scrolled(amountY);
+    }
 }

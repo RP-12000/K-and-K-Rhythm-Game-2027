@@ -61,6 +61,8 @@ final class MapStyle {
     static final float RISE_HOLD = 1.5f, RISE_RING = 0.3f;
     /** Idle drift (P1): start delay, amplitude, period. */
     static final float IDLE_DELAY = 8f, IDLE_AMP = 6f, IDLE_PERIOD = 14f;
+    /** Keyboard pan speed (world units per second at zoom 1). */
+    static final float KEY_PAN = 1200f;
 
     // ------------------------------------------------------------------ HUD (§3.9)
     /**

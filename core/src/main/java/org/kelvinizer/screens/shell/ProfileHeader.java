@@ -75,7 +75,7 @@ public final class ProfileHeader {
 
     /** Starts renaming the shown diver in place. */
     public void beginRename() {
-        if (nameField.isAwaitingDialog()) return;
+        if (nameField.isEditing() || nameField.isAwaitingDialog()) return;
         nameField.setText(name);
         nameField.setVisible(true);
         nameField.beginEdit();
@@ -86,6 +86,7 @@ public final class ProfileHeader {
     /** Ends renaming without saving (screen left). */
     public void cancelRename() {
         nameField.closeKeyboard(false);
+        nameField.cancelEdit();
         nameField.setVisible(false);
     }
 
@@ -180,9 +181,9 @@ public final class ProfileHeader {
     public void update(float dt) {
         time += dt;
         avatar.update(dt);
-        // the field only stands in until the keyboard opens
-        if (nameField.isVisible()) nameField.setVisible(false);
-        // while the field is up, taps go to it instead of restarting the rename
+        // the inline field (desktop) goes away once the edit is committed or cancelled
+        if (nameField.isVisible() && !nameField.isEditing()) nameField.setVisible(false);
+        // while the field is up, taps on it move the caret instead of restarting the rename
         nameTap.setVisible(!nameField.isVisible());
     }
 
@@ -244,11 +245,12 @@ public final class ProfileHeader {
         float nameMax = colW - 120f;
         float nw = Math.min(nameMax, fonts.width(Fonts.Role.UI_BOLD, 36f * k, name));
         float nx = cx - (nw + 44f) * 0.5f + nameTap.shakeX();
+        float bright = 1f + 0.1f * nameTap.hoverAmount();
         if (!nameField.isVisible()) {
             fonts.drawFit(b, Fonts.Role.UI_BOLD, 36f * k, name, nx, y, Align.left | Fonts.VCENTER, nameMax, 0.6f,
                 Theme.INK1, a);
             Icons.draw(draw.shapes(), Icons.Icon.PENCIL, nx + nw + 28f, y, 30f, Theme.INK2,
-                0.7f * a);
+                Math.min(1f, 0.7f * bright) * a);
             drawRenaming(nx, y - 28f * k, nw, a);
         }
         nameTap.drawPress(Theme.INK1, a);

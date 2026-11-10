@@ -1,5 +1,6 @@
 package org.kelvinizer.gameplay;
 
+import com.badlogic.gdx.Input;
 import com.badlogic.gdx.math.MathUtils;
 import org.kelvinizer.Params;
 import org.kelvinizer.elements.JudgementLine;
@@ -47,7 +48,8 @@ import org.kelvinizer.ui.Ui;
  * TIDE STREAM (it is in the zone of a line whose TIDE STREAM runs). Such a
  * down neither counts nor cancels a pending first tap, and neither does a down outside the box.
  * Drags and fingers resting in the box never count: only downs do. Every touch reaches gameplay
- * first, so notes under the corner stay playable. The BACK key pauses at once (in {@code GameplayScreen}).
+ * first, so notes under the corner stay playable. BACK, Esc and the keyboard's Pause key pause at
+ * once ({@link #pausesAtOnce}); P stays the upper row's lane key (ARCHITECTURE §13.2).
  * Nothing is allocated after construction.
  */
 public final class PauseControl {
@@ -197,9 +199,11 @@ public final class PauseControl {
     // ------------------------------------------------------------------ input
 
     /**
-     * True when this touch-down did something in gameplay: it judged a note or TIDE (a floating one too), re-grabbed a
-     * hold, touched a MINE or a LANE MINE, caught a DRAG before its time, or covers a running TIDE STREAM (its y is in
-     * the zone of a line whose TIDE STREAM runs). Such a touch never operates the pause control.
+     * True when this touch-down did something in gameplay: it judged a note or TIDE, re-grabbed a
+     * hold, touched a MINE or a LANE MINE, caught a DRAG, or covers a running TIDE STREAM (its y is in
+     * the zone of a line whose TIDE STREAM runs). Such a touch never operates the pause control. Since
+     * whole columns every finger keeps a stream going, but only one within the line's zone counts as
+     * meant for it here, so a tap far from the line still reaches the pause control.
      *
      * @param result the engine's {@code INPUT_*} result for this down
      */
@@ -212,7 +216,7 @@ public final class PauseControl {
 
     private static boolean covers(GameEngine e, Line line, float y) {
         if (!e.tideRunning(line)) return false;
-        return e.lastInputLine() == line || Math.abs(y - e.lineY(line)) <= Field.zoneHalf();
+        return Math.abs(y - e.lineY(line)) <= Field.zoneHalf();
     }
 
     /**
@@ -275,7 +279,7 @@ public final class PauseControl {
         if (armPointer >= 0 && mode == Settings.PAUSE_HOLD) {
             Line l = e.pointerLine(armPointer);
             if (!e.pointerDown(armPointer) || e.pointerHold(armPointer) >= 0
-                || l != null && !e.autoplay() && e.tideRunning(l)) {
+                || l != null && !e.autoplay() && covers(e, l, e.pointerY(armPointer))) {
                 armPointer = -1;
                 return NONE;
             }
@@ -302,15 +306,18 @@ public final class PauseControl {
         return pending && dt >= 0L && dt <= DOUBLE_TAP_NS;
     }
 
-    /** Pointer arming the hold / single-tap mode, or −1. */
-    public int armedPointer() {
-        return armPointer;
-    }
-
     /** Forgets a pending first tap and any armed pointer (on pause, resume and a new run). */
     public void reset() {
         pending = false;
         armPointer = -1;
         held = 0f;
+    }
+
+    /**
+     * True for keys that pause a running song at once: BACK, Esc and the keyboard's Pause key. P is
+     * not one of them: it is the upper row's lane key (ARCHITECTURE §13.2).
+     */
+    public static boolean pausesAtOnce(int keycode) {
+        return keycode == Input.Keys.BACK || keycode == Input.Keys.ESCAPE || keycode == Input.Keys.PAUSE;
     }
 }

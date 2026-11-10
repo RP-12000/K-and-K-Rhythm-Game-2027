@@ -12,7 +12,8 @@ import java.util.List;
 /**
  * 教学关卡的全部定时字幕，英文和中文各一套，按语言设置选用；拍点和位置按 Kelvin 手写的谱面（2026-10-17）手工排好。
  * 最后一潜之后的四句对白暂时是空的占位（2026-10-21），以后补新文案；结尾的标题和游戏名一样是 K &amp; K。
- * The tutorial's timed captions (DESIGN §10.2, §17.3) for {@code Introduction/Surface.json}: 120 BPM,
+ * The tutorial's timed captions (DESIGN §10.2, §17.3) for {@code Introduction/Shallow.json} ({@code Surface.json}
+ * in the old file names): 120 BPM,
  * {@code offsetMs} 27. The chart is hand-charted by Kelvin (2026-10-17, 102 notes; 96 since the TIDE-line lesson
  * went, 2026-11-06); the old v3 generator
  * no longer owns it or this class. The captions are timed and placed by hand to the chart: a
@@ -165,27 +166,27 @@ public final class IntroductionGuidelines {
         add("SURFACE JUDGEMENT", "水面判定线", 53f, 63f, 1f, 1f, 960f, -58f, 26f, Style.LABEL, Anchor.SKY);
         add("BOTTOM JUDGEMENT", "水底判定线", 53f, 63f, 1f, 1f, 960f, 58f, 26f, Style.LABEL, Anchor.GROUND);
 
-        // 58.5-64: each line takes its half of the screen
-        add("HALF THE SCREEN EACH",
-            "上下各占半个屏幕", ZONES_START, 63.5f, 0.5f, 0.5f, 960f, 711f, 40f, Style.HEADING, Anchor.WORLD);
-        add("UPPER HALF: SURFACE JUDGEMENT · LOWER HALF: BOTTOM JUDGEMENT",
-            "上半屏是水面判定线，下半屏是水底判定线", 58.5f, 63.5f, 0.5f, 0.5f, 960f, 600f, 30f, Style.BODY,
+        // 58.5-64: whole columns (Kelvin 2026-11-07: a note's column counts at any height; was half the screen each)
+        add("WHOLE COLUMNS",
+            "整列都算", ZONES_START, 63.5f, 0.5f, 0.5f, 960f, 711f, 40f, Style.HEADING, Anchor.WORLD);
+        add("TAP A NOTE'S COLUMN, AT ANY HEIGHT",
+            "点音符所在的那一列，上下哪里都行", 58.5f, 63.5f, 0.5f, 0.5f, 960f, 600f, 30f, Style.BODY,
             Anchor.WORLD);
 
         // L1 Ground DROPs: caption 64-73.5, notes 76-80 (first visible 74)
         add("GROUND DROPS", "地面水滴", 64f, 73f, 0.5f, 0.5f, 960f, 711f, 40f, Style.HEADING, Anchor.WORLD);
-        add("TAP THE LOWER HALF WHEN THEY LAND",
-            "音符落到水底判定线时，点下半屏", 64f, 73f, 0.5f, 0.5f, 960f, 600f, 30f, Style.BODY, Anchor.WORLD);
+        add("TAP THEIR COLUMN WHEN THEY LAND",
+            "音符落到水底判定线时，点它那一列", 64f, 73f, 0.5f, 0.5f, 960f, 600f, 30f, Style.BODY, Anchor.WORLD);
 
         // L2 Sky DROPs: caption 80.5-88 (side plate over lanes +2..+4), notes 84-88 rise in lanes +1, -1, -4 / -2
         add("SKY DROPS", "天空水滴", 80.5f, 87.5f, 0.5f, 0.5f, -336f, 740f, 40f, Style.HEADING, Anchor.SAFE_RIGHT);
-        add("THEY RISE:\nTAP THE UPPER HALF",
-            "从下往上升：点上半屏", 80.5f, 87.5f, 0.5f, 0.5f, -336f, 600f, 30f, Style.BODY, Anchor.SAFE_RIGHT);
+        add("THEY RISE:\nTAP THEIR COLUMN",
+            "从下往上升：点它那一列", 80.5f, 87.5f, 0.5f, 0.5f, -336f, 600f, 30f, Style.BODY, Anchor.SAFE_RIGHT);
 
         // L5 TIDEs: caption 88.5-94, notes 96-104 (first visible 94)
         add("TIDES", "浪花", 88.5f, 93.5f, 0.5f, 0.5f, 960f, 711f, 40f, Style.HEADING, Anchor.WORLD);
-        add("TAP ANYWHERE IN ITS HALF OF THE SCREEN",
-            "在它那半屏的任意位置点", 88.5f, 93.5f, 0.5f, 0.5f, 960f, 600f, 30f, Style.BODY, Anchor.WORLD);
+        add("TAP ANYWHERE ON THE SCREEN",
+            "在屏幕任意位置点", 88.5f, 93.5f, 0.5f, 0.5f, 960f, 600f, 30f, Style.BODY, Anchor.WORLD);
 
         // L3 STREAMs: caption 104.5-110 (left-half plate while the first two fall in lanes +3 / +2; gone before the
         // lane -2 STREAM appears at 110), notes 108-123
@@ -199,8 +200,8 @@ public final class IntroductionGuidelines {
         // 128.25-150
         add("TIDE STREAMS", "潮汐", TIDE_ZONE_START, 126f, 0.5f, 0.5f, 1440f, 740f, 40f, Style.HEADING,
             Anchor.WORLD);
-        add("KEEP ANY FINGER IN ITS HALF\n— SWAPPING IS FINE",
-            "这半屏一直有手指按着就行，可以换手指", 120f, 126f, 0.5f, 0.5f, 1440f, 600f, 30f, Style.BODY,
+        add("KEEP ANY FINGER DOWN\n— SWAPPING IS FINE",
+            "屏幕上一直有手指按着就行，可以换手指", 120f, 126f, 0.5f, 0.5f, 1440f, 600f, 30f, Style.BODY,
             Anchor.WORLD);
 
         // 136-150: requiem over the held TIDE STREAM pair (break; the chorus TIDEs start at 152)
@@ -222,10 +223,10 @@ public final class IntroductionGuidelines {
 
         // L8b LANE MINEs: caption 190-200 (left-edge plate over lanes -4 / -3), lane mines ground -2 192-196 and sky +2
         // 196-200 with DROPs beside them
-        add("LONG MINES", "长水雷", LANE_MINE_HINT_START, 199.5f, 0.5f, 0.5f, 228f, 793f, 40f, Style.HEADING,
+        add("LANE MINES", "轨道水雷", LANE_MINE_HINT_START, 199.5f, 0.5f, 0.5f, 228f, 793f, 40f, Style.HEADING,
             Anchor.SAFE_LEFT);
-        add("THEY SEAL\nTHEIR SPOT.\nSTAY OUT\nWHILE IT'S RED",
-            "它会一直封住这里，\n变红的时候别碰", 190f, 199.5f, 0.5f, 0.5f, 228f, 600f, 30f, Style.BODY,
+        add("THEY CLOSE\nA WHOLE LANE.\nSTAY OUT\nWHILE IT'S RED",
+            "它会封住整条轨道，\n变红的时候别碰", 190f, 199.5f, 0.5f, 0.5f, 228f, 600f, 30f, Style.BODY,
             Anchor.SAFE_LEFT);
 
         // 200-215: plain DROPs, no caption (the TIDE-line lesson L12 is out of the tutorial, Kelvin 2026-11-06 16:09:

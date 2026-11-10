@@ -26,7 +26,7 @@ import java.util.Random;
  * 所以 FC/AR 指示每局都按 淡蓝 → 紫 → 白 换一遍；打完马上换一张新谱。
  *
  * <p>The run behind the live preview of GAMEPLAY VISUALS (Kelvin 2026-10-18 19:52: the preview plays itself and takes
- * no taps; the zone hint of the real zone; COMBO as in a game; 2026-10-20 03:20: 「每12组键一个循环，每三组单单双循环，
+ * no taps; the zone hint of the real ±0.4 zone; COMBO as in a game; 2026-10-20 03:20: 「每12组键一个循环，每三组单单双循环，
  * 每次都是第5组爆echo，第9组爆miss」, so the FC / AR INDICATOR changes every four groups instead of once a 40-drop round).
  * It owns a {@link GameEngine} whose clock runs on a simulated time source (frame steps, at most 0.1 s each) and plays
  * a chart of {@link #GROUPS} groups, one a beat at 120 BPM: single, single, double, four times; each group on a random
@@ -114,6 +114,7 @@ public final class PreviewRun {
         engine.load(chart, false);
         field.begin(chart);
         notes.setStyle(st.noteSizeScale, game.hitFx().quality() == HitFx.QUALITY_HIGH);
+        engine.layout().setKeyScale(notes.noteSize()); // the lanes' bases at the key size
         notes.setHitPoint(st.hitPointPx);
         notes.setSyncHint(st.syncHint);
         notes.begin(chart);
@@ -228,7 +229,7 @@ public final class PreviewRun {
             int k = inNext++;
             long when = startNanos + (long) ((inAt[k] - leadMs) * 1e6);
             int p = inPointer[k];
-            float x = lay.x(240f * inLane[k] - 840f), y = engine.lineY(inLine[k]); // the key's centre: lanes 0..7 → x
+            float x = lay.centre(inLane[k]), y = engine.lineY(inLine[k]);
             if (inDown[k]) engine.touchDown(p, x, y, when);
             else engine.touchUp(p, x, y, when);
         }
@@ -256,13 +257,14 @@ public final class PreviewRun {
                 else field.bead(line, ev.x, runTime);
                 if (st.showsEarlyLate(ev.judgement, ev.dtMs)) feedback.chevron(ev.x, line, ly, ev.dtMs > 0f, runTime);
                 feedback.contact(ev.touchX, ly, true, runTime);
-                if (ev.width >= LaneLayout.MIN_ACTIVE_WIDTH) {
-                    feedback.brackets(ev.x - 0.5f * ev.width, ev.x + 0.5f * ev.width, ly, runTime);
+                LaneLayout lay = engine.layout();
+                if (ev.lane >= 0 && ev.lane < lay.count() && lay.active(ev.lane)) {
+                    feedback.brackets(lay.left(ev.lane), lay.right(ev.lane), ly, runTime);
                 }
                 hud.judgement(ev.judgement, ev.dtMs, ev.x, line, ly, runTime);
             } else if (ev.type == GameEvent.LOST) {
                 fx.lost(ev.x, sky ? ly - 120f : ly + 120f, 1f);
-                field.flash(line, ev.x, ev.width, false, runTime);
+                field.flash(line, ev.lane, false, runTime);
                 hud.judgement(Judgement.LOST, 0f, ev.x, line, ly, runTime);
             }
         }
@@ -278,6 +280,7 @@ public final class PreviewRun {
         HitFx fx = game.hitFx();
         field.clearApproach();
         notes.setStyle(st.noteSizeScale, fx.quality() == HitFx.QUALITY_HIGH);
+        engine.layout().setKeyScale(notes.noteSize()); // the lanes' bases at the key size
         notes.setHitPoint(st.hitPointPx);
         notes.setSyncHint(st.syncHint);
         notes.prepare(engine, field, st.approachGlow);
@@ -288,7 +291,7 @@ public final class PreviewRun {
         hud.drawUnderText(text, engine, runTime, true);
         feedback.drawText(text, game.fonts(), runTime);
         text.replay();
-        field.drawLines(engine, runTime);
+        field.drawLines(engine, runTime, SETTLED);
         notes.drawBands(engine, runTime);
         notes.draw(engine, runTime);
         int src = b.getBlendSrcFunc();

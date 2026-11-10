@@ -152,9 +152,9 @@ public final class SwitcherSheet extends Modal {
             draw.roundRect(rx, ry + 6f, rw, rh - 12f, 16f, Theme.GROUND_SIG, 0.10f * alpha);
             draw.rect(rx + 4f, ry + 22f, 4f, rh - 44f, Theme.GROUND_SIG, alpha);
         }
-        if (t.pressAmount() > 0f) {
+        if (t.pressAmount() > 0f || t.hoverAmount() > 0f) {
             draw.roundRect(rx, ry + 6f, rw, rh - 12f, 16f, Theme.INK1,
-                0.08f * t.pressAmount() * alpha);
+                (0.08f * t.pressAmount() + 0.05f * t.hoverAmount()) * alpha);
         }
         t.drawPress(Theme.INK1, alpha);
         float k = t.visualScale();

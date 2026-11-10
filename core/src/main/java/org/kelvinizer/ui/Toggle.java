@@ -71,7 +71,7 @@ public class Toggle extends Pressable {
         if (!visible) return;
         float a = alpha * alphaMul();
         float s = visualScale();
-        float cx = centerX() + shakeX(), cy = centerY();
+        float cx = centerX() + shakeX(), cy = centerY() + liftY();
         float tw = w * s, th = h * s;
         float tx = cx - tw * 0.5f, ty = cy - th * 0.5f;
         float k = Math.max(0f, Math.min(1f, knob.value()));

@@ -81,11 +81,15 @@ public final class Veil {
     /** Curtain blur (reference units); 0 for a veil, which never blurs. */
     private final float blur;
     private final List<Events> blurEvents;
+    /** Its 3D motion ({@link Channels#SOLID}) and its points' moves (one entry a point, null: unmoved), or null. */
+    private final Channels space;
+    private final Channels[] moves;
 
     private Veil(Shape shape, float radius, float[] points, float x, float y, float rotation, float opacity,
                  float startTime, float endTime, List<Events> xEvents, List<Events> yEvents,
                  List<Events> rotationEvents, List<Events> opacityEvents, List<NoteGlitch> glitches,
-                 List<NoteDistortion> distortions, float blur, List<Events> blurEvents) {
+                 List<NoteDistortion> distortions, float blur, List<Events> blurEvents, Channels space,
+                 Channels[] moves) {
         this.shape = shape;
         this.radius = radius;
         this.points = points;
@@ -117,6 +121,8 @@ public final class Veil {
         this.extent = e;
         this.blur = blur;
         this.blurEvents = Events.sortedCopy(blurEvents);
+        this.space = space;
+        this.moves = moves;
     }
 
     /**
@@ -151,7 +157,7 @@ public final class Veil {
         }
         float op = Float.isNaN(opacity) ? 1f : Math.max(0f, Math.min(1f, opacity));
         return new Veil(s, r, pts, finite(x) ? x : 960f, finite(y) ? y : 600f, finite(rotation) ? rotation : 0f, op,
-            lo, hi, xEvents, yEvents, rotationEvents, opacityEvents, glitches, distortions, 0f, null);
+            lo, hi, xEvents, yEvents, rotationEvents, opacityEvents, glitches, distortions, 0f, null, null, null);
     }
 
     /**
@@ -162,7 +168,25 @@ public final class Veil {
     public Veil withBlur(float blur, List<Events> blurEvents) {
         float b = finite(blur) ? Math.max(0f, Math.min(MAX_BLUR, blur)) : DEFAULT_BLUR;
         return new Veil(shape, radius, points, x, y, rotation, opacity, startTime, endTime, xEvents, yEvents,
-            rotationEvents, opacityEvents, glitches, distortions, b, blurEvents);
+            rotationEvents, opacityEvents, glitches, distortions, b, blurEvents, space, moves);
+    }
+
+    /**
+     * This veil with a 3D motion (Kelvin 2026-11-07 22:54, CHART_FORMAT §6.1): {@code space} its
+     * {@link Channels#SOLID} channels (null: none; depth, the two turns and the size factors, about its centre), and
+     * {@code pointMoves} its points' {@link Channels#POINT} offsets by point (null or a null entry: unmoved; a circle
+     * has none).
+     */
+    public Veil withSpace(Channels space, Channels[] pointMoves) {
+        Channels s = space != null && space.keys() == Channels.SOLID ? space : null;
+        Channels[] m = null;
+        for (int i = 0; pointMoves != null && i < Math.min(pointMoves.length, pointCount()); i++) {
+            if (pointMoves[i] == null || pointMoves[i].keys() != Channels.POINT) continue;
+            if (m == null) m = new Channels[pointCount()];
+            m[i] = pointMoves[i];
+        }
+        return new Veil(shape, radius, points, x, y, rotation, opacity, startTime, endTime, xEvents, yEvents,
+            rotationEvents, opacityEvents, glitches, distortions, blur, blurEvents, s, m);
     }
 
     private static float[] cleanPoints(float[] in) {
@@ -234,6 +258,78 @@ public final class Veil {
 
     /** @return the curtain's blur events (sorted, unmodifiable). */
     public List<Events> blurEvents() { return blurEvents; }
+
+    /** @return its 3D motion ({@link Channels#SOLID}), or null */
+    public Channels space() { return space; }
+
+    /** @return true when a point moves ({@link #pointMoves}) */
+    public boolean hasPointMoves() { return moves != null; }
+
+    /** @return point i's offsets ({@link Channels#POINT}), or null when it does not move */
+    public Channels pointMoves(int i) { return moves != null ? moves[i] : null; }
+
+    /** @return its depth at {@code beat} (reference units, positive inward; drawing only) */
+    public float zAt(float beat) {
+        return Channels.at(space, Channels.SOLID, Channels.Z, beat);
+    }
+
+    /**
+     * @return how wide its outline is drawn and blocks at {@code beat}, of its width: its {@code scaleX} times how much
+     *         its turn about the vertical axis shows of it (a card turned edge on is 0)
+     */
+    public float shapeX(float beat) {
+        if (space == null) return 1f;
+        return Math.abs(space.at(Channels.SCALE_X, beat) * (float) Math.cos(Math.toRadians(space.at(Channels.ROT_Y,
+            beat))));
+    }
+
+    /** @return {@link #shapeX} up: {@code scaleY} and the turn about the horizontal axis */
+    public float shapeY(float beat) {
+        if (space == null) return 1f;
+        return Math.abs(space.at(Channels.SCALE_Y, beat) * (float) Math.cos(Math.toRadians(space.at(Channels.ROT_X,
+            beat))));
+    }
+
+    /** @return point i's x at {@code beat} with its offset ({@link #pointMoves}), reference units about the centre */
+    public float pointXAt(int i, float beat) {
+        return points[2 * i] + Channels.at(pointMoves(i), Channels.POINT, Channels.MOVE_X, beat);
+    }
+
+    /** @return point i's y at {@code beat} with its offset */
+    public float pointYAt(int i, float beat) {
+        return points[2 * i + 1] + Channels.at(pointMoves(i), Channels.POINT, Channels.MOVE_Y, beat);
+    }
+
+    /** @return point i's depth at {@code beat} from the veil's own ({@link #zAt}; drawing only) */
+    public float pointZAt(int i, float beat) {
+        return Channels.at(pointMoves(i), Channels.POINT, Channels.MOVE_Z, beat);
+    }
+
+    /** @return {@link #extent()} with the points where they are at {@code beat} */
+    public float extentAt(float beat) {
+        if (moves == null) return extent;
+        float e = 0f;
+        for (int i = 0; i < pointCount(); i++) {
+            e = Math.max(e, (float) Math.hypot(pointXAt(i, beat), pointYAt(i, beat)));
+        }
+        return e;
+    }
+
+    /** @return {@link #contains} with the points where they are at {@code beat} */
+    public boolean containsAt(float lx, float ly, float beat) {
+        if (moves == null) return contains(lx, ly);
+        boolean in = false;
+        int n = points.length / 2;
+        float xj = pointXAt(n - 1, beat), yj = pointYAt(n - 1, beat);
+        for (int i = 0; i < n; i++) {
+            float xi = pointXAt(i, beat), yi = pointYAt(i, beat);
+            if (onSegment(lx, ly, xi, yi, xj, yj)) return true;
+            if ((yi > ly) != (yj > ly) && lx < (xj - xi) * (ly - yi) / (yj - yi) + xi) in = !in;
+            xj = xi;
+            yj = yi;
+        }
+        return in;
+    }
 
     /** @return the curtain's blur at {@code beat} (reference units, 0..{@link #MAX_BLUR}). */
     public float blurAt(float beat) {
@@ -314,7 +410,8 @@ public final class Veil {
             && xEvents.equals(v.xEvents) && yEvents.equals(v.yEvents) && rotationEvents.equals(v.rotationEvents)
             && opacityEvents.equals(v.opacityEvents) && glitches.equals(v.glitches)
             && distortions.equals(v.distortions) && Float.compare(blur, v.blur) == 0
-            && blurEvents.equals(v.blurEvents);
+            && blurEvents.equals(v.blurEvents) && java.util.Objects.equals(space, v.space)
+            && Arrays.equals(moves, v.moves);
     }
 
     @Override

@@ -34,8 +34,13 @@ import org.kelvinizer.ui.Theme;
  *       ({@link #endHold}); an early release only stops the stream.</li>
  * </ul>
  * Low quality ({@link #setLow}) halves the drops and the fountain rate and leaves out the second ripple and the
- * trails. The numbers are the approved mock-up's ({@code hit_mock4.py}, 1920×1080 px, the same in world units); the
- * ones that differ between RESONANCE and ECHO are in {@link SplashForm}.
+ * trails. Through a 3D view ({@link #setView}) the ripples are shells and the flashes, lights and drops balls, drawn
+ * where their points show at the size they show at; each drop also flies in depth, at most as fast as sideways (its
+ * own random number, so the flat picture stays as it was), and a ball (a flash, a held light, a drop) gets a white
+ * glint towards the light ({@link HitFx#LIGHT_X}; 17:52, the design thread's 3D page v17). The numbers are the
+ * approved mock-up's
+ * ({@code hit_mock4.py}, 1920×1080 px, the same in world units); the ones that differ between RESONANCE and ECHO are
+ * in {@link SplashForm}.
  *
  * <p>State is fixed arrays: {@value #DROPS} drops and {@value #FLASHES} flashes in ring buffers (a full one
  * overwrites its oldest entry), {@value #HOLDS} held streams. Spawning, updating and drawing allocate nothing. Times
@@ -109,6 +114,14 @@ final class Splash {
         new Color(SplashForm.COLOUR[1]).lerp(Theme.WHITE, SplashForm.MIX[1])};
 
     private final RandomXS128 rng = new RandomXS128(0x5A1A5L);
+    /** The drops' depth speeds, apart from {@link #rng} so the flat picture keeps its numbers. */
+    private final RandomXS128 depthRng = new RandomXS128(0xD3E7L);
+    private HitFx.Projection view;
+    private final float[] pt = new float[3];
+    /** The light as the camera sees it this frame (3D). */
+    private final float[] light = new float[3];
+    /** A ball's glint in 3D: its offset towards the light and its size (in the ball's size), its α (in the ball's). */
+    static final float GLINT_OFFSET = 0.22f, GLINT_SIZE = 0.3f, GLINT_ALPHA = 0.8f;
     private final WaterRings rings = new WaterRings();
     private TextureRegion dot;
     private boolean low;
@@ -122,6 +135,8 @@ final class Splash {
     /** Start point (offset included), velocity (dVy away from the line), gravity, direction (+1 up, −1 down). */
     private final float[] dX = new float[DROPS], dY = new float[DROPS];
     private final float[] dVx = new float[DROPS], dVy = new float[DROPS], dG = new float[DROPS];
+    /** Speed in depth, toward the camera (used only through a 3D view). */
+    private final float[] dVz = new float[DROPS];
     private final float[] dDir = new float[DROPS];
     private final float[] dBirth = new float[DROPS], dFlight = new float[DROPS];
     private final float[] dR = new float[DROPS], dAlpha = new float[DROPS];
@@ -153,6 +168,12 @@ final class Splash {
     void setRegions(TextureRegion gaussDot, TextureRegion[] ringWater) {
         dot = gaussDot;
         rings.setRegions(ringWater);
+    }
+
+    /** Draws through the 3D view {@code p} (null: flat). */
+    void setView(HitFx.Projection p) {
+        view = p;
+        rings.setView(p);
     }
 
     /** Low quality: half the drops and fountain rate, no second ripple, no trails. */
@@ -274,6 +295,7 @@ final class Splash {
         dY[i] = y;
         dVx[i] = v * MathUtils.cos(ang);
         dVy[i] = v * MathUtils.sin(ang);
+        dVz[i] = (2f * depthRng.nextFloat() - 1f) * Math.abs(dVx[i]);
         dG[i] = GRAVITY * big;
         dDir[i] = sky ? -1f : 1f;
         dBirth[i] = birth;
@@ -351,6 +373,7 @@ final class Splash {
     void draw(Batch batch) {
         rings.draw(batch);
         if (dot == null) return;
+        if (view != null) view.direction(HitFx.LIGHT_X, HitFx.LIGHT_Y, HitFx.LIGHT_Z, light);
         for (int i = 0; fCount > 0 && i < FLASHES; i++) {
             if (!fLive[i]) continue;
             float age = time - fStart[i];
@@ -359,16 +382,19 @@ final class Splash {
             float q = 1f - age / FLASH_SEC;
             float s = (0.6f + 0.55f * (1f - q * q)) * fBig[i] * SplashForm.SZ[f];
             float ka = SplashForm.KA[f];
-            dot(batch, fX[i], fY[i], FLASH_WHITE * s, Theme.WHITE, ka * SplashForm.WHITE[f] * q * (float) Math.sqrt(q));
-            dot(batch, fX[i], fY[i], FLASH_COLOUR * s, SplashForm.COLOUR[f], FLASH_COLOUR_ALPHA * ka * q);
+            float wa = ka * SplashForm.WHITE[f] * q * (float) Math.sqrt(q);
+            dot(batch, fX[i], fY[i], 0f, FLASH_WHITE * s, Theme.WHITE, wa);
+            dot(batch, fX[i], fY[i], 0f, FLASH_COLOUR * s, SplashForm.COLOUR[f], FLASH_COLOUR_ALPHA * ka * q);
+            glint(batch, fX[i], fY[i], 0f, FLASH_COLOUR * s, FLASH_COLOUR_ALPHA * ka * q);
         }
         for (int h = 0; h < HOLDS; h++) {
             if (!hActive[h]) continue;
             int f = hForm[h];
             float fl = flicker(time - hStart[h]);
             float s = SplashForm.SZ[f] * hScale[h], ka = SplashForm.KA[f];
-            dot(batch, hX[h], hY[h], HELD_WHITE * s, Theme.WHITE, HELD_WHITE_ALPHA * ka * SplashForm.WHITE[f] * fl);
-            dot(batch, hX[h], hY[h], HELD_COLOUR * s, SplashForm.COLOUR[f], HELD_COLOUR_ALPHA * ka * fl);
+            dot(batch, hX[h], hY[h], 0f, HELD_WHITE * s, Theme.WHITE, HELD_WHITE_ALPHA * ka * SplashForm.WHITE[f] * fl);
+            dot(batch, hX[h], hY[h], 0f, HELD_COLOUR * s, SplashForm.COLOUR[f], HELD_COLOUR_ALPHA * ka * fl);
+            glint(batch, hX[h], hY[h], 0f, HELD_COLOUR * s, HELD_COLOUR_ALPHA * ka * fl);
         }
         for (int i = 0; dCount > 0 && i < DROPS; i++) {
             if (!dLive[i]) continue;
@@ -379,13 +405,15 @@ final class Splash {
             float fade = Math.min(1f, (flight - age) / (FADE_TAIL * flight)) * dAlpha[i];
             float r = dR[i];
             Color core = CORE_COLOUR[f];
-            dot(batch, dropX(i, age), dropY(i, age), CORE * r, core, fade);
-            dot(batch, dropX(i, age), dropY(i, age), HALO * r, SplashForm.COLOUR[f], HALO_ALPHA * fade);
+            float x = dropX(i, age), y = dropY(i, age), z = dVz[i] * age;
+            dot(batch, x, y, z, CORE * r, core, fade);
+            dot(batch, x, y, z, HALO * r, SplashForm.COLOUR[f], HALO_ALPHA * fade);
+            glint(batch, x, y, z, CORE * r, fade);
             if (low) continue;
             for (int k = 0; k < TRAIL_ALPHA.length; k++) {
                 float a = age - TRAIL_STEP * (k + 1);
                 if (a < 0f) break;
-                dot(batch, dropX(i, a), dropY(i, a), CORE * r * TRAIL_SIZE[k], core, fade * TRAIL_ALPHA[k]);
+                dot(batch, dropX(i, a), dropY(i, a), dVz[i] * a, CORE * r * TRAIL_SIZE[k], core, fade * TRAIL_ALPHA[k]);
             }
         }
     }
@@ -398,11 +426,33 @@ final class Splash {
         return dY[i] + dDir[i] * (dVy[i] * age - 0.5f * dG[i] * age * age);
     }
 
-    /** One {@code gauss_dot} quad of side {@code size} centred at (cx, cy), colour {@code c} at α {@code a}. */
-    private void dot(Batch batch, float cx, float cy, float size, Color c, float a) {
+    /**
+     * One {@code gauss_dot} quad of side {@code size} centred at (cx, cy), colour {@code c} at α {@code a}; through a
+     * 3D view where (cx, cy) shows {@code dz} nearer than the keys' middle, at the size it shows at.
+     */
+    private void dot(Batch batch, float cx, float cy, float dz, float size, Color c, float a) {
         if (a <= 0.003f || size <= 0f) return;
+        if (view != null) {
+            if (!view.project(cx, cy, dz, pt)) return;
+            cx = pt[0];
+            cy = pt[1];
+            size *= pt[2];
+        }
         batch.setPackedColor(Color.toFloatBits(c.r, c.g, c.b, Math.min(1f, a)));
         batch.draw(dot, cx - 0.5f * size, cy - 0.5f * size, size, size);
+    }
+
+    /**
+     * In 3D a ball's glint (the design thread's 3D page v17: shading and a highlight on the small balls too): a white
+     * {@code gauss_dot} towards the light on the ball of side {@code size} at (cx, cy), {@code dz} in depth, α
+     * {@link #GLINT_ALPHA} of the ball's {@code a}; flat, nothing.
+     */
+    private void glint(Batch batch, float cx, float cy, float dz, float size, float a) {
+        if (view == null || a <= 0.003f || size <= 0f || !view.project(cx, cy, dz, pt)) return;
+        float s = size * pt[2], g = GLINT_SIZE * s;
+        float gx = pt[0] + GLINT_OFFSET * s * light[0], gy = pt[1] + GLINT_OFFSET * s * light[1];
+        batch.setPackedColor(Color.toFloatBits(1f, 1f, 1f, Math.min(1f, GLINT_ALPHA * a)));
+        batch.draw(dot, gx - 0.5f * g, gy - 0.5f * g, g, g);
     }
 
     /** The held light's flicker at {@code t} s after the head: 0.88 ± 0.12, a 12 Hz beat under a 3.1 Hz one. */

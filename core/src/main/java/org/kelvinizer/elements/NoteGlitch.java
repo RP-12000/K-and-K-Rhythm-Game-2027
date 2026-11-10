@@ -1,5 +1,6 @@
 package org.kelvinizer.elements;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
@@ -22,7 +23,8 @@ import java.util.Locale;
  *       may stand for {@code to}): the segment glitches the note only inside it.</li>
  *   <li>{@code intensity} (0..1, default {@value #DEFAULT_INTENSITY}) at {@code from}, eased to
  *       {@code intensityEnd} (default = {@code intensity}) at {@code to} with the power curve of
- *       the events ({@code exponent}, default 1): {@link #intensityAt}.</li>
+ *       the events ({@code exponent}, default 1), or along a custom ease {@code curve} like an event's
+ *       ({@link EaseCurve}, 7.207; then the exponent is 1): {@link #intensityAt}.</li>
  *   <li>{@code rate}: new random pattern this many times per beat (default
  *       {@value #DEFAULT_RATE}; 0 keeps one pattern for the whole segment).</li>
  *   <li>{@code split} (colour split), {@code slice} (sideways slices) and {@code flicker}
@@ -59,9 +61,11 @@ public final class NoteGlitch {
     private final float split;
     private final float slice;
     private final float flicker;
+    /** The custom ease of the intensity ramp ({@link EaseCurve#clean}), or null for {@code p^exponent}. */
+    private final float[] curve;
 
     private NoteGlitch(float from, float to, float intensity, float intensityEnd, float exponent, float rate,
-                       float split, float slice, float flicker) {
+                       float split, float slice, float flicker, float[] curve) {
         this.from = from;
         this.to = to;
         this.intensity = intensity;
@@ -71,6 +75,7 @@ public final class NoteGlitch {
         this.split = split;
         this.slice = slice;
         this.flicker = flicker;
+        this.curve = curve;
     }
 
     /**
@@ -87,6 +92,15 @@ public final class NoteGlitch {
      */
     public static NoteGlitch of(float from, float to, float intensity, float intensityEnd, float exponent,
                                 float rate, float split, float slice, float flicker) {
+        return of(from, to, intensity, intensityEnd, exponent, rate, split, slice, flicker, null);
+    }
+
+    /**
+     * {@link #of} with a custom ease of the intensity ramp: {@code curve} as an event's ({@link EaseCurve}); null, or
+     * a list that is not 6n + 2 finite numbers, keeps {@code exponent}. With a curve the exponent is 1.
+     */
+    public static NoteGlitch of(float from, float to, float intensity, float intensityEnd, float exponent,
+                                float rate, float split, float slice, float flicker, float[] curve) {
         float lo = Float.isNaN(from) || Float.isInfinite(from) ? Float.NEGATIVE_INFINITY : from;
         float hi = Float.isNaN(to) || Float.isInfinite(to) ? Float.POSITIVE_INFINITY : to;
         if (lo > hi) {
@@ -96,10 +110,11 @@ public final class NoteGlitch {
         }
         float i0 = Float.isNaN(intensity) ? DEFAULT_INTENSITY : clamp(intensity, 0f, 1f);
         float i1 = Float.isNaN(intensityEnd) ? i0 : clamp(intensityEnd, 0f, 1f);
-        float ex = Float.isNaN(exponent) ? 1f : clamp(exponent, MIN_EXPONENT, MAX_EXPONENT);
+        float[] c = EaseCurve.clean(curve);
+        float ex = c != null || Float.isNaN(exponent) ? 1f : clamp(exponent, MIN_EXPONENT, MAX_EXPONENT);
         float r = Float.isNaN(rate) || rate < 0f ? DEFAULT_RATE : Math.min(rate, MAX_RATE);
         return new NoteGlitch(lo, hi, i0, i1, ex, r, weight(split, DEFAULT_SPLIT), weight(slice, DEFAULT_SLICE),
-            weight(flicker, DEFAULT_FLICKER));
+            weight(flicker, DEFAULT_FLICKER), c);
     }
 
     private static float weight(float w, float def) {
@@ -122,8 +137,10 @@ public final class NoteGlitch {
     public float intensity() { return intensity; }
     /** @return intensity at {@code to} (0..1; equal to {@link #intensity()} for a steady segment). */
     public float intensityEnd() { return intensityEnd; }
-    /** @return easing exponent of the intensity ramp. */
+    /** @return easing exponent of the intensity ramp (1 with a custom ease). */
     public float exponent() { return exponent; }
+    /** @return a copy of the custom ease of the intensity ramp ({@link EaseCurve}), or null */
+    public float[] curve() { return curve != null ? curve.clone() : null; }
     /** @return new patterns per beat (0 = one pattern for the whole segment). */
     public float rate() { return rate; }
     /** @return colour split weight (0..{@value #MAX_WEIGHT}). */
@@ -142,7 +159,8 @@ public final class NoteGlitch {
      * @return the intensity at {@code beat}: 0 outside the segment; inside,
      *         {@code intensity + (intensityEnd − intensity)·p^exponent} with
      *         {@code p = (beat − from)/(to − from)} (a segment with an open end, or of zero
-     *         length, keeps {@code intensity} / takes {@code intensityEnd})
+     *         length, keeps {@code intensity} / takes {@code intensityEnd}); with a custom ease the curve's
+     *         progress at {@code p} in place of {@code p^exponent}, held to 0..1
      */
     public float intensityAt(float beat) {
         if (!covers(beat)) return 0f;
@@ -150,6 +168,7 @@ public final class NoteGlitch {
         float span = to - from;
         if (!(span > 0f)) return intensityEnd;
         float p = clamp((beat - from) / span, 0f, 1f);
+        if (curve != null) return clamp(intensity + (intensityEnd - intensity) * EaseCurve.at(curve, p), 0f, 1f);
         return intensity + (intensityEnd - intensity) * (float) Math.pow(p, exponent);
     }
 
@@ -188,7 +207,7 @@ public final class NoteGlitch {
             && Float.compare(intensity, g.intensity) == 0 && Float.compare(intensityEnd, g.intensityEnd) == 0
             && Float.compare(exponent, g.exponent) == 0 && Float.compare(rate, g.rate) == 0
             && Float.compare(split, g.split) == 0 && Float.compare(slice, g.slice) == 0
-            && Float.compare(flicker, g.flicker) == 0;
+            && Float.compare(flicker, g.flicker) == 0 && Arrays.equals(curve, g.curve);
     }
 
     @Override
@@ -201,12 +220,14 @@ public final class NoteGlitch {
         h = 31 * h + Float.floatToIntBits(rate);
         h = 31 * h + Float.floatToIntBits(split);
         h = 31 * h + Float.floatToIntBits(slice);
-        return 31 * h + Float.floatToIntBits(flicker);
+        h = 31 * h + Float.floatToIntBits(flicker);
+        return curve != null ? 31 * h + Arrays.hashCode(curve) : h;
     }
 
     @Override
     public String toString() {
-        return String.format(Locale.ROOT, "glitch(%s..%s, %s→%s, rate %s, split %s, slice %s, flicker %s)",
-            from, to, intensity, intensityEnd, rate, split, slice, flicker);
+        return String.format(Locale.ROOT, "glitch(%s..%s, %s→%s, rate %s, split %s, slice %s, flicker %s%s)",
+            from, to, intensity, intensityEnd, rate, split, slice, flicker,
+            curve != null ? ", curve " + Arrays.toString(curve) : "");
     }
 }

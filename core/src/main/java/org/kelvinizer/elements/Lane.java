@@ -7,6 +7,7 @@ import java.util.List;
  * 宽度权重和透明度都可以随拍数变化；透明度只作用于轨道自己的装饰（分隔线、刻度、光晕），不影响音符。
  * 插入的轨道（2026-10-15）在插入开始前不存在，插入时从初始大小长到最终大小，0 号轨只能是插入的轨道。
  * 删除的轨道（2026-10-17）从删除开始时的宽度缩到最终大小（默认 0），删完以后不存在。
+ * 轨道还可以整列平移（左右、上下、纵深）并改柱子伸出判定线的长度（2026-11-07，{@link Channels#LANE}）。
  *
  * <p>One lane of chart format v2 (ARCHITECTURE §13.1), immutable.
  *
@@ -33,6 +34,10 @@ import java.util.List;
  * down to 0) while it runs and has width 0 after it. With unlimited lanes {@link LaneLayout} widens
  * the other lanes to take back its room. A lane may be both inserted and deleted; once the deletion
  * starts it wins.
+ *
+ * <p>A lane's <b>motion</b> (Kelvin 2026-11-07 22:54, {@link #space()}, chart keys {@code x}, {@code y}, {@code z},
+ * {@code scaleY} and their events): its whole column moves across, up and in depth, with its line segment, keys,
+ * hit effects and judging, and its reach past the lines is scaled ({@link LaneLayout#moveY} …).
  */
 public final class Lane {
     /** Default width weight (8 lanes × 240 fill the 1920-wide screen). */
@@ -50,6 +55,10 @@ public final class Lane {
     private final Events deletion;
     /** Width the lane would have at the start of its deletion without it (what the deletion gives back). */
     private final float deletedFrom;
+    /** The column's motion ({@link Channels#LANE}; a v7 lane's functions, {@link Channels#LANE7}), or null. */
+    private final Channels space;
+    /** A v7 lane's opacity {@code o} ({@link #v7(int, Channels, Fn)}), or null. */
+    private Fn opacity7;
 
     /** Creates a lane with default width, opacity and no events. */
     public Lane(int id) {
@@ -66,6 +75,7 @@ public final class Lane {
         this.insert = null;
         this.deletion = null;
         this.deletedFrom = 0f;
+        this.space = null;
     }
 
     /**
@@ -76,6 +86,29 @@ public final class Lane {
         if (id == 0) throw new IllegalArgumentException("lane id 0 is invalid");
         return new Lane(id, true);
     }
+
+    /**
+     * @param id        the lane's id (any, 0 too)
+     * @param functions its chart format v7 functions ({@link Channels#LANE7}, Kelvin 2026-11-09 18:44)
+     * @return a lane of chart format v7: its width, place and pose are its functions; nothing else
+     */
+    static Lane v7(int id, Channels functions) {
+        return v7(id, functions, null);
+    }
+
+    /**
+     * {@link #v7(int, Channels)} with its opacity {@code o} (Kelvin 2026-11-09 21:37 「加回透明度」; kept, not copied;
+     * null = 1).
+     */
+    static Lane v7(int id, Channels functions, Fn opacity) {
+        if (functions == null || functions.keys() != Channels.LANE7) throw new IllegalArgumentException("no v7 lane");
+        Lane l = new Lane(new Lane(id, false), functions);
+        l.opacity7 = opacity;
+        return l;
+    }
+
+    /** @return true for a lane of chart format v7 ({@link #v7}) */
+    public boolean isV7() { return space != null && space.keys() == Channels.LANE7; }
 
     /**
      * @param id            non-zero lane id
@@ -133,7 +166,34 @@ public final class Lane {
         this.insert = insert;
         this.deletion = deletion;
         this.deletedFrom = deletion != null ? normalWidthAt(deletion.startTime()) : 0f;
+        this.space = null;
     }
+
+    private Lane(Lane o, Channels space) {
+        this.id = o.id;
+        this.width = o.width;
+        this.opacity = o.opacity;
+        this.widthEvents = o.widthEvents;
+        this.opacityEvents = o.opacityEvents;
+        this.implicit = o.implicit;
+        this.insert = o.insert;
+        this.deletion = o.deletion;
+        this.deletedFrom = o.deletedFrom;
+        this.space = space;
+        this.opacity7 = o.opacity7;
+    }
+
+    /**
+     * @param space the column's motion ({@link Channels#LANE} or {@link Channels#LANE7} channels), or null
+     * @return this lane with that motion (Kelvin 2026-11-07 22:54); other channel sets count as none
+     */
+    public Lane withSpace(Channels space) {
+        Channels s = space != null && (space.keys() == Channels.LANE || space.keys() == Channels.LANE7) ? space : null;
+        return s == this.space ? this : new Lane(this, s);
+    }
+
+    /** @return the column's motion ({@link Channels#LANE}, or a v7 lane's {@link Channels#LANE7}), or null */
+    public Channels space() { return space; }
 
     /** @return the lane id (0 only for an inserted lane). */
     public int id() { return id; }
@@ -167,6 +227,10 @@ public final class Lane {
      *         lane follows its deletion from the start beat and is 0 after the end beat
      */
     public float widthAt(float beat) {
+        if (isV7()) { // its base's width, a v7 function
+            float w = space.at(Channels.A_W, beat);
+            return w > 0f && w < Float.POSITIVE_INFINITY ? w : 0f;
+        }
         if (deletion != null && beat >= deletion.startTime()) {
             float w = beat > deletion.endTime() ? 0f : deletion.valueAt(beat);
             return w > 0f && w < Float.POSITIVE_INFINITY ? w : 0f;
@@ -185,8 +249,15 @@ public final class Lane {
         return w > 0f && w < Float.POSITIVE_INFINITY ? w : 0f;
     }
 
-    /** @return the opacity at {@code beat}, clamped to 0..1 (NaN → 0). */
+    /** @return {@code o} clamped to 0..1 (NaN → 0) */
+    static float clamp01(float o) {
+        if (!(o > 0f)) return 0f;
+        return o < 1f ? o : 1f;
+    }
+
+    /** @return the opacity at {@code beat}, clamped to 0..1 (NaN → 0); a v7 lane's is its {@code o}. */
     public float opacityAt(float beat) {
+        if (isV7()) return opacity7 == null ? 1f : clamp01(opacity7.at(beat));
         float o = opacityEvents.isEmpty() ? opacity : Events.calculateValue(opacityEvents, beat, opacity);
         if (!(o > 0f)) return 0f;
         return o < 1f ? o : 1f;
@@ -197,6 +268,6 @@ public final class Lane {
         return "Lane(" + id + ", w " + width + ", a " + opacity + ", " + widthEvents.size() + "/"
             + opacityEvents.size() + " events" + (insert != null ? ", inserted " + insert.startTime() + ".."
             + insert.endTime() : "") + (deletion != null ? ", deleted " + deletion.startTime() + ".."
-            + deletion.endTime() : "") + ")";
+            + deletion.endTime() : "") + (space != null ? ", " + space : "") + ")";
     }
 }

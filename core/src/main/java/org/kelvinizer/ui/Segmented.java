@@ -25,7 +25,7 @@ public class Segmented {
     private final CharSequence[] options;
     private float x, y, w = 480f, h = 64f;
     private float labelCap = 18f;
-    private int selected, pressedIndex = -1, pointer = -1;
+    private int selected, pressedIndex = -1, pointer = -1, hoverIndex = -1;
     private boolean enabled = true, visible = true;
     private float press;
     private Listener listener;
@@ -137,6 +137,13 @@ public class Segmented {
         return true;
     }
 
+    /** Mouse hover. */
+    public boolean mouseMoved(float px, float py) {
+        hoverIndex = visible && enabled ? indexAt(px, py, 0f) : -1;
+        if (hoverIndex >= 0 && (py < y || py > y + h)) hoverIndex = -1;
+        return hoverIndex >= 0;
+    }
+
     /** Cancels a press. */
     public void cancel() {
         if (pointer >= 0) {
@@ -163,6 +170,10 @@ public class Segmented {
         draw.roundRectStroke(x, y, w, h, r, 1f, Theme.STROKE, a);
         float sw = segW();
         float inset = 5f;
+        if (hoverIndex >= 0 && hoverIndex != selected && pointer < 0) {
+            draw.roundRect(x + hoverIndex * sw + inset, y + inset, sw - 2f * inset, h - 2f * inset, r - inset,
+                Theme.INK1, 0.05f * a);
+        }
         // selection pill (slides; squashes slightly while its own segment is held)
         float p = pos.value();
         float sq = pressedIndex == selected ? squash.value() : 1f;

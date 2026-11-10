@@ -5,10 +5,12 @@ import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.Batch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Matrix4;
 import org.kelvinizer.elements.Chart;
 import org.kelvinizer.elements.LaneLayout;
 import org.kelvinizer.elements.Line;
 import org.kelvinizer.elements.Note;
+import org.kelvinizer.elements.Sea;
 import org.kelvinizer.fx.HitFx;
 import org.kelvinizer.play.Judgement;
 import org.kelvinizer.ui.Anim;
@@ -176,6 +178,16 @@ final class TideWash {
     private final float[] effReach = new float[Line.COUNT];
     private final boolean[] effVeil = new boolean[Line.COUNT];
     private final boolean[] effEcho = new boolean[Line.COUNT];
+    // hit effect of the latest TIDE on a sea (Kelvin 2026-11-07 16:04): along that sea, turned with it
+    private Sea sea;
+    private Line seaLine;
+    private float seaT;
+    private float seaReach;
+    private boolean seaEcho;
+    private final Matrix4 seaSaved = new Matrix4();
+    /** The 3D view this frame, for a turned sea's frame ({@link #setSpace}); null while flat. */
+    private View3D space;
+    private final Matrix4 seaTurn = new Matrix4();
     // tide level and drain per line
     private final float[] level = new float[Line.COUNT];
     private final float[] drainT = new float[Line.COUNT];
@@ -218,6 +230,11 @@ final class TideWash {
      * into {@code batch}; {@code field} may be null (no line swell). Tests use it with a
      * recording batch, without GL.
      */
+    /** Sets the 3D view the field is drawn through this frame, or null while flat. */
+    void setSpace(View3D space) {
+        this.space = space;
+    }
+
     TideWash(Batch batch, Texture tex, TextureRegion white, TextureRegion glowV, FieldRenderer field) {
         this.field = field;
         this.batch = batch;
@@ -243,6 +260,8 @@ final class TideWash {
             drainA[l] = 0f;
         }
         for (int s = 0; s < MAX_EMITTERS; s++) emActive[s] = false;
+        sea = null;
+        seaT = -100f;
     }
 
     /**
@@ -286,6 +305,26 @@ final class TideWash {
                 field.swell(line, colour(line, !resonance), (reduce ? 0.5f : 1f) * (resonance ? 1f : ECHO_K), now);
             }
         }
+    }
+
+    /**
+     * A TIDE on sea {@code s} judged: the hit's rise, dissolve and recede along that sea instead of along
+     * {@code line} (its colour and direction), turned with the sea; no veil and no line swell. One at a time.
+     */
+    void hitSea(Sea s, Line line, boolean resonance, float now) {
+        float reach = resonance ? REACH_RESONANCE : REACH_ECHO;
+        if (s == null || line == null || (seaT == now && sea == s && reach <= seaReach)) return;
+        triggers++;
+        sea = s;
+        seaLine = line;
+        seaT = now;
+        seaReach = reach;
+        seaEcho = !resonance;
+    }
+
+    private boolean seaActive() {
+        float t = now - seaT;
+        return sea != null && t >= 0f && t < END_SEC;
     }
 
     /** A TIDE STREAM of {@code line} completed: one rise/recede at 30 % in its head's colour, no veil. */
@@ -423,6 +462,7 @@ final class TideWash {
         for (int l = 0; l < Line.COUNT; l++) {
             if (effActive(l) || level[l] > 0f || drainActive(l)) return false;
         }
+        if (seaActive()) return false;
         for (int s = 0; s < MAX_EMITTERS; s++) {
             if (emActive[s]) return false;
         }
@@ -451,6 +491,7 @@ final class TideWash {
             if (drainActive(l)) n += LEVEL_QUADS + VEIL_QUADS;
             else if (level[l] > 0f) n += LEVEL_QUADS;
         }
+        if (seaActive()) n += WATER_QUADS + BAND_QUADS;
         for (int s = 0; s < MAX_EMITTERS; s++) {
             if (emActive[s] && !duplicate(s)) n += BAND_QUADS * (int) Math.max(0L, bandLast(s) - bandFirst(s) + 1);
         }
@@ -554,37 +595,9 @@ final class TideWash {
                 if (emActive[s] && emLine[s] == l && !duplicate(s)) streamBands(s, ly, dir, gap, am, lh, la);
             }
             // the hit: lifted water, then the band
-            if (!effActive(l)) continue;
-            float t = now - effT[l];
-            float reach = reduce ? Math.min(effReach[l], REACH_REDUCED) : effReach[l];
-            float peak = reach * gap;
-            Color c = drawColour(line, effEcho[l]);
-            float in = Math.min(1f, t / BAND_IN_SEC);
-            float top;
-            float wa;
-            if (t < RECEDE_FROM_SEC) {
-                top = peak * Anim.POW2_OUT.apply(t / RISE_SEC);
-                wa = WATER_A * in;
-            } else {
-                float p = (t - RECEDE_FROM_SEC) / (END_SEC - RECEDE_FROM_SEC);
-                top = peak * (1f - Anim.POW2_IN.apply(p));
-                wa = WATER_A * (1f - p);
-            }
-            float ek = effEcho[l] ? ECHO_K : 1f;
-            hitWater(ly, dir, top, wa * am * ek, c);
-            if (t < DISSOLVE_TO_SEC) {
-                float centre = peak * Anim.POW2_OUT.apply(Math.min(1f, t / RISE_SEC));
-                float sigma = BAND_SIGMA;
-                float a = BAND_A * in;
-                if (t > DISSOLVE_FROM_SEC) {
-                    float p = (t - DISSOLVE_FROM_SEC) / (DISSOLVE_TO_SEC - DISSOLVE_FROM_SEC);
-                    if (widen) sigma *= 1f + (DISSOLVE_WIDEN - 1f) * p;
-                    a *= 1f - p;
-                }
-                // over the lifted water: see over()
-                band(ly + dir * centre, sigma, over(a * am * ek, waterAt(centre, top, wa * am * ek)), c);
-            }
+            if (effActive(l)) hitShape(ly, dir, gap, now - effT[l], effReach[l], effEcho[l], line, am, widen);
         }
+        if (seaActive()) seaHit(e, am, widen);
         if (reduce) return;
         // veils last, so a veil also dims the other line's band beneath it
         for (int l = 0; l < Line.COUNT; l++) {
@@ -593,6 +606,76 @@ final class TideWash {
             Line line = Line.of(l);
             veil(e.lineY(line), line == Line.UPPER ? -1f : 1f, gap(e, line), v);
         }
+    }
+
+    /** A hit {@code t} seconds in, from {@code ly} toward {@code dir}: the lifted water, then the band. */
+    private void hitShape(float ly, float dir, float gap, float t, float reach, boolean echo, Line line, float am,
+                          boolean widen) {
+        float peak = (reduce ? Math.min(reach, REACH_REDUCED) : reach) * gap;
+        Color c = drawColour(line, echo);
+        float in = Math.min(1f, t / BAND_IN_SEC);
+        float top;
+        float wa;
+        if (t < RECEDE_FROM_SEC) {
+            top = peak * Anim.POW2_OUT.apply(t / RISE_SEC);
+            wa = WATER_A * in;
+        } else {
+            float p = (t - RECEDE_FROM_SEC) / (END_SEC - RECEDE_FROM_SEC);
+            top = peak * (1f - Anim.POW2_IN.apply(p));
+            wa = WATER_A * (1f - p);
+        }
+        float ek = echo ? ECHO_K : 1f;
+        hitWater(ly, dir, top, wa * am * ek, c);
+        if (t < DISSOLVE_TO_SEC) {
+            float centre = peak * Anim.POW2_OUT.apply(Math.min(1f, t / RISE_SEC));
+            float sigma = BAND_SIGMA;
+            float a = BAND_A * in;
+            if (t > DISSOLVE_FROM_SEC) {
+                float p = (t - DISSOLVE_FROM_SEC) / (DISSOLVE_TO_SEC - DISSOLVE_FROM_SEC);
+                if (widen) sigma *= 1f + (DISSOLVE_WIDEN - 1f) * p;
+                a *= 1f - p;
+            }
+            // over the lifted water: see over()
+            band(ly + dir * centre, sigma, over(a * am * ek, waterAt(centre, top, wa * am * ek)), c);
+        }
+    }
+
+    /**
+     * The hit of a TIDE on {@link #sea}: drawn as on a line through the sea's middle, over the sea's span (within the
+     * window), turned about that middle with the sea's lean, so it lies along the sea (GameEngine#seaY); in 3D on a
+     * turned sea level along its front, through the sea's frame (Kelvin 2026-11-09 00:13).
+     */
+    private void seaHit(GameEngine e, float am, boolean widen) {
+        LaneLayout lay = e.layout();
+        float beat = e.visualBeat();
+        float a = lay.freeX(sea.xMin(beat));
+        float b = lay.freeX(sea.xMax(beat));
+        float l = Math.max(Math.min(a, b), lay.windowLeft()) + INSET;
+        float r = Math.min(Math.max(a, b), lay.windowRight()) - INSET;
+        if (!(r - l > 8f)) return;
+        float mid = 0.5f * (a + b);
+        int sf = space != null ? space.seaFrame(e.chart().seas().indexOf(sea)) : -1;
+        float my = sf >= 0 ? Field.y(sea.yAt(beat)) : GameEngine.seaY(sea, lay, beat, mid);
+        float deg = sf >= 0 ? 0f : sea.leanDeg(beat);
+        if (sf >= 0) batch.setProjectionMatrix(space.frameCombined(sf, sea.zMin(beat)));
+        float k = 1f / Math.max(0.2f, Math.abs(MathUtils.cosDeg(deg))); // window x to x along the turned sea
+        float sa = xa, sb = xb, sc = xc, sd = xd;
+        float f = Math.min(END_FEATHER, (r - l) * k * 0.25f);
+        xa = mid + (l - mid) * k;
+        xd = mid + (r - mid) * k;
+        xb = xa + f;
+        xc = xd - f;
+        seaSaved.set(batch.getTransformMatrix());
+        seaTurn.set(seaSaved).translate(mid, my, 0f).rotate(0f, 0f, 1f, deg).translate(-mid, -my, 0f);
+        batch.setTransformMatrix(seaTurn);
+        hitShape(my, seaLine == Line.UPPER ? -1f : 1f, gap(e, seaLine), now - seaT, seaReach, seaEcho, seaLine, am,
+            widen);
+        batch.setTransformMatrix(seaSaved);
+        if (sf >= 0) batch.setProjectionMatrix(space.combined());
+        xa = sa;
+        xb = sb;
+        xc = sc;
+        xd = sd;
     }
 
     /** Veil α of line {@code l} now: the hit's (not a completion's) and a drain's, the larger. */

@@ -79,6 +79,7 @@ public class ProfileScreen extends ShellScreen {
                 if (!store.rename(store.activeId(), text)) field.reject();
             }
         });
+        registerField(header.nameField);
         tabs = new Segmented(game.draw(), game.fonts(), TAB_NAMES);
         tabs.setLabelCap(22f);
         tabs.setListener(new Segmented.Listener() {
@@ -241,4 +242,14 @@ public class ProfileScreen extends ShellScreen {
         tabViews[tab].cancel(pointer);
     }
 
+    @Override
+    protected void contentMouseMoved(float x, float y) {
+        tabs.mouseMoved(x, y);
+        tabViews[tab].mouseMoved(x, y);
+    }
+
+    @Override
+    protected boolean contentScrolled(float amountY) {
+        return tabViews[tab].scrolled(amountY);
+    }
 }

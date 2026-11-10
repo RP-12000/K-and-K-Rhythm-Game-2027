@@ -70,13 +70,4 @@ public final class GameKeys {
     public static int laneId(int slot) {
         return slot >= ZERO ? 0 : IDS[slot % 10];
     }
-
-    /** @return the slot for (line, lane id) (G / T for lane 0), or −1 when that lane has no key. */
-    public static int slotFor(Line line, int laneId) {
-        if (laneId == 0) return line == Line.UPPER ? ZERO + 2 : ZERO;
-        for (int i = 0; i < 10; i++) {
-            if (IDS[i] == laneId) return line == Line.UPPER ? 10 + i : i;
-        }
-        return -1;
-    }
 }

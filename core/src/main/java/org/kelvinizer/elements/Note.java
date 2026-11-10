@@ -92,6 +92,8 @@ public final class Note {
     private final NoteType type;
     private final Line line;
     private final int laneId;
+    private final float lanePos;
+    private final boolean byX;
     private final float appearance;
     private final float judgement;
     private final float duration;
@@ -108,8 +110,8 @@ public final class Note {
     private final float positionAtJudgement;
     private final float visibleFrom;
     private final float lastVelocity;
-    /** Angle at the judgement beat (its rotation layers included), where a LANE MINE freezes (0 for other notes). */
-    private float pinnedAngle;
+    /** Angle at the judgement beat, where a LANE MINE freezes (0 for other notes). */
+    private final float pinnedAngle;
     private final float pivotX;
     private final float pivotY;
     private final NoteTrail trail;
@@ -123,23 +125,13 @@ public final class Note {
     private final float orbitTo;
     private final NoteOrbit orbit;
     private final boolean fake;
-
-    // Where the note sits across the screen (chart format v6, Kelvin 2026-11-05): set by the loader, from the note's
-    // own x / xEvents (v6) or from its lane and sideways shift (older charts, LanePlacement).
-    private float x = Float.NaN;
-    private List<Events> xEvents = Collections.emptyList();
-
-    // Additive layers (Kelvin 2026-11-05, agreed with the chart editor: 叠加层), set by the loader ({@link #layer}).
-    private Layers xLayers = Layers.NONE;
-    private Layers positionLayers = Layers.NONE;
-    private Layers rotationLayers = Layers.NONE;
-
-    // Where a floating note is (CHART_FORMAT §11), set by the loader ({@link #setFloating}); null on a line.
-    private Floating floating;
+    /** The key's 3D motion ({@link Channels#SOLID}), or null. */
+    private final Channels space;
 
     // Derived, set once by Chart.
     int index = -1;
     int laneIndex = -1;
+    boolean between;
     int slot = -1;
     int groupStart = -1;
     int groupSize = 1;
@@ -148,12 +140,30 @@ public final class Note {
     boolean sharesBeat;
     double judgementMs;
     double endMs;
+    /**
+     * The sea it lands on ({@code "on"}, Kelvin 2026-11-07 16:04): its index and, once the chart has it, itself; only
+     * a key placed by its own x or a TIDE (17:07 「海浪是独立于轨道的一种无轨判定面」).
+     */
+    int seaIndex = -1;
+    Sea sea;
+    /** {@code "track": "space"} ({@link #spaceTrack()}), set by the loader. */
+    boolean spaceTrack;
+    /** {@code "spans"} ({@link #spanCount()}): pairs of a kind (0 a lane id, 1 a sea index) and its value; or null. */
+    int[] spans;
+    /** A chart format v7 key's opacity and its lanes' ({@link #setOpacity7}), or null. */
+    private Fn opacity7;
+    private Fn[] laneOpacity7;
+    /**
+     * A space key's lane at its judgement beat ({@link LaneLayout#freezeSpaceKeys}; null for other keys): reference
+     * units, {@link LaneLayout#FROZEN_COUNT} floats.
+     */
+    float[] frozen;
 
     /**
      * @param type            note type
      * @param line            judgement line
      * @param laneId          lane id (0 only for the inserted lane 0, CHART_FORMAT_v4 §3.6; ignored and
-     *                        stored as 0 for universal)
+     *                        stored as 0 for universal and DRAG notes, {@link #laneless()}, in these older forms)
      * @param appearance      authored appearance beat (NaN = derive from the events)
      * @param judgement       judgement beat (finite)
      * @param duration        length in beats of a hold, a TIDE STREAM (universal) or a LANE MINE
@@ -266,7 +276,8 @@ public final class Note {
      * 2026-10-28 01:47 「能否修改一下游戏的底层架构来让这种旋转得以实现」: with it and a pivot, any shape of notes turns
      * about one point).
      *
-     * @param offsetX reference units to the right on screen ({@link #offsetX()}; lane notes only, NaN or infinite → 0)
+     * @param offsetX reference units to the right on screen ({@link #offsetX()}; lane notes only, NaN or infinite → 0;
+     *                a laneless key's x, {@link #x()})
      */
     public Note(NoteType type, Line line, int laneId, float appearance, float judgement, float duration,
                 float height, List<Events> movementEvents, List<Events> rotationEvents,
@@ -281,7 +292,8 @@ public final class Note {
      * Same as the constructor with a sideways shift, plus events that move the shift over time (Kelvin 2026-10-28
      * 02:19: the snowflake slides right and left while it turns).
      *
-     * @param offsetXEvents sideways shift by beat ({@link #offsetXAt}; lane notes only, null for none)
+     * @param offsetXEvents sideways shift by beat ({@link #offsetXAt}; lane notes only, null for none; a laneless
+     *                      key's {@link #xEvents()})
      */
     public Note(NoteType type, Line line, int laneId, float appearance, float judgement, float duration,
                 float height, List<Events> movementEvents, List<Events> rotationEvents,
@@ -320,13 +332,52 @@ public final class Note {
                 List<Events> disappearEvents, List<Events> heightEvents, List<NoteTrail> trails,
                 List<NoteGlitch> glitches, float pivotX, float pivotY, List<NoteDistortion> distortions,
                 float waveSpeed, float offsetX, List<Events> offsetXEvents, NoteOrbit orbit, boolean fake) {
+        this(type, line, (float) laneId, appearance, judgement, duration, height, movementEvents, rotationEvents,
+            disappearEvents, heightEvents, trails, glitches, pivotX, pivotY, distortions, waveSpeed, offsetX,
+            offsetXEvents, orbit, fake, type == NoteType.DRAG); // a DRAG of these older forms keeps its own x
+    }
+
+    /**
+     * Same as the constructor with the decoration flag, but the lane may lie between two lanes, and a tap, hold or
+     * mine may have no lane at all (Kelvin 2026-11-07 04:02: 「定轨状态支持小数轨道，然后加一个无轨时间和有轨时间」).
+     *
+     * @param lane a lane id, or a decimal between two lanes' ids ({@link #lanePos()}; lane notes placed by a lane only)
+     * @param byX  a tap, hold, mine or DRAG placed by its own x ({@link #laneless()}): {@code offsetX} and
+     *             {@code offsetXEvents} are then its x and x events and {@code lane} is ignored; false puts a DRAG in
+     *             {@code lane} like a tap (Kelvin 2026-11-08 02:51 「也上轨道」)
+     */
+    public Note(NoteType type, Line line, float lane, float appearance, float judgement, float duration,
+                float height, List<Events> movementEvents, List<Events> rotationEvents,
+                List<Events> disappearEvents, List<Events> heightEvents, List<NoteTrail> trails,
+                List<NoteGlitch> glitches, float pivotX, float pivotY, List<NoteDistortion> distortions,
+                float waveSpeed, float offsetX, List<Events> offsetXEvents, NoteOrbit orbit, boolean fake,
+                boolean byX) {
+        this(type, line, lane, appearance, judgement, duration, height, movementEvents, rotationEvents,
+            disappearEvents, heightEvents, trails, glitches, pivotX, pivotY, distortions, waveSpeed, offsetX,
+            offsetXEvents, orbit, fake, byX, null);
+    }
+
+    /**
+     * Same as the constructor above, with the key's 3D motion (Kelvin 2026-11-07 22:54; {@link #space()}).
+     *
+     * @param space its {@link Channels#SOLID} channels (null: none; kept for taps, holds, mines and DRAGs only)
+     */
+    public Note(NoteType type, Line line, float lane, float appearance, float judgement, float duration,
+                float height, List<Events> movementEvents, List<Events> rotationEvents,
+                List<Events> disappearEvents, List<Events> heightEvents, List<NoteTrail> trails,
+                List<NoteGlitch> glitches, float pivotX, float pivotY, List<NoteDistortion> distortions,
+                float waveSpeed, float offsetX, List<Events> offsetXEvents, NoteOrbit orbit, boolean fake,
+                boolean byX, Channels space) {
         if (type == null || line == null) throw new IllegalArgumentException("note type and line are required");
         if (Float.isNaN(judgement) || Float.isInfinite(judgement)) {
             throw new IllegalArgumentException("note judgement must be finite: " + judgement);
         }
         this.type = type;
         this.line = line;
-        this.laneId = type.inLane() ? laneId : 0;
+        this.byX = type.inLane() && byX;
+        float pos = type.inLane() && !this.byX && !Float.isNaN(lane) && !Float.isInfinite(lane) ? lane : 0f;
+        this.lanePos = pos == 0f ? 0f : pos; // folds −0 into +0
+        this.laneId = (int) Math.floor(this.lanePos);
         this.judgement = judgement == 0f ? 0f : judgement; // folds −0 into +0 so == and compare agree
         this.duration = type.sustainable() && duration > 0f && duration < Float.POSITIVE_INFINITY ? duration : 0f;
         this.height = Float.isNaN(height) || Float.isInfinite(height) ? 0f : height;
@@ -361,6 +412,7 @@ public final class Note {
         this.offsetXEvents = type.inLane() ? Events.sortedCopy(offsetXEvents) : Collections.<Events>emptyList();
         this.orbit = type.inLane() ? orbit : null;
         this.fake = fake && (type.inLane() || type == NoteType.UNIVERSAL);
+        this.space = type.inLane() && space != null && space.keys() == Channels.SOLID ? space : null;
         // a radius orbit is in effect from its first event (centre, radius or angle) to its last, or always without one
         float of = Float.POSITIVE_INFINITY;
         float ot = Float.NEGATIVE_INFINITY;
@@ -467,13 +519,19 @@ public final class Note {
     public Line line() { return line; }
     /** @return true for a sky-line note. */
     public boolean isUpper() { return line == Line.UPPER; }
-    /** @return lane id (0 for universal notes). */
-    public int laneId() { return laneId; }
     /**
-     * @return authored appearance beat (informational; drawing uses {@link #visibleFrom()}); a floating note's is its
-     *         {@link Floating#appear}
+     * @return lane id (0 for universal notes and {@link #laneless()} keys; for a key {@link #between()} lanes the id
+     *         at or below its {@link #lanePos()})
      */
-    public float appearance() { return floating != null ? floating.appear() : appearance; }
+    public int laneId() { return laneId; }
+
+    /**
+     * @return the lane as written: a lane id, or a decimal between two lanes' ids, placed by
+     *         {@link LaneLayout#keyCentre} (Kelvin 2026-11-07 04:02); 0 for universal notes and laneless keys
+     */
+    public float lanePos() { return lanePos; }
+    /** @return authored appearance beat (informational; drawing uses {@link #visibleFrom()}). */
+    public float appearance() { return appearance; }
     /** @return judgement beat. */
     public float judgement() { return judgement; }
     /** @return length in beats of a hold, a TIDE STREAM or a LANE MINE (0 for every other note). */
@@ -512,14 +570,6 @@ public final class Note {
      */
     public boolean isSustained() { return type == NoteType.HOLD || hasTideBand() || isBlockMine(); }
 
-    /**
-     * @return the note's English display name (DROP, STREAM, MINE, LANE MINE, TIDE or TIDE STREAM;
-     *         from {@link NoteType})
-     */
-    public String displayName() { return type.display(duration > 0f); }
-
-    /** @return the note's Chinese display name (水滴, 水流, 水雷, 轨道水雷, 浪花 or 潮汐). */
-    public String displayNameZh() { return type.displayZh(duration > 0f); }
     /** @return {@code judgement + duration} in beats. */
     public float endBeat() { return judgement + duration; }
     /** @return hold tail (TIDE STREAM band, LANE MINE column) length in ref units as authored. */
@@ -575,115 +625,59 @@ public final class Note {
     /**
      * @return how far this lane note is drawn right of its lane's centre, in reference units (stretched by kx, the
      * same on both lines; 0 for a TIDE). It moves the body before it turns about its pivot, which stays measured from
-     * the shifted body. Visual only: the note is still judged in its lane (Kelvin 2026-10-28 01:47).
+     * the shifted body. Visual only: the note is still judged in its lane (Kelvin 2026-10-28 01:47). A key with its
+     * own x has no lane to be shifted off: for it this is its {@link #x()}.
      */
     public float offsetX() { return offsetX; }
 
-    /** @return the events that move {@link #offsetX} over time, sorted (empty for none). */
+    /** @return the events that move {@link #offsetX} over time, sorted (empty for none; a laneless key's x events). */
     public List<Events> offsetXEvents() { return offsetXEvents; }
 
     /**
      * @return the sideways shift at {@code beat}. A note without {@code offsetXEvents} keeps {@link #offsetX} all the
      * time; with events it takes the value of the event it is in, and 0 (its lane's centre) outside them, so a key
-     * that slides as part of a show falls in its own lane afterwards (Kelvin 2026-10-29 19:04)
+     * that slides as part of a show falls in its own lane afterwards (Kelvin 2026-10-29 19:04); 0 for a laneless key,
+     * which is placed by {@link #xAt}
      */
     public float offsetXAt(float beat) {
+        if (laneless()) return 0f;
         return offsetXEvents.isEmpty() ? offsetX : Events.calculateValue(offsetXEvents, beat, 0f);
     }
 
     /**
-     * @return true for a note with a place across the screen ({@link #x()}): taps, holds, mines (LANE MINEs too) and
-     *         DRAGs on a line; TIDE notes and TIDE MINEs take their line's whole width, and a floating note is where
-     *         its {@link #floating()} says
+     * @return true for a tap, hold, mine or DRAG written with an x instead of a lane (a key on a sea, Kelvin
+     *         2026-11-08 02:48 「只有海面上可以无轨」; older charts' laneless time and DRAGs): judged and drawn at its
+     *         own {@link #xAt x}, as in the laneless game; its {@link #laneId()} is 0 and its {@link #laneIndex()} −1.
+     *         A DRAG with a lane (02:51 「也上轨道」) is in it like a tap.
      */
-    public boolean hasX() { return type.inLane() && floating == null; }
+    public boolean laneless() { return byX; }
 
     /**
-     * @return the x of the note's centre in reference units from the screen's centre line (0; negative left, ±960
-     *         the edges of a 16:10 screen; the lines' scale and camera then move it, {@link LaneLayout#noteX}),
-     *         outside its {@link #xEvents()}; NaN for a TIDE. It is where
-     *         the note is judged as well as drawn (Kelvin 2026-11-05: 「八轨改无轨，每个键横坐标也带移动数据」)
+     * @return true for a key whose {@link #lanePos()} is no lane of the chart (a decimal such as 1.5, or lane 0 when
+     *         the chart has none): placed and judged at that spot between the lanes, its {@link #laneIndex()} −1
      */
-    public float x() { return x; }
-
-    /** @return the events that move {@link #x()} over time, sorted (empty for none). */
-    public List<Events> xEvents() { return xEvents; }
+    public boolean between() { return between; }
 
     /**
-     * @return the x of the note's centre at {@code beat}: the event it is in, else {@link #x()}, plus its x layers
-     *         (reference units)
+     * @return true for a key placed and judged by position, not a lane ({@link #laneless()}, {@link #between()}, or a
+     *         {@link #spacePath()} key: judged where it is at its beat)
      */
+    public boolean free() { return byX || between || spacePath(); }
+
+    /**
+     * @return a laneless key's x: reference units right of the screen's centre line (the default lanes' centres are
+     *         −840, −600, …, 840), scaled and moved with the lines' lane scale and camera frame as the lanes are, but
+     *         by no lane ({@link LaneLayout#freeX}); 0 for other notes
+     */
+    public float x() { return laneless() ? offsetX : 0f; }
+
+    /** @return the events that move a laneless key's {@link #x()}, sorted (empty for none, and for other notes). */
+    public List<Events> xEvents() { return laneless() ? offsetXEvents : Collections.<Events>emptyList(); }
+
+    /** @return a laneless key's x at {@code beat}: the value of the event it is in, else {@link #x()}; 0 for others */
     public float xAt(float beat) {
-        float v = xEvents.isEmpty() ? x : Events.calculateValue(xEvents, beat, x);
-        return xLayers.isEmpty() ? v : v + xLayers.at(beat);
-    }
-
-    /**
-     * Sets where the note sits across the screen (loaders, the lane conversion and editors). Ignored for a note
-     * without {@link #hasX()}. A non-finite x reads as 0 (the centre line). Every key is one size for now (240 reference units,
-     * {@link LaneLayout#noteWidth}; Kelvin 2026-11-05: 「我们先不做大小键之类的」).
-     *
-     * @param x       centre x in reference units from the screen's centre line (negative left)
-     * @param xEvents events moving it (copied and sorted; null for none)
-     */
-    public void place(float x, List<Events> xEvents) {
-        if (!hasX()) return;
-        this.x = Float.isNaN(x) || Float.isInfinite(x) ? 0f : x;
-        this.xEvents = Events.sortedCopy(xEvents);
-    }
-
-    /**
-     * Sets the note's additive layers (叠加层, Kelvin 2026-11-05; loaders and editors, like {@link #place}): events that
-     * add their values to its x ({@link #xAt}; keys only), its distance from the line ({@link #positionAt}, only while
-     * its own movement shows it, never to a LONG MINE pinned on its line) and its rotation ({@link #angleAt}), with
-     * the rule of {@link Layers}. A note has no opacity layers.
-     *
-     * @param x        x layers (null for none; ignored for a note without {@link #hasX()})
-     * @param position distance layers (null for none)
-     * @param rotation rotation layers in degrees (null for none)
-     */
-    public void layer(List<Events> x, List<Events> position, List<Events> rotation) {
-        this.xLayers = hasX() ? Layers.of(x) : Layers.NONE;
-        this.positionLayers = Layers.of(position);
-        this.rotationLayers = Layers.of(rotation);
-        this.pinnedAngle = isBlockMine()
-            ? Events.calculateValue(rotationEvents, judgement, 0f) + rotationLayers.at(judgement) : 0f;
-    }
-
-    /**
-     * Makes the note a floating note (悬浮键, CHART_FORMAT §11; loaders and editors, before the chart is built, and
-     * before {@link #place} and {@link #layer}, which then leave its x alone): it is where {@code f} says, not on a
-     * line, and it neither moves to a line nor turns. Taps, STREAMs, DRAGs and mines only ({@link NoteType#floats});
-     * the line of a floating note is {@link Line#LOWER} and it has no lane, x of its own, pivot or orbit.
-     *
-     * @param f where it is (null: on its line)
-     */
-    public void setFloating(Floating f) {
-        if (f == null || !type.floats()) return;
-        floating = f;
-        x = Float.NaN;
-        xEvents = Collections.emptyList();
-        xLayers = Layers.NONE;
-    }
-
-    /** @return where a floating note is, or null for a note on its line */
-    public Floating floating() { return floating; }
-
-    /** @return true for a floating note ({@link #floating()}) */
-    public boolean floats() { return floating != null; }
-
-    /** @return the x layers, sorted by start (unmodifiable; empty for none). */
-    public List<Events> xLayers() { return xLayers.events(); }
-
-    /** @return the distance layers, sorted by start (unmodifiable; empty for none). */
-    public List<Events> positionLayers() { return positionLayers.events(); }
-
-    /** @return the rotation layers, sorted by start (unmodifiable; empty for none). */
-    public List<Events> rotationLayers() { return rotationLayers.events(); }
-
-    /** @return true when the note has a layer of any channel. */
-    public boolean hasLayers() {
-        return !xLayers.isEmpty() || !positionLayers.isEmpty() || !rotationLayers.isEmpty();
+        if (!laneless()) return 0f;
+        return offsetXEvents.isEmpty() ? offsetX : Events.calculateValue(offsetXEvents, beat, offsetX);
     }
 
     /**
@@ -722,7 +716,7 @@ public final class Note {
 
     /**
      * @return index of the note's lane in {@link Chart#lanes()} / {@link LaneLayout}, or −1 for
-     *         universal notes
+     *         universal notes and keys placed by position ({@link #free()})
      */
     public int laneIndex() { return laneIndex; }
 
@@ -780,9 +774,9 @@ public final class Note {
 
     /**
      * @return earliest beat at which any of the note's events (the default approach included)
-     *         starts, or its judgement beat; a floating note shows from its {@link Floating#appear}
+     *         starts, or its judgement beat
      */
-    public float visibleFrom() { return floating != null ? floating.appear() : visibleFrom; }
+    public float visibleFrom() { return visibleFrom; }
 
     /**
      * @return speed (ref units per beat) at its end of the movement event in effect at the judgement (0 if none or
@@ -791,29 +785,24 @@ public final class Note {
     public float lastVelocity() { return lastVelocity; }
 
     /**
-     * @return distance from the judgement line at {@code beat} (see the class comment), plus the distance layers
-     *         while it is not parked out of sight; exactly 0 for a LANE MINE at or after its judgement beat
+     * @return distance from the judgement line at {@code beat} (see the class comment); exactly 0
+     *         for a LANE MINE at or after its judgement beat
      */
     public float positionAt(float beat) {
         if (beat >= judgement && isBlockMine()) return 0f;
         float base = isSustained() && beat > judgement ? 0f : HIDDEN_POSITION;
-        return layered(Events.calculateValue(motion, beat, base), beat);
-    }
-
-    /** @return {@code p} with the distance layers at {@code beat} added, unless it parks the note out of sight */
-    private float layered(float p, float beat) {
-        return p == HIDDEN_POSITION || positionLayers.isEmpty() ? p : p + positionLayers.at(beat);
+        return Events.calculateValue(motion, beat, base);
     }
 
     /**
      * @return the position past the judgement beat (Kelvin 2026-10-27: a missed note keeps going, like inertia): the
      *         movement events while one still covers {@code beat}; after the last one ends, its final value moved on
-     *         at the speed it ended with ({@link #continued}), plus the distance layers; {@link #HIDDEN_POSITION}
-     *         when no movement reaches the judgement
+     *         at the speed it ended with ({@link #continued}); {@link #HIDDEN_POSITION} when no movement reaches the
+     *         judgement
      */
     public float positionPastJudgement(float beat) {
         if (positionAtJudgement == HIDDEN_POSITION) return HIDDEN_POSITION; // judged unseen: stays off screen
-        return layered(continued(motion, beat, HIDDEN_POSITION), beat);
+        return continued(motion, beat, HIDDEN_POSITION);
     }
 
     /**
@@ -842,25 +831,69 @@ public final class Note {
         return lo > 0 ? events.get(lo - 1) : null;
     }
 
-    /** @return the eased event's rate of change at its end, per beat: (final − initial) · exponent / length */
+    /** @return the eased event's rate of change at its end, per beat: (final − initial) · end slope / length */
     private static float endSpeed(Events e) {
         float dt = e.endTime() - e.startTime();
         if (!(dt > 0f)) return 0f;
-        float v = (e.finalValue() - e.initialValue()) * e.exponent() / dt;
+        float v = (e.finalValue() - e.initialValue()) * e.endSlope() / dt;
         return Float.isFinite(v) ? v : 0f;
     }
 
     /**
-     * @return rotation in degrees at {@code beat}, plus the rotation layers; a LANE MINE keeps
-     *         {@code angleAt(judgement)} from its judgement beat on; past the judgement a tap, mine or TIDE keeps turning
-     *         ({@link #continued})
+     * @return rotation in degrees at {@code beat}; a LANE MINE keeps {@code angleAt(judgement)}
+     *         from its judgement beat on; past the judgement a tap, mine or TIDE keeps turning ({@link #continued})
      */
     public float angleAt(float beat) {
         if (beat >= judgement && isBlockMine()) return pinnedAngle;
-        float a = beat > judgement && !isSustained() ? continued(rotationEvents, beat, 0f) // keeps turning
-            : Events.calculateValue(rotationEvents, beat, 0f);
-        return rotationLayers.isEmpty() ? a : a + rotationLayers.at(beat);
+        if (beat > judgement && !isSustained()) return continued(rotationEvents, beat, 0f); // keeps turning
+        return Events.calculateValue(rotationEvents, beat, 0f);
     }
+
+    /** @return the index of the sea it lands on in {@link Chart#seas()} ({@code "on"}), or −1 for its line */
+    public int seaIndex() { return seaIndex; }
+
+    /**
+     * @return true when its path follows space (Kelvin 2026-11-08 23:20 「按键的轨迹可以选择跟所在海面/判定线绑定或者跟着
+     *         绝对空间坐标绑定」, {@code "track": "space"}): its path's points ({@code positionEvents}, its x and z) are
+     *         where it is in space (as a lane's origin: from the centre line, the frame's middle, the columns' middle),
+     *         moved by nothing but the view; without a path it comes in on its lane as the lane is at its beat. False
+     *         (the default, every chart before): it moves with its lane or sea
+     */
+    public boolean spaceTrack() { return spaceTrack; }
+
+    /**
+     * @return true for a {@link #spaceTrack()} key with a path of its own ({@code positionEvents}): its position is y
+     *         up from the frame's middle (both lines), its x ({@code offsetX}, or a laneless key's x) from the centre
+     *         line, its {@link Channels#Z} from the columns' middle. Without a path it falls on its lane as the lane
+     *         is at its judgement beat ({@link LaneLayout#freezeSpaceKeys})
+     */
+    public boolean spacePath() { return spaceTrack && !movementEvents.isEmpty(); }
+
+    /**
+     * @return how many lanes and seas a TIDE or TIDE STREAM lists to span ({@code "spans"}, Kelvin 2026-11-09 00:01
+     *         「然后海浪可以选择跨过若干个轨道/海面，这些轨道/海面之间用虚线链接」): drawn as one piece over each, in this order,
+     *         dashes between each two; judged as one key as before. 0: over the lanes its range crosses
+     */
+    public int spanCount() { return spans != null ? spans.length / 2 : 0; }
+
+    /** @return true when span k ({@link #spanCount()}) is a sea, false when it is a lane */
+    public boolean spanSea(int k) { return spans[2 * k] == 1; }
+
+    /** @return span k's lane id or sea index ({@link Chart#seas()}) */
+    public int spanValue(int k) { return spans[2 * k + 1]; }
+
+    /**
+     * @return the key's 3D motion (Kelvin 2026-11-07 22:54, CHART_FORMAT §5.1): its {@link Channels#SOLID} channels,
+     *         or null for none (drawing only: it is judged as before)
+     */
+    public Channels space() { return space; }
+
+    /**
+     * @return the sea it lands on (Kelvin 2026-11-07 16:04 「浪花判定面上也可以落下普通浪花」): drawn landing on the sea's
+     *         surface under it instead of its line and leaning with it ({@link #angleAt}); judged as before: a key
+     *         by its own x like any laneless key (a band its width wide, any height), a TIDE as a TIDE
+     */
+    public Sea sea() { return sea; }
 
     /**
      * @return x of the rotation pivot (reference units, in the note's own frame: + is right on the
@@ -879,9 +912,29 @@ public final class Note {
     /** @return true when the chart gives the note a pivot other than its origin. */
     public boolean hasPivot() { return pivotX != 0f || pivotY != 0f; }
 
-    /** @return note opacity at {@code beat} (authored {@code DisappearEvents}, base 1). */
+    /**
+     * @return note opacity at {@code beat} (authored {@code DisappearEvents}, base 1); a chart format v7 key's is its
+     *         {@code o} times its lane's (Kelvin 2026-11-09 21:37 「加回透明度」), each clamped to 0..1 (a wave or tide:
+     *         the most of its lanes')
+     */
     public float opacityAt(float beat) {
-        return Events.calculateValue(disappearEvents, beat, 1f);
+        if (opacity7 == null) return Events.calculateValue(disappearEvents, beat, 1f);
+        float o = Lane.clamp01(opacity7.at(beat));
+        if (o > 0f && laneOpacity7 != null) {
+            float l = 0f;
+            for (Fn f : laneOpacity7) l = Math.max(l, f != null ? Lane.clamp01(f.at(beat)) : 1f);
+            o *= l;
+        }
+        return o;
+    }
+
+    /**
+     * Gives a chart format v7 key its opacity {@code o} and its lanes' ({@link #opacityAt}; kept, not copied; no
+     * lanes = the key's alone).
+     */
+    void setOpacity7(Fn key, Fn[] lanes) {
+        opacity7 = key;
+        laneOpacity7 = lanes != null && lanes.length > 0 ? lanes : null;
     }
 
     /** @return the opacity the note is drawn with at {@code beat}: {@link #shownOpacity} of {@link #opacityAt}. */
@@ -923,8 +976,8 @@ public final class Note {
 
     @Override
     public String toString() {
-        return type.json + "@" + judgement + " " + (floating != null ? floating.toString()
-            : line.json + (type.inLane() ? " lane " + laneId : ""))
+        return type.json + "@" + judgement + " " + line.json
+            + (laneless() ? " x " + offsetX : type.inLane() ? " lane " + (between ? lanePos : laneId) : "")
             + (duration > 0f ? " dur " + duration : "")
             + (heightEvents.isEmpty() ? "" : " heights " + heightEvents.size())
             + (trails.isEmpty() ? "" : " " + (trails.size() == 1 ? trail.toString() : trails.size() + " trails"))

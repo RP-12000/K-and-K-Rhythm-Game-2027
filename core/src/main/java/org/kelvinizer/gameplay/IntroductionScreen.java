@@ -80,11 +80,11 @@ public class IntroductionScreen extends GameplayScreen {
     /** The demo mine sits left of the MINES heading, this far from its first letter (EN: centre x ≈ 1520, lane +3). */
     private static final float DEMO_MINE_GAP = 32f;
     /**
-     * Ghost notes of the two-lines demo (reference x): a ground DROP falls at the far left, a sky DROP rises at the far
-     * right (where the outer lanes −4 and +4 were, clear of the centred body line between them).
+     * Ghost notes of the two-lines demo: a ground DROP falls in lane −4, a sky DROP rises in lane +4 (the outer
+     * lanes, clear of the centred body line between them).
      */
-    private static final float FALL_X = -840f; // from the centre line
-    private static final float RISE_X = 840f;
+    private static final int FALL_LANE = -4;
+    private static final int RISE_LANE = 4;
     private static final float FALL_RISE_ALPHA = 0.45f;
     /** Approach distance of the ghost notes (the chart's default approach: 2 beats × 540 units). */
     private static final float FALL_RISE_UNITS = 1080f;
@@ -452,18 +452,21 @@ public class IntroductionScreen extends GameplayScreen {
     }
 
     /**
-     * Two-lines demo: a ghost ground DROP falls to the ground line at the far left and a ghost sky DROP rises
-     * to the sky line at the far right, at the chart's approach speed, every 2 beats.
+     * Two-lines demo: a ghost ground DROP falls to the ground line in lane −4 and a ghost sky DROP rises
+     * to the sky line in lane +4, at the chart's approach speed, every 2 beats.
      */
     private void drawFallRise(float beat) {
         float a = window(beat, IntroductionGuidelines.FALL_RISE_START, IntroductionGuidelines.FALL_RISE_END, 0.5f);
         if (a <= 0f) return;
         LaneLayout lay = engine.layout();
+        int gi = lay.indexOf(FALL_LANE);
+        int si = lay.indexOf(RISE_LANE);
+        if (gi < 0 || si < 0) return;
         float p = ((beat - IntroductionGuidelines.FALL_RISE_START) % 2f) / 2f; // 0..1 over one approach
         float alpha = FALL_RISE_ALPHA * a * Math.min(1f, p / 0.1f);
         float dist = Field.dist((1f - p) * FALL_RISE_UNITS);
-        drawNoteDemo(lay.x(FALL_X), engine.lineY(Line.LOWER) + dist, lay.defaultWidth(), false, alpha);
-        drawNoteDemo(lay.x(RISE_X), engine.lineY(Line.UPPER) - dist, lay.defaultWidth(), true, alpha);
+        drawNoteDemo(lay.centre(gi), engine.lineY(Line.LOWER) + dist, lay.width(gi), false, alpha);
+        drawNoteDemo(lay.centre(si), engine.lineY(Line.UPPER) - dist, lay.width(si), true, alpha);
     }
 
     /** Centre x of the demo mine: {@link #DEMO_MINE_GAP} left of the MINES heading. */
@@ -500,14 +503,15 @@ public class IntroductionScreen extends GameplayScreen {
             Math.min(IntroductionGuidelines.LANE_MINE_HINT_END, n.endBeat()), 0.5f);
         if (a <= 0f) return;
         LaneLayout lay = engine.layout();
-        float w = lay.noteWidth(n);
-        if (w < LaneLayout.MIN_ACTIVE_WIDTH) return;
+        int li = n.laneIndex();
+        if (li < 0 || li >= lay.count() || !lay.active(li)) return;
         float lineY = engine.lineY(n.line());
         float zone = Field.zoneHalf();
         float y0 = lineY - zone;
         float y1 = lineY + zone;
         float alpha = a * pulse;
-        float x0 = lay.noteX(n) - 0.5f * w;
+        float x0 = lay.left(li);
+        float w = lay.width(li);
         float s = HINT_STROKE;
         d.rect(x0, y0, s, y1 - y0, Theme.MINE, alpha);
         d.rect(x0 + w - s, y0, s, y1 - y0, Theme.MINE, alpha);

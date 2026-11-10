@@ -224,6 +224,11 @@ final class SortPanel {
         ptr = -1;
     }
 
+    void mouseMoved(float px, float py) {
+        if (!open) return;
+        for (Pressable c : controls) c.mouseMoved(px, py);
+    }
+
     // ------------------------------------------------------------------ frame
     /** Advances the rise animation and the chips; {@code sort} is the level's current order. */
     void update(float dt, int sort) {

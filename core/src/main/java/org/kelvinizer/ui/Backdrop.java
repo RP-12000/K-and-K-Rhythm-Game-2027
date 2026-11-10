@@ -360,11 +360,6 @@ public final class Backdrop implements Disposable {
         return params.accent;
     }
 
-    /** Enables the automatic LOW fallback when frames are slow (default on). */
-    public void setAutoFallback(boolean enabled) {
-        autoFallback = enabled;
-    }
-
     /** Callback run once when the backdrop falls back to LOW (persist + toast). */
     public void setOnAutoLow(Runnable r) {
         onAutoLow = r;

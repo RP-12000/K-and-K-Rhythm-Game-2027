@@ -206,4 +206,13 @@ public final class TopTab extends ProfileTab {
         chart.cancel(pointer);
     }
 
+    @Override
+    public void mouseMoved(float px, float py) {
+        chart.mouseMoved(px, py);
+    }
+
+    @Override
+    public boolean scrolled(float amountY) {
+        return chart.scrolled(amountY);
+    }
 }

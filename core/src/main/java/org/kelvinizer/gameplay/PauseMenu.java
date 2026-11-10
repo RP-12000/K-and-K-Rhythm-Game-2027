@@ -285,7 +285,7 @@ final class PauseMenu {
         /** Top of the icon / label / sublabel stack centred on the button, at press scale {@code s}. */
         private float stackTop(float s) {
             float total = iconH() + ICON_GAP * k + labelCap() + (sublabels() ? (SUB_GAP + SUB_CAP) * k : 0f);
-            return centerY() + total * s * 0.5f;
+            return centerY() + liftY() + total * s * 0.5f;
         }
 
         void drawBody(float alpha) {
@@ -294,7 +294,7 @@ final class PauseMenu {
             if (a <= 0.002f) return;
             float s = visualScale();
             float cx = centerX() + shakeX();
-            float cy = centerY();
+            float cy = centerY() + liftY();
             float bw = w * s;
             float bh = h * s;
             float bx = cx - bw * 0.5f;
@@ -313,8 +313,8 @@ final class PauseMenu {
                 ink = Theme.BTN_LABEL;
             } else {
                 draw.roundRect(bx, by, bw, bh, rad, Theme.PANEL, 0.92f * a);
-                if (press > 0f) {
-                    draw.roundRect(bx, by, bw, bh, rad, Theme.INK1, 0.08f * press * a);
+                if (press > 0f || hover > 0f) {
+                    draw.roundRect(bx, by, bw, bh, rad, Theme.INK1, (0.08f * press + 0.05f * hover) * a);
                 }
                 bright(Theme.INK1, c1);
                 draw.roundRectStroke(bx, by, bw, bh, rad, 2f, c1, Math.min(1f, 0.6f * br) * a);

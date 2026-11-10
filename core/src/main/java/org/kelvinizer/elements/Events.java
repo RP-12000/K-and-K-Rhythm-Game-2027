@@ -1,6 +1,7 @@
 package org.kelvinizer.elements;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
@@ -13,7 +14,8 @@ import java.util.List;
  *
  * <p>Inside {@code [startTime, endTime]} the value is
  * {@code initial + (final − initial) · p^exponent} with {@code p = (t − start) / (end − start)}
- * ({@link #valueAt(float)}). Outside every event of a list, {@link #calculateValue} returns the
+ * ({@link #valueAt(float)}), or with a custom ease ({@code "curve"}, {@link EaseCurve}) the curve's progress at
+ * {@code p} in place of {@code p^exponent}. Outside every event of a list, {@link #calculateValue} returns the
  * channel's base value, <b>not</b> the last final value: charts hold a value by adding a
  * constant event (e.g. the window squeeze of the shipped charts holds 0..1920 with a 526–562
  * event). Every channel uses this rule: note movement / rotation / opacity / tail height, the
@@ -69,6 +71,8 @@ public final class Events {
     private final float initialValue;
     private final float finalValue;
     private final float exponent;
+    /** The custom ease ({@link EaseCurve#clean}), or null for {@code p^exponent}. */
+    private final float[] curve;
 
     /**
      * @param type         channel (may be null for an unknown type; the event still evaluates)
@@ -79,12 +83,24 @@ public final class Events {
      * @param exponent     easing exponent (1 = linear)
      */
     public Events(TYPE type, float startTime, float endTime, float initialValue, float finalValue, float exponent) {
+        this(type, startTime, endTime, initialValue, finalValue, exponent, null);
+    }
+
+    /**
+     * The six-argument event with a custom ease.
+     *
+     * @param curve the {@code "curve"} points ({@link EaseCurve}); null, or a list that is not 6n + 2 finite
+     *              numbers, keeps {@code exponent}. With a curve the exponent is 1: {@code "ease"} is ignored.
+     */
+    public Events(TYPE type, float startTime, float endTime, float initialValue, float finalValue, float exponent,
+                  float[] curve) {
         this.type = type;
         this.startTime = startTime;
         this.endTime = endTime;
         this.initialValue = initialValue;
         this.finalValue = finalValue;
-        this.exponent = exponent;
+        this.curve = EaseCurve.clean(curve);
+        this.exponent = this.curve != null ? 1f : exponent;
     }
 
     /** @return channel, or null when the JSON type was missing or unknown. */
@@ -99,8 +115,25 @@ public final class Events {
     public float initialValue() { return initialValue; }
     /** @return value at the end. */
     public float finalValue() { return finalValue; }
-    /** @return easing exponent. */
+    /** @return easing exponent (1 with a custom ease). */
     public float exponent() { return exponent; }
+    /** @return a copy of the custom ease points ({@link EaseCurve}), or null when the event eases by its exponent */
+    public float[] curve() { return curve != null ? curve.clone() : null; }
+    /** @return true when the event has a custom ease */
+    public boolean hasCurve() { return curve != null; }
+
+    /** @return the progress's rate at the end per time fraction: the exponent, or the custom ease's end slope */
+    public float endSlope() { return curve != null ? EaseCurve.endSlope(curve) : exponent; }
+
+    /** @return true when {@code o} eases the same way (exponent and custom ease) */
+    public boolean sameEase(Events o) {
+        return Float.compare(exponent, o.exponent) == 0 && Arrays.equals(curve, o.curve);
+    }
+
+    /** @return an event on channel {@code type} with this one's beats and ease and other values */
+    public Events withValues(TYPE type, float initialValue, float finalValue) {
+        return new Events(type, startTime, endTime, initialValue, finalValue, exponent, curve);
+    }
 
     /** @return true when {@code start ≤ time ≤ end}. */
     public boolean contains(float time) {
@@ -109,20 +142,23 @@ public final class Events {
 
     /**
      * @return the eased value at {@code time}: the final value for a zero-length event or after
-     *         the end, otherwise {@code initial + (final − initial)·p^exponent}
+     *         the end, otherwise {@code initial + (final − initial)·p^exponent} (or the custom ease's progress)
      */
     public float valueAt(float time) {
         if (endTime == startTime || time > endTime) {
             return finalValue;
         }
-        return (float) (initialValue + (finalValue - initialValue)
-            * Math.pow((time - startTime) / (endTime - startTime), exponent));
+        float p = (time - startTime) / (endTime - startTime);
+        if (curve != null) return initialValue + (finalValue - initialValue) * EaseCurve.at(curve, p);
+        return (float) (initialValue + (finalValue - initialValue) * Math.pow(p, exponent));
     }
 
     /**
      * Evaluates a channel at {@code time}: binary search for the last event (by start time) that
      * starts at or before {@code time}; its eased value if it still covers {@code time}, else
-     * {@code base}. O(log n), no allocation.
+     * {@code base}. Before the first event, when that one starts by beat 0: its value as it starts, so the run's first
+     * frame shows what an event at the song's start sets (Kelvin 2026-11-08 19:31「如果有事件位于0拍及以前，那么游戏一进去的
+     * 界面就是那个事件的样子」), however early the run starts. O(log n), no allocation.
      *
      * @param events events sorted by start time (as every model list is)
      * @param time   beat
@@ -142,6 +178,9 @@ public final class Events {
         if (low > 0) {
             Events e = events.get(low - 1);
             if (e.contains(time)) return e.valueAt(time);
+        } else if (!events.isEmpty() && events.get(0).startTime <= 0f) {
+            Events e = events.get(0);
+            return e.valueAt(e.startTime);
         }
         return base;
     }
@@ -169,6 +208,58 @@ public final class Events {
         return low > 0 ? events.get(low - 1).valueAt(time) : base;
     }
 
+    /** A value map for {@link #mapValues}. */
+    public interface ValueMap {
+        float apply(float v);
+    }
+
+    /** A map of two channels' values for {@link #combine}. */
+    public interface ValuePair {
+        float apply(float a, float b);
+    }
+
+    /** @return {@code events} (null: none) with every value v as {@code f(v)}, the same beats and ease */
+    public static List<Events> mapValues(List<Events> events, ValueMap f) {
+        List<Events> out = new ArrayList<>();
+        for (int i = 0; events != null && i < events.size(); i++) {
+            Events e = events.get(i);
+            if (e != null) out.add(e.withValues(e.type, f.apply(e.initialValue), f.apply(e.finalValue)));
+        }
+        return out;
+    }
+
+    /**
+     * @return the events of {@code f(a, b)} for two channels, a (events {@code ea}, base {@code ab}) and b: exact when
+     *         only one has events or when theirs line up (the same beats and ease); else each one's events with the
+     *         other's value at their ends, an approximation (a chart's old keys converted, 2026-11-08)
+     */
+    public static List<Events> combine(List<Events> ea, float ab, List<Events> eb, float bb, ValuePair f) {
+        List<Events> a = sortedCopy(ea), b = sortedCopy(eb), out = new ArrayList<>();
+        boolean aligned = a.size() == b.size();
+        for (int i = 0; aligned && i < a.size(); i++) {
+            Events x = a.get(i), y = b.get(i);
+            aligned = x.startTime == y.startTime && x.endTime == y.endTime && x.sameEase(y);
+        }
+        if (aligned) {
+            for (int i = 0; i < a.size(); i++) {
+                Events x = a.get(i), y = b.get(i);
+                out.add(x.withValues(x.type, f.apply(x.initialValue, y.initialValue),
+                    f.apply(x.finalValue, y.finalValue)));
+            }
+            return out;
+        }
+        for (Events x : a) {
+            out.add(x.withValues(x.type, f.apply(x.initialValue, calculateValue(b, x.startTime, bb)),
+                f.apply(x.finalValue, calculateValue(b, x.endTime, bb))));
+        }
+        for (Events y : b) {
+            out.add(y.withValues(y.type, f.apply(calculateValue(a, y.startTime, ab), y.initialValue),
+                f.apply(calculateValue(a, y.endTime, ab), y.finalValue)));
+        }
+        out.sort(BY_START);
+        return out;
+    }
+
     /**
      * @return an unmodifiable copy of {@code events} (null entries dropped) stably sorted by start
      *         time, as {@link #calculateValue} requires; a shared empty list for null or empty input
@@ -193,8 +284,9 @@ public final class Events {
     };
 
     /**
-     * Equal timing, values and exponent. The {@link #type} is left out: an event's channel is the list it is in, and
-     * format v5 has no type key, so an event reads back equal whichever format it came from.
+     * Equal timing, values and ease (exponent and custom ease). The {@link #type} is left out: an event's channel
+     * is the list it is in, and format v5 has no type key, so an event reads back equal whichever format it came
+     * from.
      */
     @Override
     public boolean equals(Object o) {
@@ -205,7 +297,8 @@ public final class Events {
             && Float.compare(endTime, e.endTime) == 0
             && Float.compare(initialValue, e.initialValue) == 0
             && Float.compare(finalValue, e.finalValue) == 0
-            && Float.compare(exponent, e.exponent) == 0;
+            && Float.compare(exponent, e.exponent) == 0
+            && Arrays.equals(curve, e.curve);
     }
 
     @Override
@@ -214,12 +307,13 @@ public final class Events {
         h = 31 * h + Float.floatToIntBits(endTime);
         h = 31 * h + Float.floatToIntBits(initialValue);
         h = 31 * h + Float.floatToIntBits(finalValue);
-        return 31 * h + Float.floatToIntBits(exponent);
+        h = 31 * h + Float.floatToIntBits(exponent);
+        return curve != null ? 31 * h + Arrays.hashCode(curve) : h;
     }
 
     @Override
     public String toString() {
         return typeName() + "[" + startTime + ".." + endTime + ": " + initialValue + "→" + finalValue
-            + " ^" + exponent + "]";
+            + (curve != null ? " curve" + Arrays.toString(curve) : " ^" + exponent) + "]";
     }
 }

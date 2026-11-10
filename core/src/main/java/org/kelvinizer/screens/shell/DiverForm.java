@@ -59,6 +59,7 @@ public final class DiverForm {
                 view.replace(avatar, name(), false);
             }
         });
+        host.registerField(field);
     }
 
     /**
@@ -67,10 +68,16 @@ public final class DiverForm {
      */
     public void reset(String preset, String fallback) {
         defaultName = fallback != null ? fallback : game.profiles().defaultName();
+        field.cancelEdit();
         field.setText(preset != null ? preset : "");
         view.set(avatar, name());
         hint.setLength(0);
         hint.append(Lang.t("EMPTY KEEPS ", "留空就用 ")).append(defaultName);
+    }
+
+    /** Commits an inline edit in progress; false when the text was rejected. */
+    public boolean commitName() {
+        return !field.isEditing() || field.commit();
     }
 
     /** The chosen name (the default when the field is empty). */
@@ -118,6 +125,7 @@ public final class DiverForm {
     /** Shows or hides (and disables input of) every widget of the form. */
     public void setVisible(boolean on) {
         field.setVisible(on);
+        if (!on) field.cancelEdit();
     }
 
     /** Bottom edge of the laid-out form. */

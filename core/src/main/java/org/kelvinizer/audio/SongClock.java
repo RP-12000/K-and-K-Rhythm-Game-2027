@@ -758,11 +758,6 @@ public final class SongClock implements Disposable {
         return running && !countIn;
     }
 
-    /** @return true once the music has been started for this play-through (t reached 0). */
-    public boolean isMusicStarted() {
-        return musicStarted;
-    }
-
     /** @return true when the underlying music reports playing. */
     public boolean isPlaying() {
         return music != null && music.isPlaying();

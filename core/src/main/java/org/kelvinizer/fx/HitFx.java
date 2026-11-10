@@ -46,9 +46,44 @@ import org.kelvinizer.ui.Theme;
  * drawing and clearing allocate nothing. Everything is drawn additively from one texture, so it adds no draw call
  * beyond the caller's additive block.
  *
+ * <p><b>3D</b> ({@link #setView}, Kelvin 2026-11-07 17:04 「和原来的同心圆一样的东西只不过3维化」): while the field is drawn
+ * in 3D the effects are spheres round the keys: every ring is a shell, every flash, light and drop a ball, drawn facing
+ * the screen where its point shows and at the size it shows at, the drops also flying in depth. A shell is a clear
+ * sphere with a thick bright rim and a faint glow inside, shaded by a light from the upper left in front
+ * ({@link #LIGHT_X}) with a highlight where it faces the light; a ball gets a white glint towards the light (17:46
+ * 「球感不够」, 17:52 「可以，你试一下」, the design thread's 3D page v17).
+ *
  * <p>Coordinates are world units. GL thread only.
  */
 public final class HitFx implements Disposable {
+    /**
+     * 3D 视角下打击特效的位置：画面上的点在屏幕上的位置和那里的大小比例。
+     *
+     * <p>Where the hit effects show while the field is drawn in 3D (gameplay's {@code View3D}).
+     */
+    public interface Projection {
+        /**
+         * Puts into {@code out[0]}, {@code out[1]} where the point (x, y) of the flat picture shows on the screen
+         * (world units of the flat camera), {@code dz} nearer than the middle of the keys' depth, and into
+         * {@code out[2]} how many of those units one unit across the line of sight spans there.
+         *
+         * @return false when the point is behind the camera (it is not drawn)
+         */
+        boolean project(float x, float y, float dz, float[] out);
+
+        /**
+         * Puts into {@code out[0..2]} the direction (x, y, z) of the field (x right, y up, z towards the screen's
+         * viewer) as the camera sees it: x right, y up, z towards the eye.
+         */
+        void direction(float x, float y, float z, float[] out);
+    }
+
+    /**
+     * The hit effects' light in 3D, a unit vector fixed in the field: (−0.45, 0.75, 0.5) normalised, from the upper
+     * left in front (the design thread's SPEC, 17:43).
+     */
+    public static final float LIGHT_X = -0.45f / 1.007472f, LIGHT_Y = 0.75f / 1.007472f, LIGHT_Z = 0.5f / 1.007472f;
+
     /** Quality levels (DESIGN §5.9); equal to {@code DeviceSettings.PARTICLES_*}. */
     public static final int QUALITY_OFF = 0, QUALITY_LOW = 1, QUALITY_HIGH = 2;
 
@@ -71,6 +106,9 @@ public final class HitFx implements Disposable {
     private static final int MAX_HOLDS = Splash.HOLDS;
 
     private int quality = QUALITY_HIGH;
+    /** The 3D view the effects are drawn through, or null (flat). */
+    private Projection view;
+    private final float[] pt = new float[3];
 
     private final Splash splash = new Splash();
     /** The LOST mark's ground and sky pools (null when lost.p failed to load). */
@@ -143,6 +181,16 @@ public final class HitFx implements Disposable {
      */
     public void setOnAutoDrop(Runnable callback) {
         onAutoDrop = callback;
+    }
+
+    /**
+     * Draws the effects through the 3D view {@code p}, or flat (null; {@link #clear} also goes back to flat). With a
+     * view {@link #draw} takes the batch in the flat camera's world units: each ring, flash, light and drop is drawn
+     * where its point shows, at the size it shows at, and a LOST mark starts where its point shows.
+     */
+    public void setView(Projection p) {
+        view = p;
+        splash.setView(p);
     }
 
     /** True once the quality was dropped automatically this session (it is never re-armed). */
@@ -268,7 +316,14 @@ public final class HitFx implements Disposable {
         if (quality == QUALITY_OFF) return;
         FxPool pool = y > SKY_SPLIT_Y ? lostSky : lostGround;
         if (pool == null) return;
-        pool.spawn(x, y, clampScale(scale), null);
+        float s = clampScale(scale);
+        if (view != null) { // a short mark: placed where it shows as it starts
+            if (!view.project(x, y, 0f, pt)) return;
+            x = pt[0];
+            y = pt[1];
+            s *= pt[2];
+        }
+        pool.spawn(x, y, s, null);
         burstsSpawned++;
     }
 
@@ -308,10 +363,11 @@ public final class HitFx implements Disposable {
     }
 
     /**
-     * Removes every effect and stops every hold (begin, retry, quit, hide). Also restarts the
-     * auto-drop warm-up, so a song start hitch is never counted.
+     * Removes every effect and stops every hold (begin, retry, quit, hide) and goes back to flat drawing
+     * ({@link #setView}). Also restarts the auto-drop warm-up, so a song start hitch is never counted.
      */
     public void clear() {
+        setView(null);
         splash.clear();
         if (lostGround != null) {
             lostGround.releaseAll();

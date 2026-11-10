@@ -40,7 +40,7 @@ public final class TrailGeometry {
     /** Angle (degrees) under which a copy counts as sitting on its note ({@link #sameAs}). */
     public static final float COINCIDE_DEG = 0.5f;
 
-    /** Leading-edge centre x (lane notes and mines: the lane centre; TIDE: the window centre). */
+    /** Leading-edge centre x (lane notes and mines: the lane centre; TIDE: the window centre; DRAG: its x). */
     public float x;
     /** Leading-edge y. */
     public float y;
@@ -81,12 +81,15 @@ public final class TrailGeometry {
         lines = chart.lineEvents();
         past.setLanes(chart);
         pastBeat = Float.NaN;
-        staticLayout = lines.laneScaleEvents().isEmpty() && lines.cameraFrameEvents().isEmpty()
-            && lines.cameraLayers().isEmpty();
+        staticLayout = lines.laneScaleEvents().isEmpty() && lines.cameraFrameEvents().isEmpty();
         Lane[] lanes = chart.lanes();
         for (int i = 0; i < lanes.length && staticLayout; i++) {
-            // inserted and deleted lanes (Kelvin 2026-10-15, 2026-10-17) move the others too
-            if (!lanes[i].widthEvents().isEmpty() || lanes[i].inserted() || lanes[i].deleted()) staticLayout = false;
+            // inserted and deleted lanes (Kelvin 2026-10-15, 2026-10-17) move the others too; a lane's own column moves
+            // (2026-11-07 22:54) put its copies where it was at their moment
+            if (!lanes[i].widthEvents().isEmpty() || lanes[i].inserted() || lanes[i].deleted()
+                || lanes[i].space() != null) {
+                staticLayout = false;
+            }
         }
     }
 
@@ -124,6 +127,7 @@ public final class TrailGeometry {
      */
     public LaneLayout layoutAt(float s, LaneLayout frame) {
         if (staticLayout && frame != null) return frame;
+        if (frame != null) past.setKeyScale(frame.keyScale()); // copies at the live keys' size
         if (s != pastBeat) {
             past.update(s, Field.x(LaneLayout.VIEW_LEFT), Field.x(LaneLayout.VIEW_RIGHT), Field.kx());
             pastBeat = s;
@@ -158,10 +162,10 @@ public final class TrailGeometry {
             if (level) return false;
             x = (windowLeft + windowRight) * 0.5f;
             laneWidth = windowRight - windowLeft;
-        } else {
-            laneWidth = lay.noteWidth(n);
-            if (laneWidth < LaneLayout.MIN_ACTIVE_WIDTH) return false;
-            x = lay.noteX(n, look(n, s)); // where the key is (its own x events at the beat it shows)
+        } else { // its lane, a spot between two lanes, or its own x (a default lane wide)
+            laneWidth = NoteRenderer.keyLaneWidth(lay, n);
+            if (!(laneWidth >= LaneLayout.MIN_ACTIVE_WIDTH)) return false;
+            x = n.laneless() ? lay.keyCentre(n, look(n, s)) : lay.keyCentre(n, s);
         }
         boolean hold = n.isSustained();
         if (level) {
@@ -173,6 +177,7 @@ public final class TrailGeometry {
         } else {
             pos = Field.dist(posS) - shift;
             lineY = Field.y(lines.yAt(n.line(), s));
+            if (lay.moving() || n.spaceTrack()) lineY += lay.keyLift(n) * Field.ky(); // its column's line then
             tail = hold ? Field.dist(n.tailHeightAt(look(n, s))) : 0f;
         }
         y = up ? lineY - pos : lineY + pos;

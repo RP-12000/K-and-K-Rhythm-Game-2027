@@ -22,7 +22,7 @@ import org.kelvinizer.ui.Ui;
  *
  * <p>The fling velocity is measured over time, not per event: the drag samples of the last
  * {@value #FLING_WINDOW_MS} ms (input event timestamps) give a least-squares slope, so a flick
- * throws the list equally far on 60, 120 or 240 Hz digitisers; a finger that
+ * throws the list equally far on 60, 120 or 240 Hz digitisers and with a mouse; a finger that
  * rested for {@value #REST_MS} ms before lifting does not fling.
  *
  * <p>{@link #offset()} is how far the content has scrolled up (0 = top). The owner draws rows at
@@ -32,6 +32,7 @@ import org.kelvinizer.ui.Ui;
 public final class ScrollArea {
     private static final float FRICTION = 3.2f;       // 1/s velocity decay
     private static final float OMEGA = 12f;            // spring back
+    private static final float WHEEL_STEP = 90f;
     /** Drag history used for the fling velocity (ms). */
     static final int FLING_WINDOW_MS = 80;
     /** A finger still for this long before lifting does not fling (ms). */
@@ -215,6 +216,14 @@ public final class ScrollArea {
     public void cancel() {
         pointer = -1;
         dragging = false;
+    }
+
+    /** Mouse wheel (desktop); returns true when the area could scroll. */
+    public boolean scrolled(float amountY) {
+        if (!canScroll()) return false;
+        offset += amountY * WHEEL_STEP;
+        velocity = 0f;
+        return true;
     }
 
     /**

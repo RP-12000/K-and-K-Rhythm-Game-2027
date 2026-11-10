@@ -19,7 +19,7 @@ import space.earlygrey.shapedrawer.ShapeDrawer;
  * <p>Settings navigation (DESIGN §9.1): a left rail 300 wide with one item per tab (icon plus
  * UI_BOLD 22), or, on 4:3, a top tab row. The selection plate ({@code panelHi} with a
  * {@code groundSig} edge bar) slides between items on a snappy spring; items are
- * {@link Tappable}s (press scale, ripple) added to the host's widget set, so they fire on
+ * {@link Tappable}s (press scale, ripple, hover) added to the host's widget set, so they fire on
  * release. Icons come from the procedural {@link Icons} set, plus an eye (VISUAL), a
  * line-and-note glyph (GAMEPLAY) and three dots (OTHER) drawn here on the same 64-unit grid.
  */
@@ -142,21 +142,22 @@ public final class TabRail {
         Theme.mix(Theme.INK2, Theme.INK1, near, tmp);
         Theme.brighten(tmp, t.brightness(), tmp);
         float s = t.visualScale();
-        if (t.pressAmount() > 0f) {
-            float a = 0.06f * t.pressAmount() * alpha;
+        float lift = t.liftY();
+        if (t.pressAmount() > 0f || t.hoverAmount() > 0f) {
+            float a = (0.06f * t.pressAmount() + 0.04f * t.hoverAmount()) * alpha;
             if (vertical) draw.roundRect(t.x(), t.y() + 6f, t.width(), t.height() - 12f, 16f, Theme.INK1, a);
             else draw.roundRect(t.x() + 6f, t.y(), t.width() - 12f, t.height(), 16f, Theme.INK1, a);
         }
         t.drawPress(Theme.INK1, alpha * 0.7f);
         float icon = 34f * s;
         if (vertical) {
-            float cy = t.centerY();
+            float cy = t.centerY() + lift;
             float ix = t.x() + 44f;
             drawIcon(icons[i], ix, cy, icon, near > 0.5f ? Theme.GROUND_SIG : tmp, alpha);
             fonts.drawScaled(b, Fonts.Role.UI_BOLD, 22f, s, labels[i], ix + 36f, cy, Align.left | Fonts.VCENTER,
                 t.width() - 96f, 0.75f, tmp, alpha);
         } else {
-            float cy = t.centerY();
+            float cy = t.centerY() + lift;
             float lw = fonts.width(Fonts.Role.UI_BOLD, 22f, labels[i]) * s;
             float total = icon + 14f + Math.min(lw, t.width() - icon - 40f);
             float ix = t.centerX() - total * 0.5f + icon * 0.5f;

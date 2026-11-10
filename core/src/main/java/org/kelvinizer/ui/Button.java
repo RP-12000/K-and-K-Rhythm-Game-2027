@@ -191,7 +191,7 @@ public class Button extends Pressable {
         float a = alpha * alphaMul();
         if (a <= 0.002f) return;
         float s = visualScale();
-        float cx = centerX() + shakeX(), cy = centerY();
+        float cx = centerX() + shakeX(), cy = centerY() + liftY();
         float bw = w * s, bh = h * s;
         float bx = cx - bw * 0.5f, by = cy - bh * 0.5f;
         switch (variant) {
@@ -252,7 +252,7 @@ public class Button extends Pressable {
 
     /** World y of the label's vertical centre this frame. */
     public float labelY() {
-        return centerY();
+        return centerY() + liftY();
     }
 
     /** Width the label must fit this frame (shrink, then truncate). */
@@ -304,8 +304,8 @@ public class Button extends Pressable {
                 0.20f * a * Math.min(1f, hold * 6f));
         }
         if (confirmFlash > 0f) draw.roundRect(bx, by, bw, bh, RADIUS * s, stroke, 0.35f * confirmFlash * a);
-        if (press > 0f) {
-            draw.roundRect(bx, by, bw, bh, RADIUS * s, stroke, 0.08f * press * a);
+        if (press > 0f || hover > 0f) {
+            draw.roundRect(bx, by, bw, bh, RADIUS * s, stroke, (0.08f * press + 0.05f * hover) * a);
         }
         bright(stroke, c1);
         draw.roundRectStroke(bx, by, bw, bh, RADIUS * s, 2f, c1, Math.min(1f, strokeAlpha * k) * a);
@@ -328,7 +328,7 @@ public class Button extends Pressable {
         float r = ICON_DIAMETER * 0.5f * Math.min(w, h) / ICON_DIAMETER * s;
         float k = brightness();
         draw.disc(cx, cy, r, Theme.PANEL, a);
-        if (press > 0f) draw.disc(cx, cy, r, Theme.INK1, 0.08f * press * a);
+        if (press > 0f || hover > 0f) draw.disc(cx, cy, r, Theme.INK1, (0.08f * press + 0.05f * hover) * a);
         ripple.color(Theme.INK1);
         drawRipple(a);
         Color stroke = accent != null ? accent : Theme.INK1;

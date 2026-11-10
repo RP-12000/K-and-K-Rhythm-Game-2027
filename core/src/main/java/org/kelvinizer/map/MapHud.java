@@ -582,6 +582,11 @@ final class MapHud {
         for (Pressable p : controls) p.cancel();
     }
 
+    /** Desktop hover. */
+    void mouseMoved(float x, float y) {
+        for (Pressable p : controls) p.mouseMoved(x, y);
+    }
+
     // ------------------------------------------------------------------ frame
     void update(float dt, float now) {
         time = now;
@@ -762,9 +767,9 @@ final class MapHud {
             return dx * dx + dy * dy <= rr * rr;
         }
 
-        /** The press tint over the disc. */
+        /** The press and hover tint over the disc. */
         float lit() {
-            return 0.06f * press;
+            return 0.06f * press + 0.04f * hover;
         }
 
         @Override
@@ -925,8 +930,8 @@ final class MapHud {
             if (lit) draw.roundRect(bx, by, bw, bh, rad, Theme.GROUND_SIG, 0.16f * alpha);
             draw.roundRectStroke(bx, by, bw, bh, rad, 2f, lit ? Theme.GROUND_SIG : Theme.SURFACE_TOP,
                 (lit ? 0.9f : 0.45f) * alpha);
-            if (press > 0f) {
-                draw.roundRect(bx, by, bw, bh, rad, Theme.INK1, 0.08f * press * alpha);
+            if (press > 0f || hover > 0f) {
+                draw.roundRect(bx, by, bw, bh, rad, Theme.INK1, (0.08f * press + 0.05f * hover) * alpha);
             }
             Icons.draw(draw.shapes(), Icons.Icon.SORT, bx + 40f * k, centerY(), 40f * k,
                 lit ? Theme.GROUND_SIG : Theme.SURFACE_TOP, alpha);
@@ -943,7 +948,7 @@ final class MapHud {
         }
     }
 
-    /** A HUD plate: panel fill, a faint rim, the press tint. */
+    /** A HUD plate: panel fill, a faint rim, the press / hover tint. */
     private void plate(Pressable p, float rad, float alpha) {
         float s = p.visualScale();
         float bw = p.width() * s, bh = p.height() * s, bx = p.centerX() - bw * 0.5f, by = p.centerY() - bh * 0.5f;
@@ -964,8 +969,8 @@ final class MapHud {
         public void draw(Batch b, float alpha) {
             if (!visible || alpha <= 0.01f) return;
             plate(this, 22f * k, alpha);
-            if (press > 0f) {
-                draw.roundRect(x, y, w, h, 22f * k, Theme.INK1, 0.08f * press * alpha);
+            if (press > 0f || hover > 0f) {
+                draw.roundRect(x, y, w, h, 22f * k, Theme.INK1, (0.08f * press + 0.05f * hover) * alpha);
             }
             Icons.draw(draw.shapes(), Icons.Icon.CHEVRON_RIGHT, x + w - 34f * k, centerY(), 30f * k,
                 Theme.INK1, 0.8f * alpha);
@@ -1001,8 +1006,8 @@ final class MapHud {
             if (!visible || alpha <= 0.01f) return;
             float rad = h * 0.5f;
             plate(this, rad, alpha);
-            if (press > 0f) {
-                draw.roundRect(x, y, w, h, rad, Theme.INK1, 0.08f * press * alpha);
+            if (press > 0f || hover > 0f) {
+                draw.roundRect(x, y, w, h, rad, Theme.INK1, (0.08f * press + 0.05f * hover) * alpha);
             }
             float cx = x + 36f * k, cy = centerY();
             Color c = Theme.GROUND_SIG;

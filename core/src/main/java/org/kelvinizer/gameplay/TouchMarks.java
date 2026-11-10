@@ -15,10 +15,10 @@ import java.util.Arrays;
  * {@link #R} with a faint fill and a centre dot under every pointer that is down, following it; on release the ring
  * widens by a third and fades over {@link #FADE_SEC}. The screen draws the marks over the notes and hit effects
  * (normal blend) and under the corner HUD. Until then the switch only flashed a faint dot where a touch fell outside
- * both judgement zones, which the zones of ±0.4 × the screen height (2026-10-12; ±160 in 7.184–7.188) left almost
- * nowhere. A finger starts its mark when it goes down ({@link #down}, so a tap that lifts within the same frame still
- * shows); where it is and when it lifts come from the engine's pointer table once a frame, on screen time, so a finger
- * lifted while paused still fades. No allocation.
+ * both judgement zones, which the zones of ±0.4 × the screen height (2026-10-12) leave almost nowhere. A finger
+ * starts its mark when it goes down ({@link #down}, so a tap that lifts within the same frame still shows); where it
+ * is and when it lifts come from the engine's pointer table once a frame, on screen time, so a finger lifted while
+ * paused still fades. No allocation.
  *
  * <p>A finger that went down inside a veil (ARCHITECTURE §22, judging nothing until it lifts) gets the veil's glitch
  * mark instead, whether SHOW TOUCHES is on or not (Kelvin 2026-10-23 16:47, 16:55, 17:01): as wide as a note, drawn

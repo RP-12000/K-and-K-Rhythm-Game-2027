@@ -1,6 +1,7 @@
 package org.kelvinizer.screens.shell;
 
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.graphics.g2d.Batch;
 import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.Clipboard;
@@ -13,11 +14,11 @@ import org.kelvinizer.ui.Lang;
 import org.kelvinizer.ui.Theme;
 
 /**
- * 潜水员卡片的 ⋯ 菜单：RENAME 改名，EXPORT CODE 复制 {@code KK1:} 备份码，DELETE 删除。
+ * 潜水员卡片的 ⋯ 菜单：RENAME 改名，EXPORT CODE 复制 {@code KK1:} 备份码（桌面版还写入导出文件夹），DELETE 删除。
  * 只剩一个潜水员时不能删除；删除前要在确认框里按住 1.5 秒。
  *
  * <p>The {@code ⋯} actions of a DIVERS card (DESIGN §8.2): RENAME, EXPORT (P1, §8.4: copies the
- * {@code KK1:} code to the clipboard) and DELETE.
+ * {@code KK1:} code to the clipboard; desktop also writes {@code KandKGame/export/}) and DELETE.
  * DELETE is disabled for the last diver (it shakes on tap) and otherwise opens the
  * hold-to-confirm {@link DeleteDialog}.
  */
@@ -119,9 +120,11 @@ public final class DiverActionsDialog extends Modal {
     }
 
     /**
-     * Exports diver {@code id} (DESIGN §8.4, P1): copies its {@code KK1:} code to the clipboard; a
-     * toast reports whether that worked. Shared by this dialog and Settings → ACCOUNT. Returns false
-     * when the code did not reach the clipboard (unknown diver, serialisation failure, no clipboard).
+     * Exports diver {@code id} (DESIGN §8.4, P1): copies its {@code KK1:} code to the clipboard and,
+     * where the platform allows, also writes it to {@code KandKGame/export/}; a toast reports what
+     * actually happened (copied and saved, copied only, saved only, or nothing). Shared by this
+     * dialog and Settings → ACCOUNT. Returns false when the code reached neither the clipboard nor
+     * a file (unknown diver, serialisation failure, no clipboard and no writable storage).
      */
     public static boolean exportCode(Main game, String id) {
         ProfileStore store = game.profiles();
@@ -140,8 +143,14 @@ public final class DiverActionsDialog extends Modal {
         } catch (RuntimeException e) {
             Gdx.app.error("Shell", "clipboard unavailable", e);
         }
-        if (copied) {
+        FileHandle f = store.exportToFile(id);
+        String file = f != null ? "EXPORT/" + f.name().toUpperCase(java.util.Locale.ROOT) : null;
+        if (copied && file != null) {
+            game.toasts().show(Lang.t("CODE COPIED · SAVED TO ", "备份码已复制 · 已存到 ") + file, Theme.GROUND_SIG);
+        } else if (copied) {
             game.toasts().show(Lang.t("CODE COPIED TO CLIPBOARD", "备份码已复制到剪贴板"), Theme.GROUND_SIG);
+        } else if (file != null) {
+            game.toasts().show(Lang.t("COULD NOT COPY · CODE SAVED TO ", "没能复制 · 备份码已存到 ") + file, Theme.GOLD);
         } else {
             game.toasts().show(Lang.t("COULD NOT COPY THE CODE", "没能复制备份码"), Theme.LOST);
             return false;

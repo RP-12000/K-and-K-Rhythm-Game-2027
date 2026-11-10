@@ -8,11 +8,14 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.GLOnlyTextureData;
 import com.badlogic.gdx.graphics.glutils.ShaderProgram;
 import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Matrix3;
 import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.utils.BufferUtils;
 import com.badlogic.gdx.utils.Disposable;
+import org.kelvinizer.elements.NoteDistortion;
 import org.kelvinizer.elements.NoteGlitch;
 import org.kelvinizer.elements.Veil;
+import org.kelvinizer.elements.Volume7;
 import org.kelvinizer.ui.Draw;
 import org.kelvinizer.ui.GlitchText;
 
@@ -42,7 +45,8 @@ import java.nio.IntBuffer;
  * {@link Field#y} and the outline is authored in the reference frame and multiplied by {@link Field#kx()} and
  * {@link Field#ky()} separately (Kelvin 2026-11-04), the same mapping {@link Veils} judges with. One extra draw
  * call per veil and per mark; no allocation per frame (the capture texture is made again only when the viewport
- * size changes).
+ * size changes). The veils and curtains of a chart format v7 chart are drawn over their outlines on the screen as
+ * {@link Volumes7} works them out ({@link #prepare7}).
  */
 public final class VeilRenderer implements Disposable {
     /** Seconds of one loop of the veil's own motion. */
@@ -87,10 +91,11 @@ public final class VeilRenderer implements Disposable {
 
     /** The veil: mode 0 draws it over the copy, 1 / 2 pass sprites only outside / inside it (the HUD clip). */
     private static final String VEIL_FRAGMENT = HEAD
-        + "uniform vec4 u_win;\n"   // window px of world (0, 0); world units per px x, y
+        + "uniform mat3 u_toWorld;\n" // window px to world: the field's plane, turned in 3D too
+        + "uniform mat3 u_toWin;\n"   // world to window px (homogeneous)
         + "uniform vec4 u_xf;\n"    // centre (world), 1 / scale, scale
         + "uniform vec4 u_an;\n"    // world units per reference unit: x, y (the field's stretch)
-        + "uniform vec4 u_rot;\n"   // cos, sin of the turn; px per world unit x, y
+        + "uniform vec4 u_rot;\n"   // cos, sin of the turn
         + "uniform vec4 u_shape;\n" // 0 circle / 1 polygon, radius, points, opacity
         + "uniform vec4 u_pts[9];\n"
         + "uniform vec4 u_anim;\n"  // t (s), distortion, mode, glitch seed
@@ -102,6 +107,21 @@ public final class VeilRenderer implements Disposable {
         + "const vec3 FILL = vec3(0.0549, 0.1725, 0.5490);\n"
         + "const vec3 LINE = vec3(0.3843, 0.6667, 0.9569);\n"
         + "const vec3 EDGE = vec3(0.5020, 0.7608, 0.9804);\n"
+        // window px per world unit at this fragment: constant when flat, changing across a turned 3D field
+        + "mat2 J;\n"
+        + "vec2 worldAt(vec2 frag) {\n"
+        + "    vec3 w = u_toWorld * vec3(frag, 1.0);\n"
+        + "    return w.xy / w.z;\n"
+        + "}\n"
+        + "void jacobian(vec2 world) {\n"
+        + "    vec3 c = u_toWin * vec3(world, 1.0);\n"
+        + "    vec2 p = c.xy / c.z;\n"
+        + "    J = mat2((u_toWin[0].xy - p * u_toWin[0].z) / c.z, (u_toWin[1].xy - p * u_toWin[1].z) / c.z);\n"
+        + "}\n"
+        // window px per reference unit (outline smoothing, blur)
+        + "float pxScale() {\n"
+        + "    return u_xf.w * sqrt(abs(J[0].x * J[1].y - J[1].x * J[0].y));\n"
+        + "}\n"
         + "vec2 toLocal(vec2 world) {\n"
         // turn the offset back (rigid), then undo the field's stretch: the outline is stretched, then turned
         + "    vec2 d = world - u_xf.xy;\n"
@@ -184,7 +204,7 @@ public final class VeilRenderer implements Disposable {
         + "        float d = min(abs(world.y - u_keep.x) - u_keep.y, abs(world.y - u_keep.z) - u_keep.w);\n"
         + "        o *= clamp((d - 1.0) / (1.0 + 14.0 * ds * u_xf.w), 0.0, 1.0);\n"
         + "    }\n"
-        + "    off = vec2(u_rot.x * o.x - u_rot.y * o.y, u_rot.y * o.x + u_rot.x * o.y) * u_xf.w * u_rot.zw;\n"
+        + "    off = J * (vec2(u_rot.x * o.x - u_rot.y * o.y, u_rot.y * o.x + u_rot.x * o.y) * u_xf.w);\n"
         + "    return sdf;\n"
         + "}\n"
         // the water skin as one premultiplied layer: fill, pattern, inner glow, crisp outline
@@ -218,7 +238,7 @@ public final class VeilRenderer implements Disposable {
         // the curtain (mode 3): what is under it blurred, soft edge, thin streaks of water falling through it;
         // the pattern falls 160 units a second and repeats every 240, so the 6 s loop joins up
         + "vec4 curtain(vec2 frag, vec2 world, float t) {\n"
-        + "    float pxs = u_xf.w * sqrt(abs(u_rot.z * u_rot.w));\n"
+        + "    float pxs = pxScale();\n"
         + "    vec2 p = toLocal(world);\n"
         + "    p += u_anim.y * wobble(p, t);\n"
         + "    float cov = smoothstep(-6.0, 22.0, shapeSdf(p)) * u_shape.w;\n"
@@ -245,7 +265,8 @@ public final class VeilRenderer implements Disposable {
         + "}\n"
         + "void main() {\n"
         + "    vec2 frag = gl_FragCoord.xy;\n"
-        + "    vec2 world = (frag - u_win.xy) * u_win.zw;\n"
+        + "    vec2 world = worldAt(frag);\n"
+        + "    jacobian(world);\n"
         + "    float t = u_anim.x;\n"
         + "    if (u_anim.z > 2.5) {\n"
         + "        vec4 w = curtain(frag, world, t);\n"
@@ -262,7 +283,7 @@ public final class VeilRenderer implements Disposable {
         + "    }\n"
         + "    if (world.x >= u_keepX.x && world.x <= u_keepX.y\n"
         + "        && (abs(world.y - u_keep.x) <= u_keep.y || abs(world.y - u_keep.z) <= u_keep.w)) discard;\n"
-        + "    float pxs = u_xf.w * sqrt(abs(u_rot.z * u_rot.w));\n"
+        + "    float pxs = pxScale();\n"
         + "    float pat;\n"
         + "    vec2 off;\n"
         + "    float sdf = field(world, t, pat, off);\n"
@@ -285,12 +306,12 @@ public final class VeilRenderer implements Disposable {
         + "    float dim = rnd(row, 4.0) < u_gl.w ? 0.2 : 1.0;\n"
         + "    float sw = sh * u_xf.w;\n"
         + "    float sp = u_gl.z * u_xf.w;\n"
-        + "    vec4 sg = skinAt(frag - vec2(sw * u_rot.z, 0.0), world - vec2(sw, 0.0), t, pxs) * dim;\n"
+        + "    vec4 sg = skinAt(frag - J * vec2(sw, 0.0), world - vec2(sw, 0.0), t, pxs) * dim;\n"
         + "    vec4 sr = sg;\n"
         + "    vec4 sb = sg;\n"
         + "    if (sp > 0.0) {\n"
-        + "        sr = skinAt(frag - vec2((sw + sp) * u_rot.z, 0.0), world - vec2(sw + sp, 0.0), t, pxs) * dim;\n"
-        + "        sb = skinAt(frag - vec2((sw - sp) * u_rot.z, 0.0), world - vec2(sw - sp, 0.0), t, pxs) * dim;\n"
+        + "        sr = skinAt(frag - J * vec2(sw + sp, 0.0), world - vec2(sw + sp, 0.0), t, pxs) * dim;\n"
+        + "        sb = skinAt(frag - J * vec2(sw - sp, 0.0), world - vec2(sw - sp, 0.0), t, pxs) * dim;\n"
         + "    }\n"
         + "    if (cov <= 0.0 && max(sg.a, max(sr.a, sb.a)) < 0.002) discard;\n"
         + "    gl_FragColor = vec4(reg.r * (1.0 - sr.a) + sr.r, reg.g * (1.0 - sg.a) + sg.g,\n"
@@ -386,10 +407,10 @@ public final class VeilRenderer implements Disposable {
         + "}\n";
 
     // the veil uniforms, in this order
-    private static final String[] VEIL_UNIFORMS = {"u_cap", "u_rect", "u_win", "u_xf", "u_rot", "u_shape", "u_pts",
-        "u_anim", "u_gl", "u_keep", "u_keepX", "u_blur", "u_an"};
-    private static final int CAP = 0, RECT = 1, WIN = 2, XF = 3, ROT = 4, SHAPE = 5, PTS = 6, ANIM = 7, GL = 8,
-        KEEP = 9, KEEP_X = 10, BLUR = 11, AN = 12;
+    private static final String[] VEIL_UNIFORMS = {"u_cap", "u_rect", "u_toWorld", "u_xf", "u_rot", "u_shape",
+        "u_pts", "u_anim", "u_gl", "u_keep", "u_keepX", "u_blur", "u_an", "u_toWin"};
+    private static final int CAP = 0, RECT = 1, TO_WORLD = 2, XF = 3, ROT = 4, SHAPE = 5, PTS = 6, ANIM = 7, GL = 8,
+        KEEP = 9, KEEP_X = 10, BLUR = 11, AN = 12, TO_WIN = 13;
     private static final String[] TOUCH_UNIFORMS = {"u_cap", "u_rect", "u_pt", "u_tl"};
     private static final int T_PT = 2, T_TL = 3;
     private static final Color FILL = new Color(14 / 255f, 44 / 255f, 140 / 255f, 1f);
@@ -413,7 +434,7 @@ public final class VeilRenderer implements Disposable {
     private int vpY;
     private int vpW;
     private int vpH;
-    /** Pixels per world unit, and the window pixel of world (0, 0). */
+    /** Pixels per world unit, and the window pixel of world (0, 0), through the batch (the glitch mark). */
     private float pxX;
     private float pxY;
     private float winX;
@@ -424,25 +445,43 @@ public final class VeilRenderer implements Disposable {
     private float rectX1;
     private float rectY1;
     private final float[] pts = new float[36];
+    /** The z = 0 plane of what the veils are drawn through, to window pixels (homogeneous), and back. */
+    private final Matrix3 toWin = new Matrix3();
+    private final Matrix3 toWorld = new Matrix3();
+    /** False while that plane is seen edge-on: nothing to draw. */
+    private boolean mapped;
+    /** The 3D view the field is drawn through ({@link #setView}), or null for the batch's own projection. */
+    private Matrix4 view;
+    /** That view, for the veils' depth ({@link #setSpace}), or null: their depth is not drawn. */
+    private View3D space;
 
     // this frame's showing veils
     private int count;
     private int clip = -1;
     private float time;
-    private Veil[] ref = new Veil[0];
+    /** Each showing shape: a circle of {@link #rad} own units, else a polygon of {@link #npts} points. */
+    private boolean[] circ = new boolean[0];
+    private float[] rad = new float[0];
+    private int[] npts = new int[0];
     private float[] cx = new float[0];
     private float[] cy = new float[0];
     private float[] cos = new float[0];
     private float[] sin = new float[0];
     private float[] alpha = new float[0];
     private float[] dist = new float[0];
-    private float[] reach = new float[0];
+    /** Half the width and height of the quad each is drawn on, world units. */
+    private float[] rx = new float[0];
+    private float[] ry = new float[0];
     private float[] glSlide = new float[0];
     private float[] glReach = new float[0];
     private float[] glSplit = new float[0];
     private float[] glDim = new float[0];
     private float[] glSeed = new float[0];
     private float[] blur = new float[0];
+    /** World units per own unit across and up (the field's stretch times the veil's size factors), its points. */
+    private float[] ax = new float[0];
+    private float[] ay = new float[0];
+    private float[][] shape = new float[0][];
     private float scale = 1f;
 
     /**
@@ -495,6 +534,24 @@ public final class VeilRenderer implements Disposable {
     }
 
     /**
+     * Sets the projection the field is drawn through in 3D ({@link View3D#combined()}), or null when flat: the veils
+     * lie on its z = 0 plane with the field picture, so {@link #draw} and the mask of {@link #clipBegin} follow
+     * them there, while the HUD {@link #clipBegin} passes is drawn through the batch (on the screen). The glitch
+     * mark of a finger is always on the screen.
+     */
+    public void setView(Matrix4 combined3d) {
+        view = combined3d;
+    }
+
+    /**
+     * Sets the 3D view the veils' depth is drawn through (Kelvin 2026-11-07 22:54: a veil's {@code z} and its points'
+     * own; {@link View3D#sink}), or null while flat: their depth is then not drawn. Call before {@link #prepare}.
+     */
+    public void setSpace(View3D v) {
+        space = v;
+    }
+
+    /**
      * Works out which veils show at {@code beat} and how; call once a frame before {@link #clipBegin} and
      * {@link #draw}. Allocates only when a chart with more veils than before comes.
      *
@@ -515,13 +572,27 @@ public final class VeilRenderer implements Disposable {
             Veil v = veils[i];
             float a = v.opacityAt(beat) * fade;
             if (!(a > 0.003f)) continue;
+            // its 3D motion (Kelvin 2026-11-07 22:54): its size factors and card flip about its centre, and through
+            // the 3D view its depth, drawn on the field's plane where it shows
+            float z = space != null ? v.zAt(beat) : 0f;
+            float t0 = space != null ? space.sink(z) : 1f;
+            float fx = v.shapeX(beat) * t0;
+            float fy = v.shapeY(beat) * t0;
+            if (!(fx > 1e-3f) || !(fy > 1e-3f)) continue; // edge on, or behind the eye
             int k = count++;
-            ref[k] = v;
-            cx[k] = Field.x(v.xAt(beat));
-            cy[k] = Field.y(v.yAt(beat));
+            circ[k] = v.shape() == Veil.Shape.CIRCLE;
+            rad[k] = v.radius();
+            npts[k] = circ[k] ? 0 : v.pointCount();
+            float wx = Field.x(v.xAt(beat));
+            float wy = Field.y(v.yAt(beat));
+            cx[k] = t0 == 1f ? wx : space.eyeX() + (wx - space.eyeX()) * t0;
+            cy[k] = t0 == 1f ? wy : space.eyeY() + (wy - space.eyeY()) * t0;
+            ax[k] = Field.kx() * fx;
+            ay[k] = Field.ky() * fy;
             double th = Math.toRadians(v.rotationAt(beat));
             cos[k] = (float) Math.cos(th);
             sin[k] = (float) Math.sin(th);
+            float extent = shapePoints(k, v, beat, wx, wy, z, t0);
             alpha[k] = Math.min(1f, a);
             dist[k] = v.distortionAt(beat);
             glSlide[k] = 0f;
@@ -542,9 +613,11 @@ public final class VeilRenderer implements Disposable {
                 glSeed[k] = ((seed >>> 1) % 9973) * 0.1f;
                 margin += 3f + glReach[k] + glSplit[k];
             }
-            // the quad's reach in reference units: draw() multiplies it by the field's x and y stretch separately
-            reach[k] = v.extent() + margin;
-            float weight = v.extent() * v.extent() * a;
+            // the quad's reach in reference units, times the field's x and y stretch separately
+            float reach = extent * Math.max(fx, fy) + margin;
+            rx[k] = reach * Field.kx();
+            ry[k] = reach * Field.ky();
+            float weight = extent * extent * fx * fy * a;
             if (weight > best) {
                 best = weight;
                 clip = k;
@@ -553,16 +626,141 @@ public final class VeilRenderer implements Disposable {
         return count > 0;
     }
 
+    /**
+     * {@link #prepare} for the veils (or, made with {@code curtain}, the curtains) of a chart format v7 chart as
+     * {@code vols} worked them out this frame (Kelvin 2026-11-09 21:21 「椭球和长方体可以」): each over its outline on
+     * the screen, so draw through the batch on the screen ({@link #setView} null). An ellipse is a circle stretched
+     * along its axes (its rings stretched with it), a box's outline a polygon, round the eye the whole screen; their
+     * own wobble and a veil's glitch as an old veil's (Kelvin 2026-11-10 02:17 「故障效果…还有那个distortion，这些还是
+     * 保留」), a curtain's blur its own ({@link Volumes7#blur}).
+     *
+     * @param now  seconds of the run's own clock (the water's motion stops while paused)
+     * @param fade the chart's opacity (the resume countdown fades it in)
+     * @return true when at least one shows
+     */
+    public boolean prepare7(Volumes7 vols, float now, float fade) {
+        count = 0;
+        clip = -1;
+        time = loopTime(now);
+        int n = vols != null ? vols.count() : 0;
+        if (n == 0 || !(fade > 0f)) return false;
+        room(n);
+        scale = Field.shapeScale();
+        boolean reduce = GlitchText.reduceFlashing();
+        float a = Math.min(1f, fade);
+        float best = 0f;
+        for (int i = 0; i < n; i++) {
+            if (vols.curtain(i) != curtain) continue;
+            int k = count++;
+            float l = vols.bound(i, 0), b = vols.bound(i, 1), r = vols.bound(i, 2), t = vols.bound(i, 3);
+            circ[k] = vols.kind(i) == Volumes7.ELLIPSE;
+            if (circ[k]) { // own units about reference units: the rings as wide apart as on a circle
+                float ea = vols.ellipse(i, 2), eb = vols.ellipse(i, 3);
+                rad[k] = (float) Math.sqrt(ea * eb) / scale;
+                npts[k] = 0;
+                cx[k] = vols.ellipse(i, 0);
+                cy[k] = vols.ellipse(i, 1);
+                cos[k] = vols.ellipse(i, 4);
+                sin[k] = vols.ellipse(i, 5);
+                ax[k] = ea / rad[k];
+                ay[k] = eb / rad[k];
+            } else {
+                rad[k] = 0f;
+                npts[k] = vols.points(i);
+                cx[k] = 0.5f * (l + r);
+                cy[k] = 0.5f * (b + t);
+                cos[k] = 1f;
+                sin[k] = 0f;
+                ax[k] = scale;
+                ay[k] = scale;
+                float[] src = vols.polygon(i);
+                float[] dst = shape[k];
+                for (int j = 0; j < npts[k]; j++) {
+                    dst[2 * j] = (src[2 * j] - cx[k]) / scale;
+                    dst[2 * j + 1] = (src[2 * j + 1] - cy[k]) / scale;
+                }
+            }
+            alpha[k] = a;
+            Volume7 v = vols.source(i);
+            float beat = vols.beat();
+            dist[k] = v.distortions != null ? NoteDistortion.strengthAt(v.distortions, beat, NoteDistortion.VEIL_BASE)
+                : NoteDistortion.VEIL_BASE;
+            glSlide[k] = 0f;
+            glReach[k] = 0f;
+            glSplit[k] = 0f;
+            glDim[k] = 0f;
+            glSeed[k] = 0f;
+            blur[k] = curtain ? vols.blur(i) : 0f;
+            float margin = 4f + 12.5f * dist[k]; // the wobble past the outline
+            NoteGlitch g = curtain || v.glitches == null || v.glitches.isEmpty() ? null
+                : NoteGlitch.activeAt(v.glitches, beat);
+            float in = g == null ? 0f : g.intensityAt(beat);
+            if (in > 0.001f) { // as an old veil's (prepare)
+                glSlide[k] = Math.min(1f, (0.25f + 0.6f * in) * g.slice());
+                glReach[k] = 1f + 40f * in * g.slice();
+                glSplit[k] = (2f + 10f * in) * g.split();
+                glDim[k] = reduce ? 0f : GlitchCapture.FLICKER_CHANCE * in * g.flicker();
+                int seed = GlitchCapture.seed(vols.index(i), g.step(beat, reduce ? 0.5f : 1f),
+                    Float.floatToIntBits(g.from()));
+                glSeed[k] = ((seed >>> 1) % 9973) * 0.1f;
+                margin += 3f + glReach[k] + glSplit[k];
+            }
+            margin *= scale;
+            rx[k] = 0.5f * (r - l) + margin;
+            ry[k] = 0.5f * (t - b) + margin;
+            float weight = (r - l) * (t - b) * a;
+            if (weight > best) {
+                best = weight;
+                clip = k;
+            }
+        }
+        return count > 0;
+    }
+
+    /**
+     * Fills {@link #shape} k with veil v's points at {@code beat} in its own frame as drawn: moved by their
+     * {@code pointEvents} and, through the 3D view, each at its own depth where it shows (a point deeper than the
+     * centre ({@code z}, drawn {@code t0} of the way from the eye, from world (wx, wy)) moves towards the eye's line).
+     *
+     * @return the largest distance of a point from the centre (a circle's radius), own units
+     */
+    private float shapePoints(int k, Veil v, float beat, float wx, float wy, float z, float t0) {
+        if (v.shape() == Veil.Shape.CIRCLE) return v.radius();
+        float[] p = shape[k];
+        float e = 0f;
+        for (int i = 0; i < v.pointCount(); i++) {
+            float x = v.pointXAt(i, beat);
+            float y = v.pointYAt(i, beat);
+            float ti = space != null ? space.sink(z + v.pointZAt(i, beat)) : t0;
+            if (ti != t0 && ti > 0f) {
+                float ox = (wx - space.eyeX()) * (ti - t0);
+                float oy = (wy - space.eyeY()) * (ti - t0);
+                x = x * ti / t0 + (cos[k] * ox + sin[k] * oy) / ax[k];
+                y = y * ti / t0 + (cos[k] * oy - sin[k] * ox) / ay[k];
+            }
+            p[2 * i] = x;
+            p[2 * i + 1] = y;
+            e = Math.max(e, (float) Math.hypot(x, y));
+        }
+        return e;
+    }
+
     private void room(int n) {
-        if (ref.length >= n) return;
-        ref = new Veil[n];
+        if (circ.length >= n) return;
+        circ = new boolean[n];
+        rad = new float[n];
+        npts = new int[n];
+        ax = new float[n];
+        ay = new float[n];
+        shape = new float[n][2 * Math.max(Veil.MAX_POINTS, Volumes7.MAX_POINTS)];
         cx = new float[n];
         cy = new float[n];
         cos = new float[n];
         sin = new float[n];
         alpha = new float[n];
         dist = new float[n];
-        reach = new float[n];
+        rx = new float[n];
+        ry = new float[n];
         glSlide = new float[n];
         glReach = new float[n];
         glSplit = new float[n];
@@ -581,7 +779,8 @@ public final class VeilRenderer implements Disposable {
      */
     public boolean clipBegin(SpriteBatch b, boolean inside) {
         if (clip < 0 || !veilProgram()) return false;
-        frame(b);
+        frame(b, true);
+        if (!mapped) return false;
         b.setShader(veilShader);
         uniforms(clip);
         veilShader.setUniformf(veilLoc[ANIM], time, dist[clip], inside ? 2f : 1f, 0f);
@@ -609,15 +808,15 @@ public final class VeilRenderer implements Disposable {
             return;
         }
         b.flush();
-        frame(b);
-        if (!captureReady()) return;
+        frame(b, true);
+        if (!mapped || !captureReady()) return;
         b.setShader(veilShader);
         b.disableBlending();
         veilShader.setUniformf(veilLoc[KEEP], lowerY, lowerHalf, upperY, upperHalf);
         veilShader.setUniformf(veilLoc[KEEP_X], wl, wr, 0f, 0f);
         for (int k = 0; k < count; k++) {
-            float rx = reach[k] * Field.kx();
-            float ry = reach[k] * Field.ky();
+            float rx = this.rx[k];
+            float ry = this.ry[k];
             // the copy also covers where the water bends the view from
             float bend = 14f * dist[k] + 2f + (curtain ? blur[k] + 4f : 0f);
             float bx = bend * Field.kx();
@@ -651,7 +850,7 @@ public final class VeilRenderer implements Disposable {
             return;
         }
         b.flush();
-        frame(b);
+        frame(b, false);
         if (!captureReady()) return;
         float ux = Math.abs(pxX);
         float uy = Math.abs(pxY);
@@ -678,20 +877,45 @@ public final class VeilRenderer implements Disposable {
 
     // ------------------------------------------------------------------ shared
 
-    /** Reads the viewport and the batch's matrices: where world points land in window pixels. */
-    private void frame(SpriteBatch b) {
+    /**
+     * Reads the viewport and the matrices: where world points land in window pixels, through the 3D view
+     * ({@link #setView}) when {@code field} and one is set, else through the batch.
+     */
+    private void frame(SpriteBatch b, boolean field) {
         viewport.clear();
         Gdx.gl.glGetIntegerv(GL20.GL_VIEWPORT, viewport);
         vpX = viewport.get(0);
         vpY = viewport.get(1);
         vpW = viewport.get(2);
         vpH = viewport.get(3);
-        combined.set(b.getProjectionMatrix()).mul(b.getTransformMatrix());
+        if (field && view != null) combined.set(view);
+        else combined.set(b.getProjectionMatrix()).mul(b.getTransformMatrix());
         float[] m = combined.val;
         pxX = m[Matrix4.M00] * 0.5f * vpW;
         pxY = m[Matrix4.M11] * 0.5f * vpH;
         winX = vpX + (m[Matrix4.M03] + 1f) * 0.5f * vpW;
         winY = vpY + (m[Matrix4.M13] + 1f) * 0.5f * vpH;
+        // the z = 0 plane to window pixels as a homography (affine when flat, the same numbers as above); scaled
+        // to w near 1, so a shader without high precision does not overflow in 3D
+        float hx = 0.5f * vpW;
+        float hy = 0.5f * vpH;
+        float ox = vpX + hx;
+        float oy = vpY + hy;
+        float[] h = toWin.val;
+        h[Matrix3.M00] = hx * m[Matrix4.M00] + ox * m[Matrix4.M30];
+        h[Matrix3.M01] = hx * m[Matrix4.M01] + ox * m[Matrix4.M31];
+        h[Matrix3.M02] = hx * m[Matrix4.M03] + ox * m[Matrix4.M33];
+        h[Matrix3.M10] = hy * m[Matrix4.M10] + oy * m[Matrix4.M30];
+        h[Matrix3.M11] = hy * m[Matrix4.M11] + oy * m[Matrix4.M31];
+        h[Matrix3.M12] = hy * m[Matrix4.M13] + oy * m[Matrix4.M33];
+        h[Matrix3.M20] = m[Matrix4.M30];
+        h[Matrix3.M21] = m[Matrix4.M31];
+        h[Matrix3.M22] = m[Matrix4.M33];
+        float n = Math.abs(h[Matrix3.M22]) + 1000f * (Math.abs(h[Matrix3.M20]) + Math.abs(h[Matrix3.M21]));
+        if (n > 0f && n != 1f) for (int i = 0; i < 9; i++) h[i] /= n;
+        float det = toWin.det();
+        mapped = det != 0f && !Float.isNaN(det) && !Float.isInfinite(det);
+        if (mapped) toWorld.set(toWin).inv();
     }
 
     /** Makes the capture texture the size of the viewport (again only when that size changes). */
@@ -720,14 +944,31 @@ public final class VeilRenderer implements Disposable {
      * @return false when the box is off screen
      */
     private boolean copy(SpriteBatch b, float x0, float y0, float x1, float y1, int[] loc) {
-        float ax = winX + x0 * pxX;
-        float bx = winX + x1 * pxX;
-        float ay = winY + y0 * pxY;
-        float by = winY + y1 * pxY;
-        int rx0 = Math.max(vpX, (int) Math.floor(Math.min(ax, bx)));
-        int rx1 = Math.min(vpX + vpW, (int) Math.ceil(Math.max(ax, bx)));
-        int ry0 = Math.max(vpY, (int) Math.floor(Math.min(ay, by)));
-        int ry1 = Math.min(vpY + vpH, (int) Math.ceil(Math.max(ay, by)));
+        float[] h = toWin.val;
+        float l = Float.POSITIVE_INFINITY;
+        float r = Float.NEGATIVE_INFINITY;
+        float d = Float.POSITIVE_INFINITY;
+        float u = Float.NEGATIVE_INFINITY;
+        boolean all = false; // a corner behind the eye (3D): the whole viewport
+        for (int i = 0; i < 4; i++) {
+            float x = (i & 1) == 0 ? x0 : x1;
+            float y = (i & 2) == 0 ? y0 : y1;
+            float w = h[Matrix3.M20] * x + h[Matrix3.M21] * y + h[Matrix3.M22];
+            if (!(w > 1e-6f)) {
+                all = true;
+                break;
+            }
+            float px = (h[Matrix3.M00] * x + h[Matrix3.M01] * y + h[Matrix3.M02]) / w;
+            float py = (h[Matrix3.M10] * x + h[Matrix3.M11] * y + h[Matrix3.M12]) / w;
+            l = Math.min(l, px);
+            r = Math.max(r, px);
+            d = Math.min(d, py);
+            u = Math.max(u, py);
+        }
+        int rx0 = all ? vpX : Math.max(vpX, (int) Math.floor(l));
+        int rx1 = all ? vpX + vpW : Math.min(vpX + vpW, (int) Math.ceil(r));
+        int ry0 = all ? vpY : Math.max(vpY, (int) Math.floor(d));
+        int ry1 = all ? vpY + vpH : Math.min(vpY + vpH, (int) Math.ceil(u));
         if (rx1 <= rx0 || ry1 <= ry0) return false;
         capture.bind();
         Gdx.gl.glCopyTexSubImage2D(GL20.GL_TEXTURE_2D, 0, rx0 - vpX, ry0 - vpY, rx0, ry0, rx1 - rx0, ry1 - ry0);
@@ -747,20 +988,17 @@ public final class VeilRenderer implements Disposable {
 
     /** The uniforms of showing veil k (its shape and where it is). */
     private void uniforms(int k) {
-        Veil v = ref[k];
         ShaderProgram s = veilShader;
         if (capture != null) setCapture(s, veilLoc);
-        s.setUniformf(veilLoc[WIN], winX, winY, 1f / pxX, 1f / pxY);
+        s.setUniformMatrix(veilLoc[TO_WORLD], toWorld);
+        s.setUniformMatrix(veilLoc[TO_WIN], toWin);
         s.setUniformf(veilLoc[XF], cx[k], cy[k], 1f / scale, scale);
-        s.setUniformf(veilLoc[AN], Field.kx(), Field.ky(), 0f, 0f);
-        s.setUniformf(veilLoc[ROT], cos[k], sin[k], pxX, pxY);
-        int n = v.shape() == Veil.Shape.CIRCLE ? 0 : v.pointCount();
-        s.setUniformf(veilLoc[SHAPE], n == 0 ? 0f : 1f, v.radius(), n, alpha[k]);
+        s.setUniformf(veilLoc[AN], ax[k], ay[k], 0f, 0f);
+        s.setUniformf(veilLoc[ROT], cos[k], sin[k], 0f, 0f);
+        int n = npts[k];
+        s.setUniformf(veilLoc[SHAPE], circ[k] ? 0f : 1f, rad[k], n, alpha[k]);
         if (n > 0) {
-            for (int i = 0; i < n; i++) {
-                pts[2 * i] = v.pointX(i);
-                pts[2 * i + 1] = v.pointY(i);
-            }
+            System.arraycopy(shape[k], 0, pts, 0, 2 * n);
             pts[2 * n] = pts[0];
             pts[2 * n + 1] = pts[1];
             s.setUniform4fv(veilLoc[PTS], pts, 0, pts.length);
@@ -798,29 +1036,29 @@ public final class VeilRenderer implements Disposable {
     /** Stand-in when the veil shader does not compile: a tinted disc or the outline, no refraction. */
     private void plain() {
         for (int k = 0; k < count; k++) {
-            Veil v = ref[k];
             float a = alpha[k];
-            if (v.shape() == Veil.Shape.CIRCLE) {
-                float r = v.radius() * scale;
+            if (circ[k]) {
+                float r = rad[k] * Math.max(ax[k], ay[k]);
                 draw.disc(cx[k], cy[k], r, FILL, 0.55f * a);
                 draw.circle(cx[k], cy[k], r, 2.5f, EDGE, 0.8f * a);
                 continue;
             }
-            int n = v.pointCount();
+            int n = npts[k];
             for (int i = 0; i < n; i++) {
                 int j = (i + 1) % n;
-                draw.line(px(k, v.pointX(i), v.pointY(i)), py(k, v.pointX(i), v.pointY(i)),
-                    px(k, v.pointX(j), v.pointY(j)), py(k, v.pointX(j), v.pointY(j)), 2.5f, EDGE, 0.8f * a);
+                float[] p = shape[k];
+                draw.line(px(k, p[2 * i], p[2 * i + 1]), py(k, p[2 * i], p[2 * i + 1]),
+                    px(k, p[2 * j], p[2 * j + 1]), py(k, p[2 * j], p[2 * j + 1]), 2.5f, EDGE, 0.8f * a);
             }
         }
     }
 
     private float px(int k, float lx, float ly) {
-        return cx[k] + (cos[k] * lx - sin[k] * ly) * Field.kx();
+        return cx[k] + cos[k] * lx * ax[k] - sin[k] * ly * ay[k];
     }
 
     private float py(int k, float lx, float ly) {
-        return cy[k] + (sin[k] * lx + cos[k] * ly) * Field.ky();
+        return cy[k] + sin[k] * lx * ax[k] + cos[k] * ly * ay[k];
     }
 
     /** Stand-in mark when its shader does not compile: a light-blue ring jittering 16 times a second. */

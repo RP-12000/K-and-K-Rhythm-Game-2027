@@ -46,9 +46,8 @@ final class GlitchCapture implements Batch {
     /** Opacity of a flickering note. */
     static final float FLICKER_DIM = 0.2f;
     private static final int INITIAL_QUADS = 512;
-    /** The split's red and blue copies (also a custom line's, {@link StrokeRenderer}). */
-    static final float RED_R = 1f, RED_G = 0.18f, RED_B = 0.32f;
-    static final float BLUE_R = 0.25f, BLUE_G = 0.55f, BLUE_B = 1f;
+    private static final float RED_R = 1f, RED_G = 0.18f, RED_B = 0.32f;
+    private static final float BLUE_R = 0.25f, BLUE_G = 0.55f, BLUE_B = 1f;
 
     private Batch target;
     private Texture[] tex = new Texture[INITIAL_QUADS];

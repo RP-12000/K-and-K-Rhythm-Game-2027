@@ -9,6 +9,7 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import org.kelvinizer.Params;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -57,6 +58,11 @@ public final class ChartMapper {
     private static final float V1_SPAN = V1_LANE_COUNT * Lane.DEFAULT_WIDTH;
 
     private static final String TAG = "ChartMapper";
+    /**
+     * True when the JVM is started with {@code -Dkk.oldCharts=true}: old charts are played as they are instead of as
+     * format 7 (the old rules' own tests).
+     */
+    static final boolean OLD_CHARTS = Boolean.getBoolean("kk.oldCharts");
     static final JsonFactory FACTORY = new JsonFactory();
     static final Pattern JSON_NUMBER = Pattern.compile("-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?");
     private static final String[] AUDIO_EXT = {"ogg", "mp3", "wav"};
@@ -66,6 +72,18 @@ public final class ChartMapper {
     }
 
     // ------------------------------------------------------------------ reading
+
+    /**
+     * Parses an old chart (formats 1–5) as it is, not converted to format 7 (a format 7 chart as {@link #read}): what
+     * the chart editor converts ({@link ChartV7Convert}) when it opens one.
+     */
+    public static Chart readOld(FileHandle chartFile) throws IOException {
+        try (InputStream in = chartFile.read()) {
+            return parse(in, chartFile.path(), SongInfo.besides(chartFile), chartFile.nameWithoutExtension(), false);
+        } catch (RuntimeException e) {
+            throw new IOException("Cannot read chart " + chartFile.path(), e);
+        }
+    }
 
     /** Parses a chart from a stream (the stream is closed). */
     public static Chart read(InputStream inputStream) throws IOException {
@@ -145,12 +163,21 @@ public final class ChartMapper {
      * @param level the difficulty for a v5 chart (its file name; null = none)
      */
     private static Chart parse(InputStream in, String source, SongInfo song, String level) throws IOException {
+        return parse(in, source, song, level, !OLD_CHARTS);
+    }
+
+    /**
+     * @param v7 true: an old chart (formats 1–5) is converted to format 7 ({@link ChartV7Convert}) and played as one,
+     *           false: as it is
+     */
+    private static Chart parse(InputStream in, String source, SongInfo song, String level, boolean v7)
+        throws IOException {
         byte[] bytes = readAll(in);
+        if (ChartFormatV7.isV7(bytes)) return parseV7(bytes, source, song, level);
         RawChart raw;
-        double format = ChartFormatV5.formatOf(FACTORY, bytes);
-        if (format >= ChartFormatV5.FORMAT) {
+        if (ChartFormatV5.isV5(FACTORY, bytes)) {
             try (JsonParser p = FACTORY.createParser(bytes)) {
-                raw = ChartFormatV5.parse(p, song, level, format >= ChartFormatV5.LANELESS);
+                raw = ChartFormatV5.parse(p, song, level);
             }
         } else {
             try (JsonParser p = FACTORY.createParser(bytes)) {
@@ -158,7 +185,28 @@ public final class ChartMapper {
             }
         }
         try {
-            return build(raw, source);
+            Chart old = build(raw, source);
+            return v7 ? ChartV7Runtime.build(ChartV7Convert.convert(old), old) : old;
+        } catch (IllegalArgumentException e) {
+            throw new IOException(source + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * A chart of format 7 (Kelvin 2026-11-09 18:44, {@link ChartFormatV7}): its song values from {@code song.json}
+     * ({@code song}) as for format 5, its level from its file name.
+     */
+    private static Chart parseV7(byte[] bytes, String source, SongInfo song, String level) throws IOException {
+        Chart7 c7 = ChartFormatV7.read(new ByteArrayInputStream(bytes));
+        RawChart raw = new RawChart();
+        raw.formatVersion = raw.readerFormat = ChartFormatV7.FORMAT;
+        raw.lanes = new ArrayList<>(); // none: the song values only
+        if (song != null) ChartFormatV5.applySong(raw, song);
+        raw.level = level;
+        raw.charter = c7.charter;
+        raw.chartConstant = c7.constant;
+        try {
+            return ChartV7Runtime.build(c7, build(raw, source));
         } catch (IllegalArgumentException e) {
             throw new IOException(source + ": " + e.getMessage(), e);
         }
@@ -201,14 +249,10 @@ public final class ChartMapper {
             }
         }
 
-        // Lanes, keyed by id (the Chart sorts them); a laneless chart (format v6, or the chart editor's laneless
-        // working text) has none.
-        boolean laneless = !v1 && (raw.laneless || raw.readerFormat >= ChartFormatV5.LANELESS);
-        if (v1 && raw.laneless) report.messages.add("laneless of a v1 chart ignored");
+        // Lanes, keyed by id (the Chart sorts them).
         Map<Integer, Lane> lanes = new LinkedHashMap<>();
-        if (laneless) {
-            if (raw.lanes != null || raw.hasLaneCount) report.messages.add("lanes of a laneless chart ignored");
-        } else if (v1) {
+        Map<Integer, RawLane> oldMoves = new LinkedHashMap<>(); // lanes with the keys before 2026-11-08
+        if (v1) {
             for (int id = -5; id <= 5; id++) {
                 if (id != 0) lanes.put(id, new Lane(id));
             }
@@ -222,26 +266,19 @@ public final class ChartMapper {
                     continue;
                 }
                 lanes.put(r.id, r.hasInsert ? null
-                    : deletedLane(r, new Lane(r.id, r.width, r.opacity, r.widthEvents, r.opacityEvents)));
+                    : moved(r, deletedLane(r, new Lane(r.id, r.width, r.opacity, r.widthEvents, r.opacityEvents))));
+                if (r.oldMove != null) oldMoves.put(r.id, r);
             }
             // Inserted lanes (Kelvin 2026-10-15) last: the final width defaults to their neighbours'.
             for (RawLane r : raw.lanes) {
                 if (r != null && r.hasInsert && lanes.containsKey(r.id) && lanes.get(r.id) == null) {
-                    lanes.put(r.id, deletedLane(r, insertedLane(r, lanes)));
+                    lanes.put(r.id, moved(r, deletedLane(r, insertedLane(r, lanes))));
                 }
             }
         }
 
-        RawLine rl = raw.line != null ? raw.line : new RawLine();
-        JudgementLine geometry = v1 ? v1Line(rl, report) : v2Line(rl, report, raw.hasLaneCount && raw.laneCount >= 1);
-
-        // The bubble judgement lines are gone: bubbles became floating notes (Kelvin 11-06 14:44, CHART_FORMAT §11)
-        if (raw.bubbles > 0) report.messages.add(raw.bubbles + " bubble(s) ignored (bubble lines are gone)");
-
         // Notes.
         List<Note> notes = new ArrayList<>(raw.notes.size());
-        int onOldBubbles = 0;
-        int floatsIgnored = 0;
         for (RawNote r : raw.notes) {
             NoteType type = NoteType.fromJson(r.type);
             if (type == null) {
@@ -252,17 +289,9 @@ public final class ChartMapper {
                 report.invalidTimes++;
                 continue;
             }
-            if (!v1 && r.bubble) onOldBubbles++; // stays on its line
-            boolean floating = !v1 && r.floating && type.floats();
-            if (!v1 && r.floating && !floating) floatsIgnored++; // a TIDE or a TIDE MINE stays on its line
-            if (floating) {
-                notes.add(floatNote(r, type));
-                if (r.hasGlitch && r.glitchFixed) report.glitchesFixed++;
-                if (r.hasDistortion && r.distortionFixed) report.distortionsFixed++;
-                continue;
-            }
             Line line;
-            int laneId = 0;
+            float lanePos = 0f;
+            boolean byX = false;
             if (v1 && type.inLane()) {
                 if (r.laneInvalid) {
                     report.invalidLanes++;
@@ -271,22 +300,26 @@ public final class ChartMapper {
                 int lane = r.lane; // a missing v1 lane read as 0, as the old loader did
                 if (lane < 0 || lane >= LANES) report.remappedLanes++;
                 line = v1Line(lane);
-                laneId = v1LaneId(lane);
+                lanePos = v1LaneId(lane);
             } else {
                 line = r.line == null ? Line.LOWER : Line.fromJson(r.line);
                 if (line == null) {
                     report.unknownLines++;
                     line = Line.LOWER;
                 }
-                if (type.inLane() && !laneless) {
-                    if (!r.hasLane || r.laneInvalid || (r.lane == 0 && !lanes.containsKey(0))) {
+                if (type.inLane()) { // a DRAG too, since Kelvin 2026-11-08 02:51 「也上轨道」
+                    if (r.hasLane && !r.laneInvalid) {
+                        lanePos = r.laneValue;
+                        // a decimal lane, or lane 0 when there is none, lies between lanes (Chart): no lane to add
+                        if (lanePos == r.lane && (r.lane != 0 || lanes.containsKey(0)) && !lanes.containsKey(r.lane)) {
+                            lanes.put(r.lane, new Lane(r.lane));
+                            report.autoAddedLanes++;
+                        }
+                    } else if (r.hasX || type == NoteType.DRAG) {
+                        byX = true; // no lane but an x (a DRAG without either at x 0, as before): its own x
+                    } else {
                         report.invalidLanes++;
                         continue;
-                    }
-                    laneId = r.lane;
-                    if (!lanes.containsKey(laneId)) {
-                        lanes.put(laneId, new Lane(laneId));
-                        report.autoAddedLanes++;
                     }
                 }
             }
@@ -331,27 +364,27 @@ public final class ChartMapper {
             NoteOrbit orbit = r.hasOrbit ? new NoteOrbit(r.orbitX, r.orbitY, r.orbitXEvents, r.orbitYEvents,
                 r.orbitRadius, r.orbitRadiusEvents, r.orbitAngle, r.orbitAngleEvents, r.orbitConflict, r.orbitRigid)
                 : null;
-            Note note = new Note(type, line, laneId, r.appearance, r.judgement, r.duration, r.height,
+            boolean useX = byX;
+            Note note = new Note(type, line, lanePos, r.appearance, r.judgement, r.duration, r.height,
                 movement, r.rotation, r.disappear, heights, trails, glitches, r.pivotX, r.pivotY, distortions,
-                r.waveSpeed, laneless ? 0f : r.offsetX, laneless ? null : r.offsetXEvents, orbit, r.fake);
-            if (laneless) note.place(r.x, r.xEvents);
-            if (!v1) note.layer(r.xLayers, r.positionLayers, r.rotationLayers);
+                r.waveSpeed, useX ? r.x : r.offsetX, useX ? r.xEvents : r.offsetXEvents, orbit, r.fake, byX,
+                RawChannels.build(r.space));
+            note.seaIndex = r.sea; // put on its sea by Chart.setSeas
+            note.spaceTrack = r.spaceTrack && type.inLane(); // a TIDE keeps to its lines and seas
+            note.spans = type.inLane() ? null : r.spans;
             notes.add(note);
         }
         // Taps / holds sharing (line, lane id, beat) all stay since Kelvin 2026-11-02 (「现在我们要放开这个限制」): each
         // takes its own finger. Mines and TIDEs were never removed.
-        if (onOldBubbles > 0) {
-            report.messages.add(onOldBubbles + " note(s) on a bubble put on their line (bubble lines are gone)");
-        }
-        if (floatsIgnored > 0) {
-            report.messages.add(floatsIgnored + " floating TIDE(s) or TIDE MINE(s) put on their line");
-        }
+
+        RawLine rl = raw.line != null ? raw.line : new RawLine();
+        JudgementLine geometry = v1 ? v1Line(rl, report) : v2Line(rl, report, raw.hasLaneCount && raw.laneCount >= 1);
 
         // Lane mode (Kelvin 2026-10-13): unlimited unless a v2 laneCount says finite.
         int laneLimit = 0;
         if (v1) {
             if (raw.hasLaneCount) report.messages.add("laneCount of a v1 chart ignored");
-        } else if (raw.hasLaneCount && !laneless) {
+        } else if (raw.hasLaneCount) {
             if (raw.laneCount >= 1) {
                 laneLimit = (int) Math.min(raw.laneCount, 2L * MAX_LANE_ID);
                 if (laneLimit != raw.laneCount) {
@@ -361,19 +394,27 @@ public final class ChartMapper {
                 report.messages.add("invalid laneCount read as unlimited lanes");
             }
         }
-        if (laneLimit == 0 && !laneless) fillUnlimited(lanes, geometry); // finite: the declared lanes share the frame
+        if (laneLimit == 0) fillUnlimited(lanes, geometry); // finite: the lanes as declared share the frame
 
         Chart chart = new Chart(raw.title, raw.artist, raw.illustrator, raw.charter, raw.level,
             raw.chartConstant, bpm, offsetMs, new ArrayList<>(lanes.values()), geometry, notes,
             tempo != null ? tempo[0] : null, tempo != null ? tempo[1] : null, laneLimit);
         chart.sourceFormat = report.sourceFormat;
-        chart.laneless = laneless;
         if (raw.veils != null) chart.setVeils(veils(raw.veils, v1, false, report));
         if (raw.curtains != null) chart.setCurtains(veils(raw.curtains, v1, true, report));
-        if (raw.fixedLanes != null) fixedLanes(chart, raw.fixedLanes, report);
-        if (raw.strokes != null) chart.setStrokes(raw.strokes);
-        if (raw.strokesDropped > 0) report.messages.add(raw.strokesDropped + " custom line(s) dropped");
-        if (raw.strokesFixed > 0) report.messages.add(raw.strokesFixed + " custom line(s) fixed");
+        if (raw.laneless != null) chart.setLaneless(ranges(raw.laneless, v1, "laneless", report));
+        if (raw.fullScreen != null) chart.setFullScreen(ranges(raw.fullScreen, v1, "fullScreen", report));
+        chart.setView(raw.viewYaw, raw.viewPitch, raw.viewFov, raw.viewDist);
+        chart.setSeas(raw.seas);
+        if (raw.laneWidth == raw.laneWidth) { // written (Kelvin 2026-11-08 02:39); without it the chart keeps its look
+            chart.setLaneWidth(raw.laneWidth);
+            if (!(raw.laneWidth > 0f && raw.laneWidth < Float.POSITIVE_INFINITY)) {
+                report.messages.add("invalid laneWidth " + raw.laneWidth + " ignored");
+            }
+        }
+        chart.setColumnExtends(orDefault(rl.upperExtend, Chart.DEFAULT_EXTEND), rl.upperExtendEvents,
+            orDefault(rl.lowerExtend, Chart.DEFAULT_EXTEND), rl.lowerExtendEvents);
+        convertOldMoves(chart, oldMoves);
         report.laneMineConflicts = chart.laneMineConflicts(Params.LANE_MINE_LEAD_MS);
         chart.report = report;
         if (!report.clean() && Gdx.app != null) {
@@ -382,25 +423,23 @@ public final class ChartMapper {
         return chart;
     }
 
-    /**
-     * @return a floating note (悬浮键, CHART_FORMAT §11): on the lower line with no lane, pivot, orbit, sideways shift,
-     *         movement, rotation, tail or trail; where it is, how big and how full from its {@code x}, {@code y},
-     *         {@code size}, their events and its fill events, shown from {@code appear}; its opacity events, glitch
-     *         and distortion as a key on a line has them (7.187, Kelvin 2026-11-06 19:03)
-     */
-    private static Note floatNote(RawNote r, NoteType type) {
-        float d = r.duration; // a STREAM's or a LONG MINE's, as the note keeps it
-        float duration = type.sustainable() && d > 0f && d < Float.POSITIVE_INFINITY ? d : 0f;
-        Floating f = new Floating(r.x, r.y, r.size, Floating.defaultSize(type, duration), r.appearance, r.judgement,
-            r.xEvents, r.yEvents, r.sizeEvents, r.fillEvents, type == NoteType.DRAG ? r.chain : null);
-        Note note = new Note(type, Line.LOWER, 0, Float.NaN, r.judgement, duration,
-            0f, null, null, r.disappear, null, null, r.hasGlitch ? r.glitches : null, 0f, 0f,
-            r.hasDistortion ? r.distortions : null, 0f, 0f, null, null, r.fake);
-        note.setFloating(f);
-        return note;
+    /** @return the beat ranges {@code key} keeps ({@link Chart#setLaneless}); dropped ones are reported. */
+    private static List<float[]> ranges(List<float[]> raw, boolean v1, String key, Chart.LoadReport report) {
+        List<float[]> out = new ArrayList<>();
+        if (v1) {
+            report.messages.add(key + " of a v1 chart ignored");
+            return out;
+        }
+        int dropped = 0;
+        for (float[] r : raw) {
+            if (r != null && r[0] < r[1]) out.add(r);
+            else dropped++;
+        }
+        if (dropped > 0) report.messages.add(dropped + " empty or invalid " + key + " range(s) ignored");
+        return out;
     }
 
-    /** @return the usable veils (or curtains) of a v2+ chart (counted with the veils in the report); none for v1 */
+    /** @return the usable veils (or curtains) of a v2+ chart (counted with the veils in the report); none for v1. */
     private static List<Veil> veils(List<RawVeil> raw, boolean v1, boolean curtains, Chart.LoadReport report) {
         List<Veil> out = new ArrayList<>(raw.size());
         if (v1) {
@@ -412,6 +451,15 @@ public final class ChartMapper {
                 r.startTime, r.endTime, r.xEvents, r.yEvents, r.rotationEvents, r.opacityEvents, r.glitches,
                 r.distortions);
             if (v != null && curtains) v = v.withBlur(r.blur, r.blurEvents);
+            if (v != null && (r.space != null || r.moves != null)) {
+                Channels[] moves = new Channels[v.pointCount()];
+                for (int k = 0; r.moves != null && k < r.moves.size(); k++) {
+                    RawChannels m = r.moves.get(k);
+                    if (m.index >= 0 && m.index < moves.length) moves[m.index] = m.build();
+                    else r.fixed = true; // no such point
+                }
+                v = v.withSpace(RawChannels.build(r.space), moves);
+            }
             if (v == null || !v.isValid()) {
                 report.veilsDropped++;
                 continue;
@@ -422,17 +470,6 @@ public final class ChartMapper {
             out.add(v);
         }
         return out;
-    }
-
-    /**
-     * Format v6 measures every horizontal position from the screen's centre line (Kelvin 2026-11-05:
-     * 「以屏幕中线为y轴设置X坐标」); orbits and veils keep 1920-wide coordinates inside. The reader adds the 960 to
-     * the number as written (in double precision), so a v6 x written by {@link ChartFormatV5} reads back exactly.
-     *
-     * @return the 1920-wide x of a v6 x (NaN stays NaN)
-     */
-    static float absoluteX(double fromCentre) {
-        return (float) (fromCentre + LaneLayout.TILE_CENTRE);
     }
 
     /**
@@ -500,7 +537,7 @@ public final class ChartMapper {
         }
         return new JudgementLine(orDefault(rl.upper, JudgementLine.DEFAULT_UPPER),
             orDefault(rl.lower, JudgementLine.DEFAULT_LOWER), rl.upperEvents, rl.lowerEvents, laneScale,
-            rl.laneScaleEvents, camera, rl.cameraEvents, rl.upperLayers, rl.lowerLayers, rl.cameraLayers);
+            rl.laneScaleEvents, camera, rl.cameraEvents);
     }
 
     /** @return the v1 line geometry: its window as the lane scale and camera frame ({@link #windowLine}, 2400 wide). */
@@ -533,15 +570,15 @@ public final class ChartMapper {
         for (int i = 0; i < left.size() && paired; i++) {
             Events a = left.get(i);
             Events b = right.get(i);
-            if (a.startTime() != b.startTime() || a.endTime() != b.endTime() || a.exponent() != b.exponent()) {
+            if (a.startTime() != b.startTime() || a.endTime() != b.endTime() || !a.sameEase(b)) {
                 paired = false;
                 break;
             }
-            Events s = new Events(Events.TYPE.LaneScale, a.startTime(), a.endTime(),
-                (b.initialValue() - a.initialValue()) / span, (b.finalValue() - a.finalValue()) / span, a.exponent());
-            Events c = new Events(Events.TYPE.CameraFrame, a.startTime(), a.endTime(),
+            Events s = a.withValues(Events.TYPE.LaneScale,
+                (b.initialValue() - a.initialValue()) / span, (b.finalValue() - a.finalValue()) / span);
+            Events c = a.withValues(Events.TYPE.CameraFrame,
                 (a.initialValue() + b.initialValue()) * 0.5f - LaneLayout.TILE_CENTRE,
-                (a.finalValue() + b.finalValue()) * 0.5f - LaneLayout.TILE_CENTRE, a.exponent());
+                (a.finalValue() + b.finalValue()) * 0.5f - LaneLayout.TILE_CENTRE);
             scaled |= s.initialValue() != 1f || s.finalValue() != 1f;
             moved |= c.initialValue() != 0f || c.finalValue() != 0f;
             scales.add(s);
@@ -605,6 +642,58 @@ public final class ChartMapper {
             lane.insert(), new Events(Events.TYPE.Width, start, end, initial, finiteWidth(r.delFinal), exponent));
     }
 
+    /** @return {@code lane} with the column motion of {@code r} (Kelvin 2026-11-07 22:54), if it has one */
+    private static Lane moved(RawLane r, Lane lane) {
+        return r.space != null ? lane.withSpace(RawChannels.build(r.space)) : lane;
+    }
+
+    /** The keys a lane's column was moved by before 2026-11-08: across from its place in the row, up, in depth. */
+    private static final String[] OLD_LANE = {"x", "y", "z"};
+
+    /**
+     * Reads a lane's {@code name} into {@code l}: one of its channels ({@link Channels#LANE}) or of the keys before
+     * 2026-11-08 ({@link #OLD_LANE}, converted when the chart is built); anything else is skipped.
+     */
+    static void laneChannel(JsonParser p, JsonToken fv, String name, RawLane l, EventsReader events)
+            throws IOException {
+        if (RawChannels.of(OLD_LANE, name) >= 0) l.oldMove = channel(p, fv, name, OLD_LANE, l.oldMove, events);
+        else l.space = channel(p, fv, name, Channels.LANE, l.space, events);
+    }
+
+    /**
+     * The column moves before 2026-11-08 ({@link #OLD_LANE}, Kelvin 2026-11-08 23:42 「把conflicting的东西清理了」) as
+     * the lanes' origins, where the lane shows the same: x from its place in the row at beat 0 (the lane then leaves
+     * the row), y from the middle of the lines' bases (with lines moving by events, its own y no longer follows them),
+     * z as it was (the origin's z 0 is the columns' middle, where an unmoved column's is). A channel the lane also
+     * writes in its own keys keeps those.
+     */
+    private static void convertOldMoves(Chart chart, Map<Integer, RawLane> old) {
+        if (old.isEmpty()) return;
+        LaneLayout lay = new LaneLayout(chart);
+        lay.update(0f, LaneLayout.VIEW_LEFT, LaneLayout.VIEW_RIGHT);
+        JudgementLine lines = chart.lineEvents();
+        float unit = lay.freeX(1f) - lay.freeX(0f);
+        Lane[] lanes = chart.lanes();
+        for (int i = 0; i < lanes.length; i++) {
+            RawLane r = old.get(lanes[i].id());
+            if (r == null) continue;
+            RawChannels m = r.oldMove;
+            RawChannels c = r.space != null ? r.space : new RawChannels(Channels.LANE);
+            float[] add = {unit > 0f ? (lay.centre(i) - lay.freeX(0f)) / unit : 0f,
+                0.5f * (lines.upperBase() + lines.lowerBase()) - Sea.MID_Y, 0f};
+            for (int k = 0; k < OLD_LANE.length; k++) {
+                List<Events> e = m.events.get(k);
+                boolean was = Float.isFinite(m.base[k]) || e != null && !e.isEmpty();
+                List<Events> now = c.events.get(k);
+                if (!was || Float.isFinite(c.base[k]) || now != null && !now.isEmpty()) continue;
+                float a = add[k];
+                c.base[k] = (Float.isFinite(m.base[k]) ? m.base[k] : 0f) + a;
+                c.events.set(k, Events.mapValues(e, v -> v + a));
+            }
+            lanes[i] = lanes[i].withSpace(c.build());
+        }
+    }
+
     private static Lane laneOrImplicit(Map<Integer, Lane> lanes, int id) {
         Lane l = lanes.get(id);
         if (l == null) {
@@ -645,8 +734,8 @@ public final class ChartMapper {
         if (events == null) return null;
         List<Events> out = new ArrayList<>(events.size());
         for (Events e : events) {
-            out.add(e == null ? null : new Events(e.type(), e.startTime(), e.endTime(), fromFrame1080(e.initialValue()),
-                fromFrame1080(e.finalValue()), e.exponent()));
+            out.add(e == null ? null : e.withValues(e.type(), fromFrame1080(e.initialValue()),
+                fromFrame1080(e.finalValue())));
         }
         return out;
     }
@@ -679,23 +768,21 @@ public final class ChartMapper {
         float offsetMs = Float.NaN;
         boolean hasLaneCount;
         long laneCount = NO_INT;
+        /** A default lane's own width (Kelvin 2026-11-08 02:39), NaN when not written. */
+        float laneWidth = Float.NaN;
         List<RawLane> lanes;
         final List<RawNote> notes = new ArrayList<>();
         RawLine line;
         List<RawVeil> veils;
         List<RawVeil> curtains;
-        /**
-         * {@code fixedLanes} entries as read: {beat, count}, unsorted and unchecked (null = absent, CHART_FORMAT §12).
-         */
-        List<float[]> fixedLanes;
-        /** Bubbles of the retired bubble lines, counted for the load report (CHART_FORMAT §11). */
-        int bubbles;
-        /** Custom lines (CHART_FORMAT §13; null = absent), and those dropped or changed while read. */
-        List<Stroke> strokes;
-        int strokesDropped;
-        int strokesFixed;
-        /** The chart editor's laneless working text ({@code "laneless": true}): notes have their own x, no lanes. */
-        boolean laneless;
+        /** {@code "laneless"} ranges as read: {from, to} (−∞ / +∞ when missing; null for a broken entry). */
+        List<float[]> laneless;
+        /** {@code "fullScreen"} ranges as read (full-screen judging, Kelvin 2026-11-07 06:04), as {@link #laneless}. */
+        List<float[]> fullScreen;
+        /** The {@code "view"} channels as read (the 3D camera, 2026-11-07): yaw, pitch, fov, dist events or null. */
+        List<Events> viewYaw, viewPitch, viewFov, viewDist;
+        /** The {@code "seas"} as read (海面, 2026-11-07), or null. */
+        List<Sea> seas;
     }
 
     static final class RawVeil {
@@ -718,6 +805,47 @@ public final class ChartMapper {
         List<NoteDistortion> distortions;
         float blur = Float.NaN;
         List<Events> blurEvents;
+        /** Its 3D motion and its points' moves ({@code pointEvents}, by {@link RawChannels#index}), as read. */
+        RawChannels space;
+        List<RawChannels> moves;
+    }
+
+    /**
+     * Motion channels as read ({@link Channels}, Kelvin 2026-11-07 22:54): base values (NaN: not given) and events in
+     * key order; a veil point's moves also carry the point's index ({@code "i"}, −1 when missing).
+     */
+    static final class RawChannels {
+        final String[] keys;
+        final float[] base;
+        final List<List<Events>> events;
+        int index = -1;
+
+        RawChannels(String[] keys) {
+            this.keys = keys;
+            base = new float[keys.length];
+            Arrays.fill(base, Float.NaN);
+            events = new ArrayList<>(Collections.<List<Events>>nCopies(keys.length, null));
+        }
+
+        /** @return channel c's base for the key {@code name}, c + the channel count for its events, or −1 */
+        static int of(String[] keys, String name) {
+            for (int c = 0; c < keys.length; c++) {
+                if (name.equals(keys[c])) return c;
+                if (name.length() == keys[c].length() + 6 && name.startsWith(keys[c]) && name.endsWith("Events")) {
+                    return c + keys.length;
+                }
+            }
+            return -1;
+        }
+
+        /** @return the channels of {@code r} (null: none) */
+        static Channels build(RawChannels r) {
+            return r == null ? null : Channels.of(r.keys, r.base, r.events);
+        }
+
+        Channels build() {
+            return Channels.of(keys, base, events);
+        }
     }
 
     static final class RawLane {
@@ -742,6 +870,10 @@ public final class ChartMapper {
         float delInitial = Float.NaN;
         float delFinal;
         float delExponent = 1f;
+        // the lane's pose (Kelvin 2026-11-08 23:42; its column's motion since 2026-11-07 22:54)
+        RawChannels space;
+        /** The keys before 2026-11-08 ({@link #OLD_LANE}), converted by {@link #convertOldMoves}. */
+        RawChannels oldMove;
     }
 
     static final class RawNote {
@@ -749,6 +881,9 @@ public final class ChartMapper {
         String line;
         boolean hasLane;
         boolean laneInvalid;
+        /** The lane as written (Kelvin 2026-11-07: may be a decimal between two lanes), {@link #readLane}. */
+        float laneValue;
+        /** {@link #laneValue} cut to a whole number toward 0 (format v1 lanes, as the old loader read them). */
         int lane;
         float appearance = Float.NaN;
         float judgement = Float.NaN;
@@ -772,13 +907,11 @@ public final class ChartMapper {
         float waveSpeed;
         float offsetX;
         List<Events> offsetXEvents;
-        /** Chart format v6 (laneless, Kelvin 2026-11-05): the note's own x and its events. */
-        float x = Float.NaN;
+        /** A laneless key's x and its events (Kelvin 2026-11-07: a DRAG, or a key without a lane). */
+        float x;
         List<Events> xEvents;
-        /** Additive layers (叠加层, Kelvin 2026-11-05). */
-        List<Events> xLayers;
-        List<Events> positionLayers;
-        List<Events> rotationLayers;
+        /** True when {@code x} or {@code xEvents} is given. */
+        boolean hasX;
         boolean pivotFixed;
         boolean hasOrbit;
         boolean orbitFixed;
@@ -793,16 +926,14 @@ public final class ChartMapper {
         int orbitConflict;
         boolean orbitRigid;
         boolean fake;
-        /** True when it named a bubble of the retired bubble lines (then it stays on its line). */
-        boolean bubble;
-        /** A floating note (悬浮键, CHART_FORMAT §11, {@code "float": true}): y, diameter, their events, fill, chain. */
-        boolean floating;
-        float y = Float.NaN;
-        float size = Float.NaN;
-        List<Events> yEvents;
-        List<Events> sizeEvents;
-        List<Events> fillEvents;
-        String chain;
+        /** {@code "on"}: the index of the sea it lands on, −1 for its line. */
+        int sea = -1;
+        /** {@code "track": "space"} ({@link Note#spaceTrack()}). */
+        boolean spaceTrack;
+        /** {@code "spans"} ({@link Note#spanCount()}): kind, value pairs, or null. */
+        int[] spans;
+        /** Its 3D motion as read ({@link Channels#SOLID}), or null. */
+        RawChannels space;
     }
 
     static final class RawLine {
@@ -820,10 +951,70 @@ public final class ChartMapper {
         boolean hasCamera;
         float camera = Float.NaN;
         List<Events> cameraEvents;
-        /** Additive layers (叠加层, Kelvin 2026-11-05). */
-        List<Events> upperLayers;
-        List<Events> lowerLayers;
-        List<Events> cameraLayers;
+        /** How far the columns reach past the sky / ground line (2026-11-07) and their events, as read. */
+        float upperExtend = Float.NaN;
+        float lowerExtend = Float.NaN;
+        List<Events> upperExtendEvents;
+        List<Events> lowerExtendEvents;
+    }
+
+    /** Reads one events array in a format's own shape (the motion channels, {@link #channel}). */
+    interface EventsReader {
+        List<Events> read(JsonParser p, JsonToken v) throws IOException;
+    }
+
+    /**
+     * Reads {@code name} into {@code r} (made on first use) when it is one of the motion channels {@code keys} or their
+     * events ({@link Channels}, Kelvin 2026-11-07 22:54); else skips its value.
+     *
+     * @return {@code r}, or the channels made for the value
+     */
+    static RawChannels channel(JsonParser p, JsonToken fv, String name, String[] keys, RawChannels r,
+                               EventsReader events) throws IOException {
+        int c = RawChannels.of(keys, name);
+        if (c < 0) {
+            p.skipChildren();
+            return r;
+        }
+        if (r == null) r = new RawChannels(keys);
+        if (c < keys.length) r.base[c] = floatValue(p, fv, Float.NaN);
+        else r.events.set(c - keys.length, events.read(p, fv));
+        return r;
+    }
+
+    /**
+     * Reads a veil's {@code pointEvents}: objects with the point's index {@code "i"} and its {@link Channels#POINT}
+     * moves. Anything else in it marks the veil as fixed.
+     */
+    static List<RawChannels> parsePointMoves(JsonParser p, JsonToken v, RawVeil r, EventsReader events)
+            throws IOException {
+        List<RawChannels> out = new ArrayList<>();
+        if (v != JsonToken.START_ARRAY) {
+            r.fixed |= v != JsonToken.VALUE_NULL;
+            p.skipChildren();
+            return out;
+        }
+        JsonToken t;
+        while ((t = p.nextToken()) != JsonToken.END_ARRAY && t != null) {
+            if (t != JsonToken.START_OBJECT) {
+                p.skipChildren();
+                r.fixed = true;
+                continue;
+            }
+            RawChannels m = new RawChannels(Channels.POINT);
+            while (p.nextToken() == JsonToken.FIELD_NAME) {
+                String name = p.currentName();
+                JsonToken fv = p.nextToken();
+                if (name.equals("i")) {
+                    float i = floatValue(p, fv, Float.NaN);
+                    m.index = i >= 0f && i == (int) i ? (int) i : -1;
+                } else {
+                    channel(p, fv, name, Channels.POINT, m, events);
+                }
+            }
+            out.add(m);
+        }
+        return out;
     }
 
     /** @return true for NaN or ±∞. */
@@ -858,93 +1049,6 @@ public final class ChartMapper {
         }
         if (n / 2 > Veil.MAX_POINTS) r.fixed = true;
         return Arrays.copyOf(out, n);
-    }
-
-    /**
-     * @return an id (a DRAG chain's, CHART_FORMAT §11): text or a number as written, trimmed; null for anything else or
-     *         empty
-     */
-    static String idText(JsonParser p, JsonToken v) throws IOException {
-        if (v == JsonToken.VALUE_STRING || v == JsonToken.VALUE_NUMBER_INT || v == JsonToken.VALUE_NUMBER_FLOAT) {
-            String s = p.getText().trim();
-            return s.isEmpty() ? null : s;
-        }
-        if (v == JsonToken.START_OBJECT || v == JsonToken.START_ARRAY) p.skipChildren();
-        return null;
-    }
-
-    /** @return how many entries an array has (skipped; 0 for anything else, also skipped) */
-    static int countEntries(JsonParser p, JsonToken v) throws IOException {
-        if (v != JsonToken.START_ARRAY) {
-            p.skipChildren();
-            return 0;
-        }
-        int n = 0;
-        JsonToken t;
-        while ((t = p.nextToken()) != JsonToken.END_ARRAY && t != null) {
-            p.skipChildren();
-            n++;
-        }
-        return n;
-    }
-
-    /**
-     * Reads {@code fixedLanes} (定轨 / 无轨, CHART_FORMAT §12): an array of {@code {"beat", "count"}} objects; anything
-     * else in it is skipped. Values missing or not numbers are NaN, checked by {@link #fixedLanes}.
-     */
-    static List<float[]> parseFixedLanes(JsonParser p, JsonToken v) throws IOException {
-        List<float[]> out = new ArrayList<>();
-        if (v != JsonToken.START_ARRAY) {
-            p.skipChildren();
-            return out;
-        }
-        JsonToken t;
-        while ((t = p.nextToken()) != JsonToken.END_ARRAY && t != null) {
-            if (t != JsonToken.START_OBJECT) {
-                p.skipChildren();
-                continue;
-            }
-            float beat = Float.NaN, count = Float.NaN;
-            while ((t = p.nextToken()) == JsonToken.FIELD_NAME) {
-                String name = p.currentName();
-                JsonToken fv = p.nextToken();
-                if ("beat".equals(name)) beat = floatValue(p, fv, Float.NaN);
-                else if ("count".equals(name)) count = floatValue(p, fv, Float.NaN);
-                else p.skipChildren();
-            }
-            out.add(new float[] {beat, count});
-        }
-        return out;
-    }
-
-    /**
-     * Sets the 定轨 / 无轨 sections of {@code chart} from the raw entries: an entry without a finite beat, or whose
-     * count is not a whole number from 0 to {@link Chart#MAX_FIXED_LANES}, is dropped (reported); the rest are sorted
-     * by beat, and of two on the same beat the later one in the file wins.
-     */
-    private static void fixedLanes(Chart chart, List<float[]> raw, Chart.LoadReport report) {
-        List<float[]> ok = new ArrayList<>();
-        for (float[] e : raw) {
-            float c = e[1];
-            if (Float.isNaN(e[0]) || Float.isInfinite(e[0]) || !(c >= 0f) || c > Chart.MAX_FIXED_LANES
-                || c != (float) Math.floor(c)) {
-                report.messages.add("fixedLanes entry {beat " + e[0] + ", count " + c + "} dropped");
-                continue;
-            }
-            ok.add(e);
-        }
-        // stable sort: entries on one beat keep file order, so the later one is kept below
-        Collections.sort(ok, (a, b) -> Float.compare(a[0], b[0]));
-        float[] beats = new float[ok.size()];
-        int[] counts = new int[ok.size()];
-        int n = 0;
-        for (float[] e : ok) {
-            if (n > 0 && beats[n - 1] == e[0]) n--;
-            beats[n] = e[0];
-            counts[n] = (int) e[1];
-            n++;
-        }
-        chart.setFixedLanes(Arrays.copyOf(beats, n), Arrays.copyOf(counts, n));
     }
 
     /** Reads {@code bpmList}: an array of {@code {"beat", "bpm"}} objects; anything else in it is skipped. */
@@ -1023,7 +1127,7 @@ public final class ChartMapper {
         n.pivotFixed = false;
         if (v == JsonToken.VALUE_NULL) return;
         float[] xy = new float[2];
-        int extra = readPoint(p, v, xy, false);
+        int extra = readPoint(p, v, xy);
         boolean okX = !Float.isNaN(xy[0]) && !Float.isInfinite(xy[0]);
         boolean okY = !Float.isNaN(xy[1]) && !Float.isInfinite(xy[1]);
         n.pivotX = okX ? xy[0] : 0f;
@@ -1041,16 +1145,11 @@ public final class ChartMapper {
      * coordinate is the middle of the screen, {@link NoteOrbit}); a value that is neither is no orbit.
      */
     static void parseOrbit(JsonParser p, JsonToken v, RawNote n) throws IOException {
-        parseOrbit(p, v, n, false);
-    }
-
-    /** @param centred a format v6 orbit, its x from the screen's centre line ({@link #absoluteX}) */
-    static void parseOrbit(JsonParser p, JsonToken v, RawNote n, boolean centred) throws IOException {
         n.hasOrbit = false;
         n.orbitFixed = false;
         if (v == JsonToken.VALUE_NULL) return;
         float[] xy = new float[2];
-        int extra = readPoint(p, v, xy, centred);
+        int extra = readPoint(p, v, xy);
         n.hasOrbit = extra >= 0;
         n.orbitX = xy[0];
         n.orbitY = xy[1];
@@ -1076,7 +1175,7 @@ public final class ChartMapper {
      *
      * @return how many entries there were beyond x and y, or −1 for a value that is neither (skipped)
      */
-    private static int readPoint(JsonParser p, JsonToken v, float[] xy, boolean centred) throws IOException {
+    private static int readPoint(JsonParser p, JsonToken v, float[] xy) throws IOException {
         float x = Float.NaN;
         float y = Float.NaN;
         int extra = 0;
@@ -1084,7 +1183,7 @@ public final class ChartMapper {
             int k = 0;
             JsonToken t;
             while ((t = p.nextToken()) != JsonToken.END_ARRAY && t != null) {
-                float f = k == 0 && centred ? absoluteX(doubleValue(p, t, Double.NaN)) : floatValue(p, t, Float.NaN);
+                float f = floatValue(p, t, Float.NaN);
                 if (k == 0) x = f;
                 else if (k == 1) y = f;
                 else extra++;
@@ -1095,9 +1194,7 @@ public final class ChartMapper {
             while ((t = p.nextToken()) == JsonToken.FIELD_NAME) {
                 String name = p.currentName();
                 JsonToken fv = p.nextToken();
-                if ("x".equalsIgnoreCase(name)) {
-                    x = centred ? absoluteX(doubleValue(p, fv, Double.NaN)) : floatValue(p, fv, Float.NaN);
-                }
+                if ("x".equalsIgnoreCase(name)) x = floatValue(p, fv, Float.NaN);
                 else if ("y".equalsIgnoreCase(name)) y = floatValue(p, fv, Float.NaN);
                 else {
                     p.skipChildren();
@@ -1206,129 +1303,6 @@ public final class ChartMapper {
         return NoteTrail.of(length, density, alpha, fade, mode, from, to);
     }
 
-    /** Reads one channel of events in the file's own notation (format 5 / 6, or the old one). */
-    interface EventReader {
-        List<Events> read(JsonParser p, JsonToken v) throws IOException;
-    }
-
-    /**
-     * Reads the top-level {@code strokes} (custom lines, CHART_FORMAT §13) into {@code c}: an array of objects, x from
-     * the screen's centre line in every format. An entry that is not an object or keeps fewer than two points is
-     * dropped; {@code null} means none.
-     */
-    static void parseStrokes(JsonParser p, JsonToken v, EventReader events, RawChart c) throws IOException {
-        c.strokes = new ArrayList<>();
-        if (v != JsonToken.START_ARRAY) {
-            if (v != JsonToken.VALUE_NULL) c.strokesDropped++;
-            p.skipChildren();
-            return;
-        }
-        JsonToken t;
-        while ((t = p.nextToken()) != JsonToken.END_ARRAY && t != null) {
-            Stroke s = t == JsonToken.START_OBJECT ? parseStroke(p, events, c) : null;
-            if (t != JsonToken.START_OBJECT) p.skipChildren();
-            if (s == null) c.strokesDropped++;
-            else c.strokes.add(s);
-        }
-    }
-
-    /** Reads one custom line (the parser is on its START_OBJECT); null when it keeps fewer than two points. */
-    private static Stroke parseStroke(JsonParser p, EventReader events, RawChart c) throws IOException {
-        float[] points = null;
-        boolean curve = false, closed = false, front = false, fixed = false;
-        float from = Float.NaN, to = Float.NaN, drawIn = 0f, drawOut = 0f, width = Stroke.DEFAULT_WIDTH, opacity = 1f;
-        int color = Stroke.DEFAULT_COLOR;
-        List<Events> opacityEvents = null;
-        RawNote fx = new RawNote(); // its glitch and distortion segments
-        while (p.nextToken() == JsonToken.FIELD_NAME) {
-            String name = p.currentName();
-            JsonToken fv = p.nextToken();
-            boolean isNull = fv == JsonToken.VALUE_NULL;
-            switch (name) {
-                case "points": {
-                    boolean[] bad = new boolean[1];
-                    points = parseStrokePoints(p, fv, bad);
-                    fixed |= bad[0];
-                    break;
-                }
-                case "curve": curve = flag(p, fv); break;
-                case "closed": closed = flag(p, fv); break;
-                case "front": front = flag(p, fv); break;
-                case "from": from = floatValue(p, fv, Float.NaN); fixed |= bad(from) && !isNull; break;
-                case "to": to = floatValue(p, fv, Float.NaN); fixed |= bad(to) && !isNull; break;
-                // null: the default, as a key left out
-                case "drawIn": drawIn = isNull ? 0f : floatValue(p, fv, Float.NaN); break;
-                case "drawOut": drawOut = isNull ? 0f : floatValue(p, fv, Float.NaN); break;
-                case "width": width = isNull ? Stroke.DEFAULT_WIDTH : floatValue(p, fv, Float.NaN); break;
-                case "opacity": opacity = isNull ? 1f : floatValue(p, fv, Float.NaN); break;
-                case "color": {
-                    String text = text(p, fv);
-                    long rgba = parseColor(text);
-                    if (rgba >= 0) color = (int) rgba;
-                    else fixed |= !isNull;
-                    break;
-                }
-                case "opacityEvents": opacityEvents = events.read(p, fv); break;
-                case "glitches":
-                case "glitch": parseGlitch(p, fv, fx); fixed |= fx.glitchFixed; break;
-                case "distortions":
-                case "distortion": parseDistortion(p, fv, fx); fixed |= fx.distortionFixed; break;
-                default: p.skipChildren(); break;
-            }
-        }
-        Stroke s = Stroke.of(points, curve, closed, front, from, to, drawIn, drawOut, width, color, opacity,
-            opacityEvents, fx.glitches, fx.distortions);
-        if (s != null && (fixed || s.fixed())) c.strokesFixed++;
-        return s;
-    }
-
-    /**
-     * Reads a custom line's {@code points} as {@link #parseVeilPoints} reads a polygon's ({@code [x, y]} pairs or
-     * {@code {"x", "y"}} objects), without a polygon's limits; an entry that is not two finite numbers is left out and
-     * sets {@code bad[0]}.
-     */
-    private static float[] parseStrokePoints(JsonParser p, JsonToken v, boolean[] bad) throws IOException {
-        if (v != JsonToken.START_ARRAY) {
-            if (v != JsonToken.VALUE_NULL) bad[0] = true;
-            p.skipChildren();
-            return null;
-        }
-        float[] out = new float[16];
-        int n = 0;
-        JsonToken t;
-        while ((t = p.nextToken()) != JsonToken.END_ARRAY && t != null) {
-            RawNote pt = new RawNote();
-            parsePivot(p, t, pt);
-            if (pt.pivotFixed || t == JsonToken.VALUE_NULL) {
-                bad[0] = true;
-                continue;
-            }
-            if (n + 2 > out.length) out = Arrays.copyOf(out, out.length * 2);
-            out[n++] = pt.pivotX;
-            out[n++] = pt.pivotY;
-        }
-        return Arrays.copyOf(out, n);
-    }
-
-    /**
-     * @return a colour written {@code "#RRGGBB"} or {@code "#RRGGBBAA"} (the {@code #} may be left out) as RGBA8888, or
-     *         −1 for anything else
-     */
-    static long parseColor(String s) {
-        if (s == null) return -1;
-        String h = s.trim();
-        if (h.startsWith("#")) h = h.substring(1);
-        if (!h.matches("[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8}")) return -1;
-        long v = Long.parseLong(h, 16);
-        return h.length() == 6 ? v << 8 | 0xFF : v;
-    }
-
-    /** @return {@code rgba} (RGBA8888) as {@code "#RRGGBB"}, or {@code "#RRGGBBAA"} when it is not opaque */
-    static String colorText(int rgba) {
-        String h = String.format(Locale.ROOT, "%08X", rgba);
-        return "#" + ((rgba & 0xFF) == 0xFF ? h.substring(0, 6) : h);
-    }
-
     /** JSON key of a note's glitch segments (read case-insensitively). */
     static final String GLITCH_KEY = "glitch";
 
@@ -1378,6 +1352,7 @@ public final class ChartMapper {
         float split = NoteGlitch.DEFAULT_SPLIT;
         float slice = NoteGlitch.DEFAULT_SLICE;
         float flicker = NoteGlitch.DEFAULT_FLICKER;
+        float[] curve = null;
         boolean fixed = false;
         while (p.nextToken() == JsonToken.FIELD_NAME) {
             String name = p.currentName().trim().toLowerCase(Locale.ROOT);
@@ -1401,6 +1376,7 @@ public final class ChartMapper {
                 case "split": split = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(split); break;
                 case "slice": slice = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(slice); break;
                 case "flicker": flicker = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(flicker); break;
+                case "curve": curve = floatList(p, fv); fixed |= !isNull && EaseCurve.clean(curve) == null; break;
                 default: p.skipChildren(); break;
             }
         }
@@ -1420,14 +1396,14 @@ public final class ChartMapper {
         // values the sanitiser has to change
         if (intensity < 0f || intensity > 1f) fixed = true;
         if (intensityEnd < 0f || intensityEnd > 1f) fixed = true;
-        if (exponent < NoteGlitch.MIN_EXPONENT || exponent > NoteGlitch.MAX_EXPONENT) fixed = true;
+        if (curve == null && (exponent < NoteGlitch.MIN_EXPONENT || exponent > NoteGlitch.MAX_EXPONENT)) fixed = true;
         if (rate < 0f || rate > NoteGlitch.MAX_RATE) fixed = true;
         if (split < 0f || split > NoteGlitch.MAX_WEIGHT) fixed = true;
         if (slice < 0f || slice > NoteGlitch.MAX_WEIGHT) fixed = true;
         if (flicker < 0f || flicker > NoteGlitch.MAX_WEIGHT) fixed = true;
         if (from > to) fixed = true;
         if (fixed) n.glitchFixed = true;
-        return NoteGlitch.of(from, to, intensity, intensityEnd, exponent, rate, split, slice, flicker);
+        return NoteGlitch.of(from, to, intensity, intensityEnd, exponent, rate, split, slice, flicker, curve);
     }
 
     /** JSON key of distortion segments (read case-insensitively). */
@@ -1470,6 +1446,7 @@ public final class ChartMapper {
         float intensity = NoteDistortion.DEFAULT_INTENSITY;
         float intensityEnd = Float.NaN;
         float exponent = 1f;
+        float[] curve = null;
         boolean fixed = false;
         while (p.nextToken() == JsonToken.FIELD_NAME) {
             String name = p.currentName().trim().toLowerCase(Locale.ROOT);
@@ -1489,6 +1466,7 @@ public final class ChartMapper {
                     break;
                 case "exponent":
                 case "ease": exponent = floatValue(p, fv, Float.NaN); fixed |= Float.isNaN(exponent); break;
+                case "curve": curve = floatList(p, fv); fixed |= !isNull && EaseCurve.clean(curve) == null; break;
                 default: p.skipChildren(); break;
             }
         }
@@ -1507,16 +1485,32 @@ public final class ChartMapper {
         }
         float max = NoteDistortion.MAX_INTENSITY;
         if (intensity < 0f || intensity > max || intensityEnd < 0f || intensityEnd > max) fixed = true;
-        if (exponent < NoteGlitch.MIN_EXPONENT || exponent > NoteGlitch.MAX_EXPONENT) fixed = true;
+        if (curve == null && (exponent < NoteGlitch.MIN_EXPONENT || exponent > NoteGlitch.MAX_EXPONENT)) fixed = true;
         if (from > to) fixed = true;
         if (fixed) n.distortionFixed = true;
-        return NoteDistortion.of(from, to, intensity, intensityEnd, exponent);
+        return NoteDistortion.of(from, to, intensity, intensityEnd, exponent, curve);
     }
 
     /**
      * @return a numeric value as float (numbers exactly as Jackson data binding reads a float
      *         field; numeric strings parsed), else {@code def} (structures are skipped)
      */
+    /** @return the numbers of a JSON array (an entry that is not a number reads as NaN), or null for anything else */
+    static float[] floatList(JsonParser p, JsonToken v) throws IOException {
+        if (v != JsonToken.START_ARRAY) {
+            p.skipChildren();
+            return null;
+        }
+        float[] out = new float[8];
+        int k = 0;
+        JsonToken t;
+        while ((t = p.nextToken()) != JsonToken.END_ARRAY && t != null) {
+            if (k == out.length) out = Arrays.copyOf(out, 2 * k);
+            out[k++] = floatValue(p, t, Float.NaN);
+        }
+        return Arrays.copyOf(out, k);
+    }
+
     static float floatValue(JsonParser p, JsonToken v, float def) throws IOException {
         if (v == JsonToken.VALUE_NUMBER_INT || v == JsonToken.VALUE_NUMBER_FLOAT) {
             return p.getFloatValue();
@@ -1532,20 +1526,62 @@ public final class ChartMapper {
         return def;
     }
 
-    /** Like {@link #floatValue}, in double precision (format v6 x from the centre line, {@link #absoluteX}). */
-    static double doubleValue(JsonParser p, JsonToken v, double def) throws IOException {
-        if (v == JsonToken.VALUE_NUMBER_INT || v == JsonToken.VALUE_NUMBER_FLOAT) {
-            return p.getDoubleValue();
+    /** Largest lane value read; beyond it a lane is invalid (floats are exact whole numbers up to 2^24). */
+    private static final float MAX_LANE_VALUE = 1 << 24;
+    /** A lane this close to a whole number is that lane (rounding in the chart editor). */
+    private static final float LANE_SNAP = 1e-4f;
+
+    /**
+     * Reads a note's {@code lane}: a lane id, or a decimal between two lanes' ids (Kelvin 2026-11-07 04:02:
+     * 「定轨状态支持小数轨道」); null is no lane, a value that is no number (or is huge) an invalid one.
+     */
+    static void readLane(JsonParser p, JsonToken v, RawNote n) throws IOException {
+        float f = floatValue(p, v, Float.NaN);
+        n.hasLane = v != JsonToken.VALUE_NULL;
+        n.laneInvalid = n.hasLane && !(Math.abs(f) < MAX_LANE_VALUE);
+        if (n.laneInvalid || !n.hasLane) return;
+        f = snapLane(f);
+        n.laneValue = f;
+        n.lane = (int) f;
+    }
+
+    /** @return {@code v}, or the whole number within {@link #LANE_SNAP} of it */
+    static float snapLane(float v) {
+        float r = (float) Math.rint(v);
+        return Math.abs(v - r) < LANE_SNAP ? r : v;
+    }
+
+    /**
+     * Reads the top-level {@code "laneless"} array (Kelvin 2026-11-07 04:02): {@code {"from": beat, "to": beat}}
+     * objects, a missing (or null) {@code from} the start of the chart and a missing {@code to} its end. Other
+     * entries are kept as null and reported when the chart is built.
+     */
+    static List<float[]> parseLaneless(JsonParser p, JsonToken v) throws IOException {
+        if (v != JsonToken.START_ARRAY) {
+            p.skipChildren();
+            return null;
         }
-        if (v == JsonToken.VALUE_STRING) {
-            try {
-                return Double.parseDouble(p.getText().trim());
-            } catch (NumberFormatException e) {
-                return def;
+        List<float[]> out = new ArrayList<>();
+        JsonToken t;
+        while ((t = p.nextToken()) != null && t != JsonToken.END_ARRAY) {
+            if (t != JsonToken.START_OBJECT) {
+                p.skipChildren();
+                out.add(null);
+                continue;
             }
+            float from = Float.NEGATIVE_INFINITY;
+            float to = Float.POSITIVE_INFINITY;
+            while (p.nextToken() == JsonToken.FIELD_NAME) {
+                String name = p.currentName();
+                JsonToken fv = p.nextToken();
+                if (fv == JsonToken.VALUE_NULL) continue;
+                if ("from".equals(name)) from = floatValue(p, fv, Float.NaN);
+                else if ("to".equals(name)) to = floatValue(p, fv, Float.NaN);
+                else p.skipChildren();
+            }
+            out.add(Float.isNaN(from) || Float.isNaN(to) ? null : new float[] {from, to});
         }
-        p.skipChildren();
-        return def;
+        return out;
     }
 
     /** Marks "not an int" for {@link #intValue}. */
@@ -1594,16 +1630,15 @@ public final class ChartMapper {
     // ------------------------------------------------------------------ writing
 
     /**
-     * Writes {@code chart} as format v5 JSON (UTF-8, {@link ChartFormatV5}; format 6 for a {@link Chart#laneless()}
-     * chart) with its song values in a {@code "song"} object, so reading it back yields an equal model. The stream is
-     * flushed but not closed.
+     * Writes {@code chart} as format v5 JSON (UTF-8, {@link ChartFormatV5}) with its song values in a {@code "song"}
+     * object, so reading it back yields an equal model. The stream is flushed but not closed.
      */
     public static void write(Chart chart, OutputStream out) throws IOException {
         write(chart, out, true);
     }
 
     /**
-     * Writes {@code chart} as format v5 JSON (UTF-8; format 6 when laneless). The stream is flushed but not closed.
+     * Writes {@code chart} as format v5 JSON (UTF-8). The stream is flushed but not closed.
      *
      * @param withSong also write the song values; false for a chart file in its song folder, whose song values
      *                 belong in {@code song.json} ({@link SongInfo#mergeInto})
@@ -1611,7 +1646,7 @@ public final class ChartMapper {
     public static void write(Chart chart, OutputStream out, boolean withSong) throws IOException {
         JsonGenerator g = FACTORY.createGenerator(out, JsonEncoding.UTF8);
         g.disable(JsonGenerator.Feature.AUTO_CLOSE_TARGET);
-        ChartFormatV5.write(chart, g, null, withSong, chart.laneless());
+        ChartFormatV5.write(chart, g, null, withSong);
     }
 
     /** @return {@code chart} as format v5 JSON text with its song values (see {@link #write(Chart, OutputStream)}) */

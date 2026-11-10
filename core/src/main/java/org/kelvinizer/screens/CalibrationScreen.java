@@ -121,4 +121,13 @@ public class CalibrationScreen extends ShellScreen {
         panel.cancel();
     }
 
+    @Override
+    protected void contentMouseMoved(float x, float y) {
+        panel.mouseMoved(x, y);
+    }
+
+    @Override
+    protected boolean contentKeyDown(int keycode) {
+        return panel.keyDown(keycode);
+    }
 }

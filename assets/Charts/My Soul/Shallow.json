@@ -1,7 +1,8 @@
 {
-  "format": 6,
+  "format": 5,
   "charter": "Unknown",
-  "constant": 9.1,
+  "constant": 5.5,
+  "laneCount": 8,
   "notes": [],
   "editor": {"iterations": 0}
 }

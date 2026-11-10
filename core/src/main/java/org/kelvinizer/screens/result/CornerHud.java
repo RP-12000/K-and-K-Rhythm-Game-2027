@@ -653,11 +653,6 @@ public final class CornerHud implements TextQueue.Deferred {
         return pearlsX + pearlsW * 0.5f;
     }
 
-    /** Capsule centre y. */
-    public float capsuleCenterY() {
-        return capY;
-    }
-
     /** Capsule bottom (the shell and pearl popovers hang from it). */
     public float capsuleBottom() {
         return capY - capH * 0.5f;

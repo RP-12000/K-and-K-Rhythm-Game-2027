@@ -20,16 +20,20 @@ public final class Veils {
      */
     public static boolean contains(Veil v, float x, float y, float beat) {
         if (!v.blocksAt(beat)) return false;
+        // its size factors and card flip block as drawn (Kelvin 2026-11-07 22:54); its depth is drawing only
+        float fx = v.shapeX(beat);
+        float fy = v.shapeY(beat);
+        if (!(fx > 1e-3f) || !(fy > 1e-3f)) return false;
         float dx = x - Field.x(v.xAt(beat));
         float dy = y - Field.y(v.yAt(beat));
         double a = Math.toRadians(v.rotationAt(beat));
         float c = (float) Math.cos(a), sn = (float) Math.sin(a);
         // turn the offset back (rigid), then undo the field's stretch: the outline is stretched, then turned
-        float lx = (dx * c + dy * sn) / Field.kx();
-        float ly = (dy * c - dx * sn) / Field.ky();
-        float e = v.extent();
+        float lx = (dx * c + dy * sn) / (Field.kx() * fx);
+        float ly = (dy * c - dx * sn) / (Field.ky() * fy);
+        float e = v.extentAt(beat);
         if (lx * lx + ly * ly > e * e * 1.0001f + 1e-3f) return false;
-        return v.contains(lx, ly);
+        return v.containsAt(lx, ly, beat);
     }
 
     /** @return true when world point (x, y) lies inside any of {@code veils} at {@code beat}. */

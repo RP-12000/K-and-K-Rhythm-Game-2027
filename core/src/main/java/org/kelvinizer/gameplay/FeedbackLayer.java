@@ -100,7 +100,7 @@ final class FeedbackLayer {
 
     // ------------------------------------------------------------------ triggers
 
-    /** Contact ring at the finger x on the line (a floating note: at the finger): r 40 → 90, 160 ms, α .30 / .15. */
+    /** Contact ring at the finger x on the line: r 40 → 90 over 160 ms, white α .30 (.15 empty). */
     void contact(float x, float lineY, boolean judged, float now) {
         int k = ringNext;
         ringNext = (k + 1) % N;
@@ -146,10 +146,7 @@ final class FeedbackLayer {
         chT[k] = now;
     }
 
-    /**
-     * At-lane judgement word (setting "At lane"): 24 outside the zone edge, cap 22, 300 ms; for a floating note
-     * ({@code line} null) standing on {@code lineY}, just above it.
-     */
+    /** At-lane judgement word (setting "At lane"): 24 outside the zone edge, cap 22, 300 ms. */
     void laneWord(Judgement j, float x, Line line, float lineY, float now) {
         wMine[addWord(j, x, line, lineY, now)] = false;
     }
@@ -171,7 +168,7 @@ final class FeedbackLayer {
         int k = wNext;
         wNext = (k + 1) % N;
         wX[k] = x;
-        wY[k] = line == null ? lineY : sky ? lineY - FieldRenderer.zone() - 24f : lineY + FieldRenderer.zone() + 24f;
+        wY[k] = sky ? lineY - FieldRenderer.zone() - 24f : lineY + FieldRenderer.zone() + 24f;
         wTop[k] = sky;
         wJ[k] = j;
         wT[k] = now;

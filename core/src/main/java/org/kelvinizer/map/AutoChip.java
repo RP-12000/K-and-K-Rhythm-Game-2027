@@ -53,7 +53,7 @@ final class AutoChip extends Pressable {
         if (!visible || alpha <= 0.002f) return;
         alpha *= alphaMul();
         float s = visualScale();
-        float cx = centerX() + shakeX(), cy = centerY();
+        float cx = centerX() + shakeX(), cy = centerY() + liftY();
         float bw = w * s, bh = h * s, bx = cx - bw * 0.5f, by = cy - bh * 0.5f;
         float rad = 18f * k * s;
         draw.roundRect(bx, by, bw, bh, rad, Theme.PANEL_HI, 0.9f * alpha);
@@ -61,8 +61,8 @@ final class AutoChip extends Pressable {
         if (t > 0f) draw.roundRect(bx, by, bw, bh, rad, Theme.AUTO, 0.16f * t * alpha);
         Theme.mix(Theme.STROKE, Theme.AUTO, t, c1);
         draw.roundRectStroke(bx, by, bw, bh, rad, 2f, c1, (0.8f + 0.2f * t) * alpha);
-        if (press > 0f) {
-            draw.roundRect(bx, by, bw, bh, rad, Theme.INK1, 0.08f * press * alpha);
+        if (press > 0f || hover > 0f) {
+            draw.roundRect(bx, by, bw, bh, rad, Theme.INK1, (0.08f * press + 0.05f * hover) * alpha);
         }
         ripple.color(Theme.AUTO);
         drawRipple(alpha);
@@ -79,7 +79,7 @@ final class AutoChip extends Pressable {
         alpha *= alphaMul();
         float s = visualScale();
         Theme.mix(Theme.INK2, Theme.AUTO, onK, c1);
-        r.bold(b, "AUTO", MapUi.cap(20f, k) * s, centerX() + shakeX(), centerY() - 22f * k * s,
+        r.bold(b, "AUTO", MapUi.cap(20f, k) * s, centerX() + shakeX(), centerY() + liftY() - 22f * k * s,
             Align.center | Fonts.VCENTER, c1, alpha);
     }
 }

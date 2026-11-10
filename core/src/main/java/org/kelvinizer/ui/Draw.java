@@ -3,10 +3,8 @@ package org.kelvinizer.ui;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
-import com.badlogic.gdx.graphics.g2d.Batch;
 import com.badlogic.gdx.graphics.g2d.NinePatch;
 import com.badlogic.gdx.graphics.g2d.PixmapPacker;
-import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureAtlas;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.glutils.PixmapTextureData;
@@ -59,22 +57,15 @@ public final class Draw implements Disposable {
      */
     public static final String RING_WATER = "ring_water";
     /**
-     * Note skins of the 2026-11-05 look (Kelvin 「按这页把水滴、水流、Drag、水雷、长水雷画进游戏」, baked by
-     * {@link SkinBaker}): DROP / STREAM heads (ground, sky and a grey ramp for the missed look), the DRAG's bar and
-     * diamond, the MINE body; the tear on a head, the STREAM body's far end (fill, rim, glow), its side glow, side
-     * rims and flowing bars, and the judgement lines' quantum bubble.
+     * A shell of the hit effects in 3D (Kelvin 2026-11-07 17:52, the design thread's 3D page v17): a clear sphere
+     * seen through both its faces, α = 1 − (1 − a)², a = 0.95·(1 − |n·v|)^2.2 + 0.14·(1 − 0.5|n·v|) on each
+     * face: a bright rim and a faint glow inside. The sphere's radius is {@link #SHELL_EDGE} of the half-size.
      */
-    public static final String SKIN_DROP_GROUND = "skin_drop_ground", SKIN_DROP_SKY = "skin_drop_sky",
-        SKIN_DROP_NEUTRAL = "skin_drop_neutral", SKIN_DRAG_BAR = "skin_drag_bar",
-        SKIN_DRAG_DIAMOND = "skin_drag_diamond", SKIN_MINE = "skin_mine", TEAR = "tear",
-        HOLD_END_FILL = "hold_end_fill", HOLD_END_LINE = "hold_end_line", HOLD_END_GLOW = "hold_end_glow",
-        HOLD_SIDE_GLOW = "hold_side_glow", HOLD_RIM = "hold_rim", HOLD_BAR = "hold_bar", BUBBLE = "bubble";
-    /** The body half width and round-end length the STREAM far-end skins are baked for (units). */
-    public static final float HOLD_END_HALF_W = 0.5f * SkinBaker.HOLD_CAP_W, HOLD_END_LEN = SkinBaker.HOLD_CAP_LEN;
-    /** Width of the DRAG diamond skin's diamond at note size 1 (units). */
-    public static final float DRAG_DIAMOND_W = 2f * SkinBaker.DIAMOND_HW;
-    /** The {@link #BUBBLE} sprite's bubble radius as a share of its half size. */
-    public static final float BUBBLE_R = SkinBaker.BUBBLE_R;
+    public static final String SHELL = "shell";
+    /** {@link #SHELL} times (1 + x) / 2, x from −1 at the sphere's left to 1 at its right: the side the light is on. */
+    public static final String SHELL_LIT = "shell_lit";
+    /** The sphere's radius in {@link #SHELL} and {@link #SHELL_LIT}, a share of the region's half-size. */
+    public static final float SHELL_EDGE = 124f / 128f;
     /** Number of {@link #RING_WATER} levels. */
     public static final int RING_WATER_LODS = 11;
     /** Stroke of every {@link #RING_WATER} level (gaussian full width at half maximum, texels). */
@@ -91,9 +82,7 @@ public final class Draw implements Disposable {
     private static final int NOISE_SIZE = 128;
     private static final float RING_THIN_R = 0.48f;
 
-    private final SpriteBatch batch;
-    /** Where the primitives draw: the shared batch, or a note's glitch recording ({@link #target}). */
-    private Batch sink;
+    private final SpaceBatch batch;
     private final PixmapPacker packer;
     private final Texture atlasTexture;
     private final TextureAtlas atlas;
@@ -101,12 +90,9 @@ public final class Draw implements Disposable {
     private final Texture noise;
     private final ShapeDrawer shapes;
     private final ObjectMap<String, TextureRegion> regions = new ObjectMap<>();
-    private final ObjectMap<String, Skin> skins = new ObjectMap<>();
-    /** The baked skins until the atlas exists (constructor only). */
-    private ObjectMap<String, SkinBaker.Baked> baked = new ObjectMap<>();
 
     private final TextureRegion white, softDot, ringSoft, ringThin, streak, glowV, shaft, noteGlow,
-        holdEdge, vignette, disc, whiteCore, gaussDot;
+        holdEdge, vignette, disc, whiteCore, gaussDot, shell, shellLit;
     private final TextureRegion[] ringWater = new TextureRegion[RING_WATER_LODS];
     private final NinePatch panel9, panelStroke9, chip9, pill9, note9;
     private final Nine ninePanel, nineChip, nineLarge;
@@ -121,8 +107,7 @@ public final class Draw implements Disposable {
 
     /** Creates the batch, atlas, noise texture and shape drawer. Must run on the GL thread. */
     public Draw() {
-        batch = new SpriteBatch(4000);
-        sink = batch;
+        batch = new SpaceBatch(4000);
         packer = new PixmapPacker(ATLAS_SIZE, ATLAS_SIZE, Pixmap.Format.RGBA8888, ATLAS_PADDING, true,
             new PixmapPacker.GuillotineStrategy());
         // every sprite is white × alpha; white padding keeps the mip levels from darkening edges
@@ -148,14 +133,12 @@ public final class Draw implements Disposable {
                 r.getWidth(), r.getHeight());
             regions.put(RING_WATER + i, ringWater[i]);
         }
-        for (ObjectMap.Entry<String, SkinBaker.Baked> e : baked) {
-            skins.put(e.key, new Skin(regions.get(e.key), e.value));
-        }
-        baked = null;
         white = regions.get(WHITE);
         whiteCore = new TextureRegion(white, 1, 1, 2, 2);
         softDot = regions.get(SOFT_DOT);
         gaussDot = regions.get(GAUSS_DOT);
+        shell = regions.get(SHELL);
+        shellLit = regions.get(SHELL_LIT);
         ringSoft = regions.get(RING_SOFT);
         ringThin = regions.get(RING_THIN);
         streak = regions.get(STREAK);
@@ -191,27 +174,9 @@ public final class Draw implements Disposable {
     }
 
     // ------------------------------------------------------------------ accessors
-    /** The shared SpriteBatch (do not dispose). */
-    public SpriteBatch batch() {
+    /** The shared batch: a SpriteBatch with a space mode for the 3D field ({@link SpaceBatch}; do not dispose). */
+    public SpaceBatch batch() {
         return batch;
-    }
-
-    /**
-     * Sends the primitives that draw into the batch (sprites, discs, rings, fills and skins; not the
-     * {@link #shapes()} ShapeDrawer) to {@code to} instead, or back to the shared batch for null: a floating note's
-     * glitch recording.
-     *
-     * @return the batch they drew into before
-     */
-    public Batch target(Batch to) {
-        Batch was = sink;
-        sink = to != null ? to : batch;
-        return was;
-    }
-
-    /** @return the batch the primitives draw into now ({@link #target}) */
-    public Batch sink() {
-        return sink;
     }
 
     /** ShapeDrawer bound to the shared batch and the atlas' white region. */
@@ -249,6 +214,16 @@ public final class Draw implements Disposable {
     /** {@code gauss_dot}: α = gaussian of σ = size / 5, faded to 0 at the edge ({@link #GAUSS_DOT}). */
     public TextureRegion gaussDot() {
         return gaussDot;
+    }
+
+    /** {@code shell}: a clear sphere with a bright rim, white × α ({@link #SHELL}). */
+    public TextureRegion shell() {
+        return shell;
+    }
+
+    /** {@code shell_lit}: the {@link #SHELL} brighter towards its right, white × α ({@link #SHELL_LIT}). */
+    public TextureRegion shellLit() {
+        return shellLit;
     }
 
     /** Alias of {@link #softDot()} (ARCHITECTURE "glow"). */
@@ -349,70 +324,6 @@ public final class Draw implements Disposable {
         return note9;
     }
 
-    /** A baked note skin by name ({@link #SKIN_DROP_GROUND} …); throws for unknown names. */
-    public Skin skin(String name) {
-        Skin k = skins.get(name);
-        if (k == null) throw new GdxRuntimeException("Unknown note skin: " + name);
-        return k;
-    }
-
-    /**
-     * Draws an upright DROP head of the 2026-11-05 look (as the game draws it: the glass body and its tear) with its
-     * leading edge centred on ({@code cx}, {@code y}) and its body above it, {@code w} wide and {@code h} tall: for
-     * screens that show a key outside a run (calibration). A sky head points down at its line ({@code sky}).
-     */
-    public void noteHead(boolean sky, float cx, float y, float w, float h, float alpha) {
-        float old = sink.getPackedColor();
-        float s = h / SkinBaker.DROP_H;
-        Skin k = skin(sky ? SKIN_DROP_SKY : SKIN_DROP_GROUND);
-        float c = Color.toFloatBits(1f, 1f, 1f, alpha);
-        float dir = sky ? -1f : 1f;
-        int n = skinQuads(k, verts, 0, cx, y, w, s, dir, c);
-        sink.draw(k.region.getTexture(), verts, 0, n);
-        Skin t = skin(TEAR);
-        Color tc = sky ? Theme.SKY_TEAR : Theme.WHITE;
-        float tb = Color.toFloatBits(tc.r, tc.g, tc.b, alpha);
-        n = plainQuad(t, verts, 0, cx, y, s, dir, tb);
-        sink.draw(t.region.getTexture(), verts, 0, n);
-        sink.setPackedColor(old);
-    }
-
-    /**
-     * Writes the quads of skin {@code k} for a body {@code w} wide at note size {@code s}, upright ({@code dir} 1) or
-     * turned over ({@code dir} −1, a sky note), leading edge centred on ({@code cx}, {@code y}).
-     *
-     * @return floats written
-     */
-    private static int skinQuads(Skin k, float[] q, int i, float cx, float y, float w, float s, float dir, float c) {
-        float hw = 0.5f * w;
-        float l = -hw + k.x0 * s, m = -hw + k.xs * s;
-        float yb = y + dir * k.y0 * s, yt = y + dir * k.y1 * s;
-        if (m < 0f) {
-            i = flatQuad(q, i, cx + dir * l, yb, cx + dir * m, yt, k.uA, k.uS, k.vB, k.vT, c);
-            i = flatQuad(q, i, cx + dir * m, yb, cx - dir * m, yt, k.uC, k.uC, k.vB, k.vT, c);
-            return flatQuad(q, i, cx - dir * m, yb, cx - dir * l, yt, k.uS, k.uA, k.vB, k.vT, c);
-        }
-        float um = k.uA + (k.uS - k.uA) * (-l) / (m - l);
-        i = flatQuad(q, i, cx + dir * l, yb, cx, yt, k.uA, um, k.vB, k.vT, c);
-        return flatQuad(q, i, cx, yb, cx - dir * l, yt, um, k.uA, k.vB, k.vT, c);
-    }
-
-    /** Writes plain sprite {@code k} at its place in a note's local frame ({@link #skinQuads}); @return floats. */
-    private static int plainQuad(Skin k, float[] q, int i, float cx, float y, float s, float dir, float c) {
-        return flatQuad(q, i, cx + dir * k.x0 * s, y + dir * k.y0 * s, cx + dir * k.x1 * s, y + dir * k.y1 * s,
-            k.uA, k.uS, k.vB, k.vT, c);
-    }
-
-    /** One axis-aligned quad from (xa, ya) to (xb, yb) with u {@code ua → ub}, v {@code va → vb}. */
-    private static int flatQuad(float[] q, int i, float xa, float ya, float xb, float yb, float ua, float ub, float va,
-                                float vb, float c) {
-        put(q, i, xa, ya, c, ua, va);
-        put(q, i + 5, xa, yb, c, ua, vb);
-        put(q, i + 10, xb, yb, c, ub, vb);
-        put(q, i + 15, xb, ya, c, ub, va);
-        return i + 20;
-    }
-
     /**
      * Context-restore hook (call from Main.resume). Textures here are managed and are
      * re-uploaded by libGDX itself; this only resets the batch colour and shape-drawer state.
@@ -425,10 +336,10 @@ public final class Draw implements Disposable {
     // ------------------------------------------------------------------ drawing helpers
     /** Solid axis-aligned rectangle. */
     public void rect(float x, float y, float w, float h, Color c, float alpha) {
-        float old = sink.getPackedColor();
-        sink.setColor(c.r, c.g, c.b, c.a * alpha);
-        sink.draw(whiteCore, x, y, w, h);
-        sink.setPackedColor(old);
+        float old = batch.getPackedColor();
+        batch.setColor(c.r, c.g, c.b, c.a * alpha);
+        batch.draw(whiteCore, x, y, w, h);
+        batch.setPackedColor(old);
     }
 
     /** Rectangle with a vertical gradient from {@code bottom} to {@code top}. */
@@ -442,7 +353,7 @@ public final class Draw implements Disposable {
         put(q, 5, x, y + h, ct, u, v);
         put(q, 10, x + w, y + h, ct, u, v);
         put(q, 15, x + w, y, cb, u, v);
-        sink.draw(atlasTexture, q, 0, 20);
+        batch.draw(atlasTexture, q, 0, 20);
     }
 
     /**
@@ -461,7 +372,7 @@ public final class Draw implements Disposable {
         put(q, 5, x0, yt0, ct, u, v);
         put(q, 10, x1, yt1, ct, u, v);
         put(q, 15, x1, yb1, cb, u, v);
-        sink.draw(atlasTexture, q, 0, 20);
+        batch.draw(atlasTexture, q, 0, 20);
     }
 
     /** Rectangle with a horizontal gradient from {@code left} to {@code right}. */
@@ -475,23 +386,23 @@ public final class Draw implements Disposable {
         put(q, 5, x, y + h, cl, u, v);
         put(q, 10, x + w, y + h, cr, u, v);
         put(q, 15, x + w, y, cr, u, v);
-        sink.draw(atlasTexture, q, 0, 20);
+        batch.draw(atlasTexture, q, 0, 20);
     }
 
     /** Sprite centred at (cx, cy) with size w×h, tinted. */
     public void sprite(TextureRegion r, float cx, float cy, float w, float h, Color c, float alpha) {
-        float old = sink.getPackedColor();
-        sink.setColor(c.r, c.g, c.b, c.a * alpha);
-        sink.draw(r, cx - w * 0.5f, cy - h * 0.5f, w, h);
-        sink.setPackedColor(old);
+        float old = batch.getPackedColor();
+        batch.setColor(c.r, c.g, c.b, c.a * alpha);
+        batch.draw(r, cx - w * 0.5f, cy - h * 0.5f, w, h);
+        batch.setPackedColor(old);
     }
 
     /** Sprite centred at (cx, cy), rotated by {@code degrees} about its centre, tinted. */
     public void sprite(TextureRegion r, float cx, float cy, float w, float h, float degrees, Color c, float alpha) {
-        float old = sink.getPackedColor();
-        sink.setColor(c.r, c.g, c.b, c.a * alpha);
-        sink.draw(r, cx - w * 0.5f, cy - h * 0.5f, w * 0.5f, h * 0.5f, w, h, 1f, 1f, degrees);
-        sink.setPackedColor(old);
+        float old = batch.getPackedColor();
+        batch.setColor(c.r, c.g, c.b, c.a * alpha);
+        batch.draw(r, cx - w * 0.5f, cy - h * 0.5f, w * 0.5f, h * 0.5f, w, h, 1f, 1f, degrees);
+        batch.setPackedColor(old);
     }
 
     /** Anti-aliased filled disc of radius {@code radius}. */
@@ -584,7 +495,7 @@ public final class Draw implements Disposable {
             put(q, 45, cx + r3 * ca, cy + r3 * sa, clear, u, v);
             put(q, 50, cx + r3 * cb, cy + r3 * sb, clear, u, v);
             put(q, 55, cx + r2 * cb, cy + r2 * sb, solid, u, v);
-            sink.draw(atlasTexture, q, 0, 60);
+            batch.draw(atlasTexture, q, 0, 60);
             ca = cb;
             sa = sb;
         }
@@ -614,7 +525,7 @@ public final class Draw implements Disposable {
             put(q, 5, rings[2 * i], rings[2 * i + 1], solid, u, v);
             put(q, 10, rings[2 * i + 2], rings[2 * i + 3], solid, u, v);
             put(q, 15, rings[2 * j], rings[2 * j + 1], solid, u, v);
-            sink.draw(atlasTexture, q, 0, 20);
+            batch.draw(atlasTexture, q, 0, 20);
         }
         for (int i = 0; i < n; i++) band(2 * i, 2 * ((i + 1) % n), 0, 16, solid, clear, u, v);
     }
@@ -651,7 +562,7 @@ public final class Draw implements Disposable {
         put(q, 5, r[out + a], r[out + a + 1], cout, u, v);
         put(q, 10, r[out + b], r[out + b + 1], cout, u, v);
         put(q, 15, r[in + b], r[in + b + 1], cin, u, v);
-        sink.draw(atlasTexture, q, 0, 20);
+        batch.draw(atlasTexture, q, 0, 20);
     }
 
     /**
@@ -798,7 +709,7 @@ public final class Draw implements Disposable {
         i = quad(i, x0, y2, x1, y3, u0, v2, u1, vTop, c2, c3);
         i = quad(i, x1, y2, x2, y3, u1, v2, u2, vTop, c2, c3);
         i = quad(i, x2, y2, x3, y3, u2, v2, u3, vTop, c2, c3);
-        sink.draw(atlasTexture, verts, 0, i);
+        batch.draw(atlasTexture, verts, 0, i);
     }
 
     private int quad(int i, float xa, float ya, float xb, float yb, float ua, float vb, float ub, float vt,
@@ -847,48 +758,11 @@ public final class Draw implements Disposable {
         }
     }
 
-    /**
-     * 烘焙好的键皮肤：图集小图和它在键自己坐标里的位置（参考单位，键大小 1；y 从朝线的边量起）。
-     * A baked note skin ({@link SkinBaker}): its region and where it sits in a note's local frame (units at note size
-     * 1, y from the leading edge, x across). A stretchable skin holds a body's left cap ({@code x0} to {@code xs} from
-     * the body's left end) and a short uniform column at {@code uC}: a body of any width is the cap, the column
-     * stretched and the cap mirrored. A plain sprite spans {@code x0 … x1} about the body's centre line.
-     */
-    public static final class Skin {
-        public final TextureRegion region;
-        /** Left edge, cap end (stretchable) or right edge (plain), bottom and top, in units at note size 1. */
-        public final float x0, xs, x1, y0, y1;
-        /** u at the left edge, at the cap end (the right edge of a plain sprite) and in the column; v bottom, top. */
-        public final float uA, uS, uC, vB, vT;
-
-        Skin(TextureRegion r, SkinBaker.Baked b) {
-            region = r;
-            x0 = b.x0;
-            xs = b.xs;
-            x1 = b.x1;
-            y0 = b.y0;
-            y1 = b.y1;
-            float u = r.getU(), du = r.getU2() - u;
-            uA = u;
-            if (b.capTexels > 0) {
-                uS = u + du * b.capTexels / b.w;
-                uC = u + du * (b.capTexels + 0.5f * SkinBaker.COLUMN) / b.w;
-            } else {
-                uS = r.getU2();
-                uC = u + 0.5f * du;
-            }
-            vT = r.getV();
-            vB = r.getV2();
-        }
-    }
-
     // ================================================================== generation
     private static final String[] NAMES = {
         WHITE, SOFT_DOT, RING_SOFT, RING_THIN, STREAK, GLOW_V, SHAFT, NOTE_9P, NOTE_GLOW, HOLD_EDGE,
         PANEL_9P, PANEL_STROKE_9P, CHIP_9P, PILL_9P, VIGNETTE, DISC, PANEL_STROKE2_9P, PANEL_STROKE3_9P,
-        CHIP_STROKE2_9P, ROUND_LG_9P, ROUND_LG_STROKE2_9P, ROUND_LG_STROKE3_9P, GAUSS_DOT,
-        SKIN_DROP_GROUND, SKIN_DROP_SKY, SKIN_DROP_NEUTRAL, SKIN_DRAG_BAR, SKIN_DRAG_DIAMOND, SKIN_MINE, TEAR,
-        HOLD_END_FILL, HOLD_END_LINE, HOLD_END_GLOW, HOLD_SIDE_GLOW, HOLD_RIM, HOLD_BAR, BUBBLE};
+        CHIP_STROKE2_9P, ROUND_LG_9P, ROUND_LG_STROKE2_9P, ROUND_LG_STROKE3_9P, GAUSS_DOT, SHELL, SHELL_LIT};
 
     /** Per-pixel generator returning RGBA8888 for pixel centre (px, py), py measured downward. */
     private interface Gen {
@@ -970,9 +844,7 @@ public final class Draw implements Disposable {
             float t = MathUtils.clamp((d - inner * 0.35f) / (-inner * 1.35f), 0f, 1f);
             float a = (1f - t);
             a = a * a;
-            // fades out over the outer 8 texels, to nothing at the border, so the quad's edges never show
-            float e = MathUtils.clamp(-d / 8f, 0f, 1f);
-            return white(a * e * e * (3f - 2f * e));
+            return white(a);
         });
         pack(HOLD_EDGE, 16, 64, (px, py, w, h) -> {
             float t = px / w;
@@ -1001,22 +873,20 @@ public final class Draw implements Disposable {
             float d = (float) Math.sqrt(dx * dx + dy * dy) - 0.484f * w;
             return white(MathUtils.clamp(0.5f - d, 0f, 1f));
         });
-        SkinBaker.Baked[] drops = SkinBaker.drops(SkinBaker.GROUND, SkinBaker.SKY, SkinBaker.NEUTRAL);
-        packSkin(SKIN_DROP_GROUND, drops[0]);
-        packSkin(SKIN_DROP_SKY, drops[1]);
-        packSkin(SKIN_DROP_NEUTRAL, drops[2]);
-        packSkin(SKIN_DRAG_BAR, SkinBaker.dragBar());
-        packSkin(SKIN_DRAG_DIAMOND, SkinBaker.dragDiamond());
-        packSkin(SKIN_MINE, SkinBaker.mine());
-        packSkin(TEAR, SkinBaker.tear());
-        SkinBaker.Baked[] ends = SkinBaker.holdEnds();
-        packSkin(HOLD_END_FILL, ends[SkinBaker.END_FILL]);
-        packSkin(HOLD_END_LINE, ends[SkinBaker.END_LINE]);
-        packSkin(HOLD_END_GLOW, ends[SkinBaker.END_GLOW]);
-        packSkin(HOLD_SIDE_GLOW, SkinBaker.sideGlow());
-        packSkin(HOLD_RIM, SkinBaker.rim());
-        packSkin(HOLD_BAR, SkinBaker.holdBar());
-        packSkin(BUBBLE, SkinBaker.bubble());
+        // the hit effects' shells in 3D: 4 × 4 samples a texel, so the sharp rim stays smooth
+        for (int k = 0; k < 2; k++) {
+            final boolean lit = k == 1;
+            pack(lit ? SHELL_LIT : SHELL, 256, 256, (px, py, w, h) -> {
+                float sum = 0f;
+                for (int i = 0; i < 16; i++) {
+                    float x = (px - 0.5f + ((i & 3) + 0.5f) / 4f - w * 0.5f) / (w * 0.5f * SHELL_EDGE);
+                    float y = (py - 0.5f + ((i >> 2) + 0.5f) / 4f - h * 0.5f) / (h * 0.5f * SHELL_EDGE);
+                    float s = shellAlpha(x * x + y * y);
+                    sum += lit ? s * (1f + x) * 0.5f : s;
+                }
+                return white(sum / 16f);
+            });
+        }
         // water-ring levels: gaussian stroke, 6 texels of margin (> 4σ), sizes kept to multiples of 4
         float sigma = RING_WATER_FWHM / 2.3548f;
         for (int i = 0; i < RING_WATER_LODS; i++) {
@@ -1028,12 +898,6 @@ public final class Draw implements Disposable {
                 return white((float) Math.exp(-0.5f * d * d));
             });
         }
-    }
-
-    /** Packs a baked skin's texels and keeps its geometry for {@link Skin}. */
-    private void packSkin(String name, SkinBaker.Baked b) {
-        pack(name, b.w, b.h, (px, py, w, h) -> b.rgba[(int) py * w + (int) px]);
-        baked.put(name, b);
     }
 
     private void pack(String name, int w, int h, Gen gen) {
@@ -1055,6 +919,14 @@ public final class Draw implements Disposable {
     }
 
     /** Normalised radial distance (0 centre, 1 at the half-size). */
+    /** α of a {@link #SHELL} at the squared distance {@code rr} from its centre (sphere radius 1). */
+    static float shellAlpha(float rr) {
+        if (rr >= 1f) return 0f;
+        float d = (float) Math.sqrt(1f - rr); // |n·v|
+        float a = Math.min(1f, 0.95f * (float) Math.pow(1f - d, 2.2) + 0.14f * (1f - 0.5f * d));
+        return 1f - (1f - a) * (1f - a);
+    }
+
     private static float radial(float px, float py, int w, int h) {
         float dx = (px - w * 0.5f) / (w * 0.5f), dy = (py - h * 0.5f) / (h * 0.5f);
         return (float) Math.sqrt(dx * dx + dy * dy);

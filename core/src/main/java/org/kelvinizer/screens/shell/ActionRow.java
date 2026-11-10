@@ -89,6 +89,11 @@ public class ActionRow extends SettingRow {
         for (int i = 0; i < count; i++) actions[i].cancel();
     }
 
+    @Override
+    public void mouseMoved(float px, float py) {
+        for (int i = 0; i < count; i++) actions[i].mouseMoved(px, py);
+    }
+
     /** True while a hold-to-confirm button of this row is held (the list must not scroll that pointer). */
     @Override
     public boolean isGrabbing() {

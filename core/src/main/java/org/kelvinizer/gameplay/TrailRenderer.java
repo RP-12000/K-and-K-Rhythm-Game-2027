@@ -3,7 +3,9 @@ package org.kelvinizer.gameplay;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.math.MathUtils;
 import org.kelvinizer.elements.Chart;
+import org.kelvinizer.elements.JudgementLine;
 import org.kelvinizer.elements.LaneLayout;
+import org.kelvinizer.elements.Line;
 import org.kelvinizer.elements.Note;
 import org.kelvinizer.elements.NoteTrail;
 import org.kelvinizer.elements.NoteType;
@@ -179,13 +181,10 @@ final class TrailRenderer {
                 if (!(t.alpha() > 0f)) continue;
                 trailed[c] = i;
                 seg[c] = t;
-                spawn[c] = n.positionAt(n.visibleFrom());
+                spawn[c] = NoteRenderer.position(n, n.visibleFrom());
                 tQuads[c] = quadsPerCopy(n);   // also initialises the enum switch here, not in the first frame
-                // level copies of a note that never moves sideways or turns would all sit on the note (its own x
-                // events and layers, an orbit and rotation layers move or turn it too)
-                stillLevel[c] = t.mode() == NoteTrail.Mode.LEVEL && geo.staticLayout() && n.rotationEvents().isEmpty()
-                    && n.xEvents().isEmpty() && n.xLayers().isEmpty() && n.rotationLayers().isEmpty()
-                    && n.orbit() == null;
+                // level copies of a note that never moves sideways or turns would all sit on the note
+                stillLevel[c] = t.mode() == NoteTrail.Mode.LEVEL && geo.staticLayout() && n.rotationEvents().isEmpty();
                 c++;
             }
         }
@@ -238,7 +237,7 @@ final class TrailRenderer {
      */
     private boolean eligible(int i) {
         Note n = notes[i];
-        if (n.floats() || !showsTrail(n)) return false; // a floating note has no trail (CHART_FORMAT §11)
+        if (!showsTrail(n)) return false;
         if (n.type() != NoteType.UNIVERSAL || n.isTideStream() || n.fake()) return true;
         for (int j = i - 1; j >= 0; j--) {
             Note p = notes[j];
@@ -304,7 +303,7 @@ final class TrailRenderer {
             NoteTrail t = seg[c];
             if (TrailPlan.noCopies(n, t, outcome)) continue;
             boolean up = n.isUpper();
-            float lineY = e.lineY(n.line());
+            float lineY = e.landY(n);
             float livePos = following ? entry.position(i, n, beat) : NoteRenderer.position(n, beat);
             boolean liveHidden = hidden(livePos);
             if (liveHidden && t.mode() == NoteTrail.Mode.LEVEL) continue; // level copies keep the hidden distance
@@ -446,31 +445,69 @@ final class TrailRenderer {
         copiesDrawn = 0;
         if (cutoff == 0) return;
         float beat = e.visualBeat();
+        shown = -1;
         for (int k = cutoff - 1; k >= 0; k--) {
             int c = cNote[k];
             int i = trailed[c];
-            Note n = notes[i];
-            NoteTrail t = seg[c];
-            int stride = TrailPlan.stride(cCopies[k], cQuality[k], globalStride);
-            for (int j = cLast[k]; j >= cFirst[k]; j--) {
-                if (!TrailPlan.drawnAt(j, stride)) continue;
-                float s = t.momentOf(beat, j);
-                if (!TrailPlan.showsMoment(n, t, cOutcome[k], cHit[k], s, low[c])) continue;
-                if (quadsDrawn + cQuads[k] > budget) break;
-                int q;
-                switch (n.type()) {
-                    case MINE: q = copyMine(e, i, n, k, j, stride, s, beat); break;
-                    case UNIVERSAL:
-                    case TIDE_MINE: q = copyTide(e, i, n, k, j, stride, s, beat); break;
-                    default: q = copyLane(e, i, n, k, j, stride, s, beat); break;
-                }
-                if (q > 0) {
-                    quadsDrawn += q;
-                    copiesDrawn++;
-                }
+            copies(e, k, c, i, notes[i], beat);
+        }
+        if (shown >= 0) painter.batch().setProjectionMatrix(space.combined());
+        painter.batch().setColor(Color.WHITE);
+    }
+
+    /** The frame the copies are drawn through now ({@link #at}; −1: the view's own). */
+    private int shown = -1;
+
+    /**
+     * Draws the next copies of key n through the frame of its turned lane at their moment {@code s} (Kelvin 2026-11-10
+     * 02:17 「残影要加上」: a key moving with its lane leaves its copies where it was), a key on a sea or a space key's
+     * through that frame now (2026-11-09 00:13).
+     */
+    private void at(GameEngine e, Note n, float s) {
+        LaneLayout lay = e.layout();
+        int f;
+        if (n.sea() != null || n.spaceTrack() || n.spacePath()) {
+            f = space.keyFrame(lay, n);
+        } else {
+            JudgementLine lines = chart.lineEvents();
+            f = space.pastFrame(geo.layoutAt(s, lay), n, Field.y(lines.yAt(Line.LOWER, s)),
+                Field.y(lines.yAt(Line.UPPER, s)));
+        }
+        if (f == shown) return;
+        painter.batch().setProjectionMatrix(f >= 0 ? space.frameCombined(f, 0f) : space.combined());
+        shown = f;
+    }
+
+    /** The 3D view this frame, for a turned lane's or sea's frame ({@link #setSpace}); null while flat. */
+    private View3D space;
+
+    /** Sets the 3D view the field is drawn through this frame, or null while flat. */
+    void setSpace(View3D space) {
+        this.space = space;
+    }
+
+    /** Draws the copies of candidate k (note i of the chart, trail c). */
+    private void copies(GameEngine e, int k, int c, int i, Note n, float beat) {
+        NoteTrail t = seg[c];
+        int stride = TrailPlan.stride(cCopies[k], cQuality[k], globalStride);
+        for (int j = cLast[k]; j >= cFirst[k]; j--) {
+            if (!TrailPlan.drawnAt(j, stride)) continue;
+            float s = t.momentOf(beat, j);
+            if (!TrailPlan.showsMoment(n, t, cOutcome[k], cHit[k], s, low[c])) continue;
+            if (quadsDrawn + cQuads[k] > budget) break;
+            if (space != null) at(e, n, s);
+            int q;
+            switch (n.type()) {
+                case MINE: q = copyMine(e, i, n, k, j, stride, s, beat); break;
+                case UNIVERSAL:
+                case TIDE_MINE: q = copyTide(e, i, n, k, j, stride, s, beat); break;
+                default: q = copyLane(e, i, n, k, j, stride, s, beat); break;
+            }
+            if (q > 0) {
+                quadsDrawn += q;
+                copiesDrawn++;
             }
         }
-        painter.batch().setColor(Color.WHITE);
     }
 
     /** @return ms since the note's miss at moment s (negative before it), or NaN when it was not missed. */
@@ -491,8 +528,12 @@ final class TrailRenderer {
      */
     private float placeCopy(GameEngine e, int k, Note n, float s, float beat) {
         TrailGeometry g = geo;
-        if (!place(n, seg[cNote[k]].mode(), s, beat, e.layout(), e.lineY(n.line()))) return 0f;
+        if (!place(n, seg[cNote[k]].mode(), s, beat, e.layout(), e.landY(n))) return 0f;
         boolean up = n.isUpper();
+        // through a turned lane's frame the flat picture's edges say nothing about where it shows, as for the live key
+        int lane = g.layout.keyLane(n);
+        boolean framed = space != null && (n.sea() != null || n.spaceTrack() || n.spacePath()
+            ? space.keyFrame(e.layout(), n) >= 0 : lane >= 0 && g.layout.turned(lane));
         switch (n.type()) {
             case MINE: {
                 float pad = NoteRenderer.rotPad(g.rot, g.laneWidth);
@@ -501,7 +542,9 @@ final class TrailRenderer {
                 // body or column turned toward the line reaches its length beyond the leading edge
                 float toward = NoteRenderer.turnReach(up, g.rot, 0f, Math.max(painter.mineHeight(), tail));
                 float near = NoteRenderer.FLAT_CULL + pad + Math.max(pad > 0.5f ? tail : 0f, toward);
-                if (NoteRenderer.offScreen(up, g.y, Math.max(painter.mineHeight(), tail) + pad, near)) return 0f;
+                if (!framed && NoteRenderer.offScreen(up, g.y, Math.max(painter.mineHeight(), tail) + pad, near)) {
+                    return 0f;
+                }
                 break;
             }
             case UNIVERSAL:
@@ -509,7 +552,7 @@ final class TrailRenderer {
                 float far = Math.max(painter.tideReach(), Math.min(g.tail, NoteRenderer.MAX_TAIL_DRAW));
                 // as the live TIDE: a turned one crosses the screen slanted and is not culled
                 boolean turned = NoteShapes.turned(g.rot - (up ? 180f : 0f));
-                if (!turned && NoteRenderer.offScreen(up, g.y, far, NoteRenderer.FLAT_CULL)) return 0f;
+                if (!turned && !framed && NoteRenderer.offScreen(up, g.y, far, NoteRenderer.FLAT_CULL)) return 0f;
                 if (g.windowRight - g.windowLeft <= 2f * TIDE_INSET) return 0f;
                 break;
             }
@@ -522,7 +565,7 @@ final class TrailRenderer {
                     far += NoteRenderer.rotPad(g.rot, w);
                     near += NoteRenderer.turnReach(up, g.rot, w, painter.noteHeight() + tail);
                 }
-                if (NoteRenderer.offScreen(up, g.y, far, near)) return 0f;
+                if (!framed && NoteRenderer.offScreen(up, g.y, far, near)) return 0f;
                 break;
             }
         }
@@ -542,7 +585,7 @@ final class TrailRenderer {
         boolean mine = n.type() == NoteType.MINE;
         float ref = mine ? NoteRenderer.MINE_H : NoteRenderer.NOTE_H;
         float h = mine ? painter.mineHeight() : painter.noteHeight();
-        float bx = g.x;
+        float bx = g.x + n.offsetXAt(g.lookBeat) * Field.kx();
         float x = NoteShapes.anchorX(n, g.lookBeat, bx, g.y, g.pos, ref, h, g.rot);
         g.y = NoteShapes.anchorY(n, g.lookBeat, bx, g.y, g.pos, ref, h, g.rot);
         g.x = x;
@@ -567,31 +610,33 @@ final class TrailRenderer {
         float h = painter.noteHeight();
         float a = TrailPlan.copyAlpha(seg[cNote[k]], j, stride, opacity, cLive[k]);
         boolean drag = n.type() == NoteType.DRAG;
-        Color base = drag ? Theme.DRAG : up ? (hold ? Theme.SKY_HOLD : Theme.SKY_SIG) : Theme.GROUND_NOTE;
+        Color base = drag ? Theme.DRAG : up ? Theme.SKY_SIG : Theme.GROUND_NOTE;
         float headMul = 1f;
-        float grey = 0f;
         float ribHead = NoteShapes.ribbonHeadAlpha(false);
         float ribTail = NoteShapes.ribbonTailAlpha(false);
+        boolean lost = false;
         if (!hold && cOutcome[k] != TrailPlan.HIT) a *= NoteRenderer.lateFade(e, n); // fades with its DROP
         float age = missAge(e, i, cOutcome[k], s);
         if (age >= 0f) {
+            lost = true;
             if (hold) {
-                grey = MathUtils.clamp(age / MISS_FADE_MS, 0f, 1f);
-                headMul = 1f - 0.70f * grey;
-                ribHead += (NoteShapes.RIBBON_BROKEN_HEAD_A - ribHead) * grey;
-                ribTail += (NoteShapes.RIBBON_BROKEN_TAIL_A - ribTail) * grey;
+                float m = MathUtils.clamp(age / MISS_FADE_MS, 0f, 1f);
+                Theme.mix(base, Theme.MISSED, m, col);
+                headMul = 1f - 0.70f * m;
+                ribHead += (NoteShapes.RIBBON_BROKEN_HEAD_A - ribHead) * m;
+                ribTail += (NoteShapes.RIBBON_BROKEN_TAIL_A - ribTail) * m;
             } else {
-                grey = MathUtils.clamp(age / MISS_GREY_MS, 0f, 1f);
+                Theme.mix(base, Theme.MISSED, MathUtils.clamp(age / MISS_GREY_MS, 0f, 1f), col);
                 a *= 1f - MathUtils.clamp(age / MISS_FADE_MS, 0f, 1f);
             }
+        } else {
+            col.set(base);
         }
-        Theme.mix(base, Theme.MISSED, grey, col);
         if (a <= NoteRenderer.MIN_ALPHA) return 0;
-        if (drag) return painter.paintDrag(g.x, g.y, w, h, g.rot, grey, a);
+        if (drag) return painter.paintDrag(g.x, g.y, w, h, g.rot, col, a);
         float rw = hold ? NoteShapes.ribbonWidth(g.laneWidth, up) : 0f;
-        // a copy is a still moment: no light bars
-        return painter.paintLaneNote(g.x, g.y, w, h, g.rot, up, grey, col, a, headMul, ribHead, ribTail, tail, rw,
-            false, false);
+        return painter.paintLaneNote(g.x, g.y, w, h, g.rot, col, a, headMul, ribHead, ribTail, tail, rw,
+            NoteShapes.ribbonEdge(rw, up), lost);
     }
 
     private int copyMine(GameEngine e, int i, Note n, int k, int j, int stride, float s, float beat) {
@@ -609,13 +654,13 @@ final class TrailRenderer {
             a *= 1f - MathUtils.clamp(age / (touched ? MINE_TOUCH_FADE_MS : MINE_PASS_FADE_MS), 0f, 1f);
         }
         if (a <= NoteRenderer.MIN_ALPHA) return 0;
+        int q = 0;
         if (laneMine) {
             float tail = Math.min(g.tail, NoteRenderer.MAX_TAIL_DRAW);
-            int q = painter.paintLaneMineColumn(g.x, g.y, g.rot, g.laneWidth, tail, a, 0f,
-                e.lineY(n.line().other()), false, false);
-            return q + painter.paintLaneMineHead(g.x, g.y, g.laneWidth, g.rot, a);
+            q += painter.paintLaneMineColumn(g.x, g.y, g.rot, g.laneWidth, tail, a, 0f,
+                e.lineY(n.line().other()) + e.layout().keyLift(n, n.line().other()) * Field.ky(), false, false);
         }
-        return painter.paintMine(g.x, g.y, mw, mh, g.rot, a);
+        return q + painter.paintMine(g.x, g.y, mw, mh, g.rot, a);
     }
 
     /**

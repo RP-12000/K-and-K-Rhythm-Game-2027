@@ -120,7 +120,7 @@
 
 1. 新建文件夹 `assets/Charts/<歌曲 id>/`。**文件夹名就是歌曲 id**，存档里的成绩按它记录，以后改名会丢失这首歌的成绩。
 2. 放入音频 `<歌曲 id>.ogg`（或 `.mp3` / `.wav`），文件名与文件夹同名。
-3. 放入谱面：`Surface.json`、`Shallow.json`、`Deep.json`、`Abyss.json` 中至少一个（格式见 `docs/CHART_FORMAT.md`）。歌名、曲师、画师、谱师显示 `Shallow.json` 里的值（没有就用 `Surface.json` 的）。
+3. 放入谱面：`Shallow.json`、`Medium.json`、`Deep.json`、`Abyss.json` 中至少一个（旧命名 `Surface.json`、`Shallow.json`、`Deep.json`、`Abyss.json` 也认；格式见 `docs/CHART_FORMAT.md`）。歌名、曲师、画师、谱师显示 MEDIUM 谱面里的值（没有就用 SHALLOW 的）。
 4. 放入曲绘 `jacket.png`（正方形）。
 5. 可选：游戏背景 `bg.png`；结算音乐 `result.ogg`。
 6. 在 `assets/Charts/index.json` 某个章节的 `songs` 列表里加上歌曲 id；需要设置试听段（起点和终点）、结算音乐起点或微调地图位置时，改用对象写法（试听段也可以写在歌曲文件夹的 `song.json` 里，见 `docs/CHART_FORMAT_v4.md` §12.2）：
@@ -164,6 +164,6 @@
 
 ## 7. 教程
 
-教程使用 `assets/Introduction/`（与 `Charts/` 同级）：谱面 `Surface.json`，音乐 `Introduction.wav`。文件夹名可以在 manifest 的 `"tutorial"` 里修改。教程不属于任何章节：在地图上它是最上面的 LAUNCH POINT 浮标（选中后按 DIVE IN 进入），地图右上角也有教程按钮。`Introduction.wav` 同时是结算音乐的临时备用（§1.2）。
+教程使用 `assets/Introduction/`（与 `Charts/` 同级）：谱面 `Shallow.json`（旧命名 `Surface.json`），音乐 `Introduction.wav`。文件夹名可以在 manifest 的 `"tutorial"` 里修改。教程不属于任何章节：在地图上它是最上面的 LAUNCH POINT 浮标（选中后按 DIVE IN 进入），地图右上角也有教程按钮。`Introduction.wav` 同时是结算音乐的临时备用（§1.2）。
 
-教程谱面 `Surface.json` 是 Kelvin 自己写的（2026-10-17，102 个音符），字幕类 `core/.../gameplay/IntroductionGuidelines.java` 里每条字幕的拍点和位置是按这份谱面手工排的：字幕不能挡住还没判定的音符，所以**改谱面时要一起检查字幕**，步骤见 `docs/DEVELOPER.md` §6.4。原来的生成脚本不再管这两个文件。替换音乐 `Introduction.wav` 时，节拍（BPM）和时长要和谱面一致。
+教程谱面 `Shallow.json`（旧命名 `Surface.json`）是 Kelvin 自己写的（2026-10-17，102 个音符），字幕类 `core/.../gameplay/IntroductionGuidelines.java` 里每条字幕的拍点和位置是按这份谱面手工排的：字幕不能挡住还没判定的音符，所以**改谱面时要一起检查字幕**，步骤见 `docs/DEVELOPER.md` §6.4。原来的生成脚本不再管这两个文件。替换音乐 `Introduction.wav` 时，节拍（BPM）和时长要和谱面一致。
