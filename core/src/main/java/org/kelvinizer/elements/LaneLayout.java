@@ -88,6 +88,8 @@ public final class LaneLayout {
     private float[] lefts = new float[0];
     private float[] widths = new float[0];
     private float[] opacities = new float[0];
+    /** Each lane's red as a mine lane this frame ({@link #mine}). */
+    private float[] mines = new float[0];
     private int count;
     private float windowLeft;
     private float windowRight;
@@ -121,12 +123,13 @@ public final class LaneLayout {
      * ground and sky line lie above the chart's, how much deeper its column's front lies than an unmoved column's
      * (its origin's depth from the columns' middle, inward, and half of how much shorter than 240 its base is), its
      * reach factor past its ground line, its unit fall (chart axes: z inward), its origin's x, its base's length along
-     * its depth and its reach factor past its sky line; reference units.
+     * its depth, its reach factor past its sky line, the unit normal it faces (0 0 0: none, {@link #turn}) and the
+     * factor it is drawn at about its box's middle (its groups' size, chart version 2.1; 1 in none); reference units.
      */
     private float[] poses = new float[0];
     /** Floats a pose takes ({@link #poses}), and where each one is. */
-    public static final int POSE = 10, P_LIFT_G = 0, P_LIFT_S = 1, P_Z = 2, P_REACH = 3, P_FX = 4, P_FY = 5, P_FZ = 6,
-        P_X = 7, P_LEN = 8, P_REACH_S = 9;
+    public static final int POSE = 14, P_LIFT_G = 0, P_LIFT_S = 1, P_Z = 2, P_REACH = 3, P_FX = 4, P_FY = 5, P_FZ = 6,
+        P_X = 7, P_LEN = 8, P_REACH_S = 9, P_NX = 10, P_NY = 11, P_NZ = 12, P_K = 13;
     /** A column's depth, its base's length along it by default ({@link Channels#LENGTH}), reference units. */
     public static final float DEFAULT_LENGTH = 2f * Sea.MID_Z;
     /** True for a lane that writes its origin's x ({@link Channels#ORIGIN_X}): it is placed there, not in the row. */
@@ -137,12 +140,14 @@ public final class LaneLayout {
     private boolean moving;
     /** True when some lane is placed apart from the row: lanes may then overlap or swap places. */
     private boolean shifted;
-    /** True when some lane is turned this frame. */
+    /** True when some lane is turned or sized ({@link #scale}) this frame. */
     private boolean turning;
     /** True for the lanes of a chart format v7 chart ({@link Lane#isV7()}): no gap between a column and its slot. */
     private boolean v7;
-    /** True when some lane's lines lie apart from the chart's or it is turned this frame ({@link #posed()}). */
+    /** True when some lane is turned or sized or its lines lie apart from the chart's ({@link #posed()}). */
     private boolean posed;
+    /** A lane's axes, worked out turning it with its group ({@link #pose7}). */
+    private final float[] axesTmp = new float[9];
 
     /** Creates an empty layout (no lanes); call {@link #setLanes} first. */
     public LaneLayout() {
@@ -205,6 +210,7 @@ public final class LaneLayout {
             lefts = new float[n];
             widths = new float[n];
             opacities = new float[n];
+            mines = new float[n];
             poses = new float[n * POSE];
             free = new boolean[n];
             turns = new boolean[n];
@@ -216,7 +222,7 @@ public final class LaneLayout {
         tiled = false;
         unit = 0f;
         lines = null;
-        patternLanes = Math.max(1, n);
+        patternLanes = 0;
         moving = shifted = turning = posed = v7 = false;
         for (int i = 0; i < n; i++) {
             ids[i] = lanes[i].id();
@@ -224,6 +230,7 @@ public final class LaneLayout {
             lefts[i] = 0f;
             widths[i] = 0f;
             opacities[i] = 0f;
+            mines[i] = 0f;
             plain(poses, i * POSE);
             turns[i] = false;
             Channels c = lanes[i].space();
@@ -232,7 +239,10 @@ public final class LaneLayout {
             free[i] = c != null && (lanes[i].isV7() || c.written(Channels.ORIGIN_X));
             shifted |= free[i];
             v7 |= lanes[i].isV7();
+            // a lane that draws nothing of its own (a carrier, ChartV7Carry) adds no wave to the TIDE pattern
+            if (!lanes[i].drawsNothing()) patternLanes++;
         }
+        patternLanes = Math.max(1, patternLanes);
         windowLeft = windowRight = fieldLeft = fieldRight = totalWeight = 0f;
     }
 
@@ -273,19 +283,21 @@ public final class LaneLayout {
             Channels c = lanes[i].space();
             if (c == null) continue;
             int o = i * POSE;
-            if (c.keys() == Channels.LANE7) pose7(c, beat, upper, lower, poses, o);
+            if (c.keys() == Channels.LANE7) pose7(c, lanes[i].group7(), beat, upper, lower, poses, o, axesTmp);
             else pose(c, beat, upper, lower, poses, o);
             if (free[i]) lefts[i] = freeX(poses[o + P_X]) - widths[i] * 0.5f;
             turns[i] = turned(poses, o);
-            turning |= turns[i];
-            posed |= turns[i] || poses[o + P_LIFT_G] != 0f || poses[o + P_LIFT_S] != 0f;
+            boolean sized = poses[o + P_K] != 1f;
+            turning |= turns[i] || sized;
+            posed |= turns[i] || sized || poses[o + P_LIFT_G] != 0f || poses[o + P_LIFT_S] != 0f;
         }
     }
 
     /** Sets the pose at {@code o} of {@code p} to a lane's without channels: as the chart's lines, falling down. */
     private static void plain(float[] p, int o) {
         p[o + P_LIFT_G] = p[o + P_LIFT_S] = p[o + P_Z] = p[o + P_FX] = p[o + P_FZ] = p[o + P_X] = 0f;
-        p[o + P_REACH] = p[o + P_REACH_S] = 1f;
+        p[o + P_NX] = p[o + P_NY] = p[o + P_NZ] = 0f;
+        p[o + P_REACH] = p[o + P_REACH_S] = p[o + P_K] = 1f;
         p[o + P_FY] = -1f;
         p[o + P_LEN] = DEFAULT_LENGTH;
     }
@@ -324,6 +336,8 @@ public final class LaneLayout {
             p[o + P_FY] = -1f;
         }
         p[o + P_X] = finite(c.at(Channels.ORIGIN_X, beat));
+        p[o + P_NX] = p[o + P_NY] = p[o + P_NZ] = 0f;
+        p[o + P_K] = 1f;
     }
 
     /**
@@ -331,9 +345,15 @@ public final class LaneLayout {
      * {@code p} from {@code o}, the chart's lines at {@code upper} and {@code lower} then: its sky face lies {@code S}
      * and its base {@code F} from its origin v along its up axis (against its fall u), so its box's middle, which it
      * turns about, lies {@code (S + F) / 2} along it; its base is {@code w} across and {@code h} deep; its column goes
-     * on {@code f} past its base and {@code s} past its sky face (factors on the chart's 820).
+     * on {@code f} past its base and {@code s} past its sky face (factors on the chart's 820). In a group (chart
+     * version 2.1, {@code group} its pose; null: none) all that is in the group's axes: its box's middle goes where
+     * the group takes it, it turns with the group and is drawn at the group's size about its box's middle
+     * ({@link #P_K}).
+     *
+     * @param a nine floats to work in
      */
-    static void pose7(Channels c, float beat, float upper, float lower, float[] p, int o) {
+    static void pose7(Channels c, Group7.Pose group, float beat, float upper, float lower, float[] p, int o,
+                      float[] a) {
         float fx = c.at(Channels.U_X, beat), fy = c.at(Channels.U_Y, beat), fz = c.at(Channels.U_Z, beat);
         float len = (float) Math.sqrt(fx * fx + fy * fy + fz * fz);
         if (len > 1e-6f && len < Float.POSITIVE_INFINITY) {
@@ -347,25 +367,60 @@ public final class LaneLayout {
         p[o + P_FX] = fx;
         p[o + P_FY] = fy;
         p[o + P_FZ] = fz;
+        float nx = c.at(Channels.N_X, beat), ny = c.at(Channels.N_Y, beat), nz = c.at(Channels.N_Z, beat);
+        float nl = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
+        boolean facing = nl > 1e-6f && nl < Float.POSITIVE_INFINITY; // not written: NaN, none
+        p[o + P_NX] = facing ? nx / nl : 0f;
+        p[o + P_NY] = facing ? ny / nl : 0f;
+        p[o + P_NZ] = facing ? nz / nl : 0f;
         float sky = finite(c.at(Channels.SKY, beat)), ground = finite(c.at(Channels.GROUND, beat));
         float mid = 0.5f * (sky + ground), half = 0.5f * (sky - ground);
         // the box's middle: the origin plus mid along the up axis (−fall)
         float y = Sea.MID_Y + finite(c.at(Channels.V_Y, beat)) - fy * mid;
+        float x = finite(c.at(Channels.V_X, beat) - fx * mid);
+        float z = finite(c.at(Channels.V_Z, beat) - fz * mid);
+        p[o + P_K] = 1f;
+        if (group != null) { // where its group takes it
+            Group7.Pose t = group.at(beat);
+            t.point(x, y - Sea.MID_Y, z, a);
+            x = finite(a[0]);
+            y = Sea.MID_Y + finite(a[1]);
+            z = finite(a[2]);
+            if (t.turned) turnWith(t.m, p, o, a);
+            p[o + P_K] = t.k;
+        }
         p[o + P_LIFT_G] = finite(y - half - lower);
         p[o + P_LIFT_S] = finite(y + half - upper);
-        p[o + P_X] = finite(c.at(Channels.V_X, beat) - fx * mid);
+        p[o + P_X] = x;
         float l = Math.abs(c.at(Channels.A_H, beat));
         p[o + P_LEN] = l < Float.POSITIVE_INFINITY ? l : DEFAULT_LENGTH;
-        p[o + P_Z] = finite(c.at(Channels.V_Z, beat) - fz * mid) + 0.5f * (DEFAULT_LENGTH - p[o + P_LEN]);
+        p[o + P_Z] = z + 0.5f * (DEFAULT_LENGTH - p[o + P_LEN]);
         float g = c.at(Channels.GROUND_REACH, beat) / Chart.DEFAULT_EXTEND;
         float k = c.at(Channels.SKY_REACH, beat) / Chart.DEFAULT_EXTEND;
         p[o + P_REACH] = g > 0f && g < Float.POSITIVE_INFINITY ? g : 0f;
         p[o + P_REACH_S] = k > 0f && k < Float.POSITIVE_INFINITY ? k : 0f;
     }
 
+    /**
+     * Turns the fall and the facing of the pose at {@code o} of {@code p} by {@code m} (rows; a group's turn): its up
+     * and depth axes go through m, and its fall is against the one, the normal it faces against the other, so it
+     * faces where the group turns it ({@code a}: nine floats to work in).
+     */
+    private static void turnWith(float[] m, float[] p, int o, float[] a) {
+        turn(p[o + P_FX], p[o + P_FY], p[o + P_FZ], p[o + P_NX], p[o + P_NY], p[o + P_NZ], a);
+        for (int r = 0; r < 3; r++) {
+            p[o + P_FX + r] = -(m[3 * r] * a[3] + m[3 * r + 1] * a[4] + m[3 * r + 2] * a[5]);
+            p[o + P_NX + r] = -(m[3 * r] * a[6] + m[3 * r + 1] * a[7] + m[3 * r + 2] * a[8]);
+        }
+    }
+
     /** @return true when the pose at {@code o} of {@code p} is turned from falling straight down */
     private static boolean turned(float[] p, int o) {
-        return Math.abs(p[o + P_FX]) > 1e-6f || Math.abs(p[o + P_FZ]) > 1e-6f || !(p[o + P_FY] < 0f);
+        if (Math.abs(p[o + P_FX]) > 1e-6f || Math.abs(p[o + P_FZ]) > 1e-6f || !(p[o + P_FY] < 0f)) return true;
+        // falling straight down: turned when it faces, level, other than the player (−z)
+        float nx = p[o + P_NX], nz = p[o + P_NZ];
+        float h = (float) Math.sqrt(nx * nx + nz * nz);
+        return h > 1e-6f && (Math.abs(nx) > 1e-6f * h || !(nz < 0f));
     }
 
     /**
@@ -407,6 +462,43 @@ public final class LaneLayout {
         return true;
     }
 
+    /**
+     * {@link #turn} for a lane that also faces n (Kelvin 2026-11-10 17:59 「那就加一个法向量朝向」, 18:00 「和下落向量
+     * 一样」; {@link Lane7#n}): its up axis is against its fall, its front faces n as near as that lets it (its depth
+     * axis is −n without its part along the up axis) and its across axis is up × depth. n of any length; none (zero or
+     * NaN) or along the fall: {@link #turn}.
+     *
+     * @return true when it is turned (its axes are not the chart's)
+     */
+    public static boolean turn(float fx, float fy, float fz, float nx, float ny, float nz, float[] out) {
+        double len = Math.sqrt((double) fx * fx + (double) fy * fy + (double) fz * fz);
+        double ux = 0, uy = 1, uz = 0;
+        if (len > 1e-9 && len < Double.POSITIVE_INFINITY) {
+            ux = -fx / len;
+            uy = -fy / len;
+            uz = -fz / len;
+        }
+        double nl = Math.sqrt((double) nx * nx + (double) ny * ny + (double) nz * nz);
+        if (!(nl > 1e-9 && nl < Double.POSITIVE_INFINITY)) return turn(fx, fy, fz, out);
+        double d = (nx * ux + ny * uy + nz * uz) / nl;
+        double dx = -(nx / nl - d * ux), dy = -(ny / nl - d * uy), dz = -(nz / nl - d * uz);
+        double dl = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (!(dl > 1e-6)) return turn(fx, fy, fz, out); // along the fall
+        dx /= dl;
+        dy /= dl;
+        dz /= dl;
+        out[0] = (float) (uy * dz - uz * dy); // across: up x depth
+        out[1] = (float) (uz * dx - ux * dz);
+        out[2] = (float) (ux * dy - uy * dx);
+        out[3] = (float) ux;
+        out[4] = (float) uy;
+        out[5] = (float) uz;
+        out[6] = (float) dx;
+        out[7] = (float) dy;
+        out[8] = (float) dz;
+        return Math.abs(out[0] - 1f) > 1e-6f || Math.abs(out[4] - 1f) > 1e-6f || Math.abs(out[8] - 1f) > 1e-6f;
+    }
+
     private static float finite(float v) {
         return v > Float.NEGATIVE_INFINITY && v < Float.POSITIVE_INFINITY ? v : 0f;
     }
@@ -435,6 +527,7 @@ public final class LaneLayout {
             weights[i] = w;
             sum += w;
             opacities[i] = lane.opacityAt(beat);
+            mines[i] = lane.mineAt(beat);
         }
         totalWeight = sum;
         float span = right - left;
@@ -609,7 +702,8 @@ public final class LaneLayout {
 
     /**
      * @return lanes' worth of TIDE pattern (ground wave, pearls) across the window, the bound its
-     *         quads are counted with: the lane count (at least 1) when proportional; tiled, the
+     *         quads are counted with: the lanes that draw something of their own (at least 1, not those that
+     *         {@link Lane#drawsNothing}) when proportional; tiled, the
      *         reference screen over the chart's narrowest {@link #patternWidth} (at most
      *         {@link #MAX_PATTERN_LANES}), the same at every beat
      */
@@ -803,6 +897,11 @@ public final class LaneLayout {
         float k = columnScale();
         return k == 1f ? w : w * k;
     }
+    /**
+     * @return how red lane {@code i} is this frame as a mine lane (0..1; Kelvin 2026-11-10 23:01 「这些轨道会变红」,
+     *         {@link Lane#mineAt}): its column and its pieces of the judgement lines turn that much to the mine red
+     */
+    public float mine(int i) { return mines[i]; }
     /** @return opacity of lane {@code i} (0..1), for its furniture only. */
     public float opacity(int i) { return opacities[i]; }
 
@@ -920,10 +1019,22 @@ public final class LaneLayout {
     /** @return true when lane {@code i} is turned from falling straight down this frame ({@link #turn}) */
     public boolean turned(int i) { return turns[i]; }
 
-    /** @return true when some lane is turned this frame */
+    /**
+     * @return the factor lane {@code i} is drawn at about its box's middle this frame (its groups' size, chart version
+     *         2.1): its column, its keys and how far they fall; 1 for a lane in no group
+     */
+    public float scale(int i) { return poses[i * POSE + P_K]; }
+
+    /** Lane {@code i}'s axes this frame into {@code out} ({@link #turn}, facing its n when it has one). */
+    public void axes(int i, float[] out) {
+        int o = i * POSE;
+        turn(poses[o + P_FX], poses[o + P_FY], poses[o + P_FZ], poses[o + P_NX], poses[o + P_NY], poses[o + P_NZ], out);
+    }
+
+    /** @return true when some lane is turned or sized ({@link #scale}) this frame */
     public boolean turning() { return turning; }
 
-    /** @return true when some lane is turned or its lines lie apart from the chart's this frame ({@link #lift}) */
+    /** @return true when some lane is turned or sized or its lines lie apart from the chart's ({@link #lift}) */
     public boolean posed() { return posed; }
 
     /** @return true when some lane has a pose of its own ({@link Lane#space()}): its column may move this song */
@@ -990,7 +1101,7 @@ public final class LaneLayout {
 
     /** What {@link #freezeSpaceKeys} keeps of a space key's lane at its beat, reference units ({@link Note#frozen}). */
     public static final int F_X = 0, F_W = 1, F_LINE_G = 2, F_LINE_S = 3, F_Z = 4, F_FX = 5, F_FY = 6, F_FZ = 7,
-        F_LEN = 8, FROZEN_COUNT = 9;
+        F_LEN = 8, F_NX = 9, F_NY = 10, F_NZ = 11, FROZEN_COUNT = 12;
 
     /**
      * Keeps each space key's lane as it is at the key's judgement beat (Kelvin 2026-11-08 23:20 「按键的轨迹可以选择跟所在
@@ -1022,6 +1133,9 @@ public final class LaneLayout {
             f[F_FX] = turned ? lay.pose(i, P_FX) : 0f;
             f[F_FY] = turned ? lay.pose(i, P_FY) : -1f;
             f[F_FZ] = turned ? lay.pose(i, P_FZ) : 0f;
+            f[F_NX] = turned ? lay.pose(i, P_NX) : 0f;
+            f[F_NY] = turned ? lay.pose(i, P_NY) : 0f;
+            f[F_NZ] = turned ? lay.pose(i, P_NZ) : 0f;
             n.frozen = f;
         }
     }
@@ -1033,6 +1147,6 @@ public final class LaneLayout {
     public static boolean frozenTurn(Note n, float[] out) {
         float[] f = n.frozen;
         return f != null && !n.spacePath() && n.type().inLane() && !n.laneless()
-            && turn(f[F_FX], f[F_FY], f[F_FZ], out);
+            && turn(f[F_FX], f[F_FY], f[F_FZ], f[F_NX], f[F_NY], f[F_NZ], out);
     }
 }

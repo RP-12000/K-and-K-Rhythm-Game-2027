@@ -65,6 +65,15 @@ public final class View3D implements HitFx.Projection {
     private static final int FADE_SEGMENTS = 4;
     private static final Color FACE = new Color(0x2a3a7aff), EDGE = new Color(0x9fb0ffff);
     private static final Color PLANE = new Color(0xc9d8ffff);
+    /**
+     * What a mine lane's column turns to, as red as it is ({@link LaneLayout#mine}; Kelvin 2026-11-10 23:01 「这些轨道会
+     * 变红」): its faces, edges, face planes and their rims.
+     */
+    private static final Color MINE_FACE = new Color(0x8c1c2cff), MINE_PLANE = new Color(0xff7f8aff),
+        MINE_LIGHT = new Color(0xff9aa3ff);
+    /** This lane's colours ({@link #tint}). */
+    private final Color face = new Color(FACE), edge = new Color(EDGE), plane = new Color(PLANE),
+        rim = new Color(Color.WHITE);
     private static final float FACE_A = 0.18f, EDGE_A = 0.55f, PLANE_A = 0.55f, KEY_A = 0.85f;
     /** A veil's edges ({@link #drawVolumes}): the veil renderer's edge colour, a box's and an ellipsoid's rings. */
     private static final Color VOLUME_EDGE = new Color(128 / 255f, 194 / 255f, 250 / 255f, 1f);
@@ -218,6 +227,21 @@ public final class View3D implements HitFx.Projection {
         ownZ = z;
     }
 
+    /** The chart editor's own move of the view ({@link #pan}), reference units along the chart's axes; 0 in game. */
+    private float panX, panY, panZ;
+
+    /**
+     * Moves the camera and the point it looks at together by (x, y, z) (reference units along the chart's axes: x
+     * right, y up, z inward, as P) at every {@link #update}, so the view keeps its direction: the chart editor's
+     * Ctrl+Alt+arrows while editing (Kelvin 2026-11-10 20:26 「ctrl+alt+箭头可以前后左右移动camera位置」); 0, 0, 0
+     * gives the chart's own view back. The game never calls it.
+     */
+    public void pan(float x, float y, float z) {
+        panX = x;
+        panY = y;
+        panZ = z;
+    }
+
     /**
      * Evaluates the chart's view at {@code beat} over the flat camera of the screen.
      *
@@ -275,11 +299,12 @@ public final class View3D implements HitFx.Projection {
         cam.fieldOfView = fov;
         // as on the 3D page: a negative yaw swings the camera to the right, a positive pitch lifts it; it looks at the
         // screen centre halfway into the columns' depth
-        cam.position.set(cx - r * cp * MathUtils.sinDeg(yaw), cy + r * MathUtils.sinDeg(pitch),
-            -shift + r * cp * MathUtils.cosDeg(yaw));
+        float mx = panX * ky, my = panY * ky, mz = -panZ * depth / DEPTH; // the chart editor's move ({@link #pan})
+        cam.position.set(cx + mx - r * cp * MathUtils.sinDeg(yaw), cy + my + r * MathUtils.sinDeg(pitch),
+            -shift + mz + r * cp * MathUtils.cosDeg(yaw));
         cam.direction.set(0f, 0f, -1f);
         cam.up.set(0f, 1f, 0f);
-        cam.lookAt(cx, cy, -shift);
+        cam.lookAt(cx + mx, cy + my, -shift + mz);
         cam.near = Math.max(1f, d * 0.05f);
         cam.far = r + SEEN * d;
         cam.update();
@@ -435,8 +460,9 @@ public final class View3D implements HitFx.Projection {
         metCount = 0;
         for (int i = 0; (!straight || lay.moving()) && i < lay.count(); i++) {
             float w = lay.columnWidth(i);
-            if (!lay.active(i) || w <= 0f) continue;
-            int f = laneFrame(i);
+            if (!lay.active(i) || w <= 0f || !(lay.scale(i) > 0f)) continue; // or its groups size it to nothing
+            // an unturned, unsized column's press as before 7.236
+            int f = lay.turned(i) || lay.scale(i) != 1f ? laneFrame(i) : -1;
             float t;
             if (f < 0) {
                 float cf = frontOf(lay, i);
@@ -654,7 +680,9 @@ public final class View3D implements HitFx.Projection {
     private float[] frames = new float[0];
     private int frameCount;
     private static final int FRAME_FLOATS = 12;
-    /** Each lane's and each sea's frame this frame, −1 while it is not turned. */
+    /** Each frame's size factor ({@link #addFrame}): its turn is that times a turn's. */
+    private float[] frameK = new float[0];
+    /** Each lane's and each sea's frame this frame, −1 while it has none ({@link #ownFrame}, a sea not turned). */
     private int[] laneFrames = new int[0];
     private int[] seaFrames = new int[0];
     private int laneFrameCount, seaFrameCount;
@@ -666,7 +694,17 @@ public final class View3D implements HitFx.Projection {
     private final Matrix4 frameProj = new Matrix4();
     private final Matrix4 frameTmp = new Matrix4();
 
-    /** Sets this frame's frames: one for each turned lane ({@link LaneLayout#turned}) and each turned sea. */
+    /**
+     * @return true when lane i is drawn through a frame of its own: turned ({@link LaneLayout#turned}), moved in
+     *         depth ({@link LaneLayout#moveZ}) or sized by its groups ({@link LaneLayout#scale}). An unturned one moved
+     *         in depth was drawn shrunk onto the front plane until 7.236, its lines' and glows' sizes not: huge with
+     *         the eye near that plane (Kelvin 2026-11-10 20:56)
+     */
+    static boolean ownFrame(LaneLayout lay, int i) {
+        return lay.turned(i) || lay.moveZ(i) != 0f || lay.scale(i) != 1f;
+    }
+
+    /** Sets this frame's frames: one for each lane with a frame of its own ({@link #ownFrame}) and each turned sea. */
     private void poseFrames(GameEngine e) {
         LaneLayout lay = e.layout();
         Chart chart = e.chart();
@@ -683,13 +721,12 @@ public final class View3D implements HitFx.Projection {
         lineU = yu;
         for (int i = 0; i < laneFrameCount; i++) {
             laneFrames[i] = -1;
-            if (!(depth > 0f) || !lay.turned(i)) continue;
-            LaneLayout.turn(lay.pose(i, LaneLayout.P_FX), lay.pose(i, LaneLayout.P_FY), lay.pose(i, LaneLayout.P_FZ),
-                axes);
+            if (!(depth > 0f) || !ownFrame(lay, i)) continue;
+            lay.axes(i, axes);
             float f = -lay.moveZ(i) * depth / DEPTH;
             float py = 0.5f * (yl + lay.lift(i, Line.LOWER) * ky + yu + lay.lift(i, Line.UPPER) * ky);
             // it turns about its origin as charted, whatever the key size draws it at
-            laneFrames[i] = addFrame(lay.centre(i), py, f - 0.5f * thick(lay.chartLength(i)), f);
+            laneFrames[i] = addFrame(lay.centre(i), py, f - 0.5f * thick(lay.chartLength(i)), f, lay.scale(i));
         }
         float beat = lay.beat();
         for (int j = 0; j < seaFrameCount; j++) {
@@ -697,14 +734,19 @@ public final class View3D implements HitFx.Projection {
             seaFrames[j] = -1;
             if (!(depth > 0f) || !s.turn(beat, axes)) continue;
             seaFrames[j] = addFrame(lay.freeX(s.at(Sea.ORIGIN_X, beat)), Field.y(s.yAt(beat)),
-                -(Sea.MID_Z + s.at(Sea.ORIGIN_Z, beat)) * depth / DEPTH, 0f);
+                -(Sea.MID_Z + s.at(Sea.ORIGIN_Z, beat)) * depth / DEPTH, 0f, 1f);
         }
     }
 
-    /** Adds the frame turning by {@link #axes} (chart axes, z inward) about (px, py, pz) after a shift dz in depth. */
-    private int addFrame(float px, float py, float pz, float dz) {
+    /**
+     * Adds the frame turning by {@link #axes} (chart axes, z inward) and sizing by k about (px, py, pz) after a shift
+     * dz in depth.
+     */
+    private int addFrame(float px, float py, float pz, float dz, float k) {
         int o = frameCount * FRAME_FLOATS;
         if (frames.length < o + FRAME_FLOATS) frames = java.util.Arrays.copyOf(frames, 2 * (o + FRAME_FLOATS));
+        if (frameK.length <= frameCount) frameK = java.util.Arrays.copyOf(frameK, 2 * frameCount + 2);
+        frameK[frameCount] = k;
         float[] a = axes; // in the view's axes (z towards the eye): z's sign changed on both sides
         frames[o] = a[0];
         frames[o + 1] = a[3];
@@ -715,6 +757,7 @@ public final class View3D implements HitFx.Projection {
         frames[o + 6] = -a[2];
         frames[o + 7] = -a[5];
         frames[o + 8] = a[8];
+        for (int j = 0; k != 1f && j < 9; j++) frames[o + j] *= k;
         float qx = -px; // p' = R·(p + (0, 0, dz) − P) + P
         float qy = -py;
         float qz = dz - pz;
@@ -724,7 +767,7 @@ public final class View3D implements HitFx.Projection {
         return frameCount++;
     }
 
-    /** @return lane i's frame this frame, or −1 while it is not turned (or the field is flat) */
+    /** @return lane i's frame this frame, or −1 while it has none ({@link #ownFrame}; or the field is flat) */
     public int laneFrame(int i) {
         return active && i >= 0 && i < laneFrameCount ? laneFrames[i] : -1;
     }
@@ -737,7 +780,7 @@ public final class View3D implements HitFx.Projection {
     /**
      * @return the frame key n is drawn through this frame: its sea's ({@link #seaFrame}) or its lane's
      *         ({@link LaneLayout#keyLane}); a space key's (Kelvin 2026-11-08 23:20): none along its own path, else its
-     *         lane's as frozen at its beat ({@link LaneLayout#freezeSpaceKeys}); −1 while that is not turned
+     *         lane's as frozen at its beat ({@link LaneLayout#freezeSpaceKeys}); −1 while that has none
      */
     public int keyFrame(LaneLayout lay, Note n) {
         if (n.spacePath()) return -1;
@@ -764,24 +807,23 @@ public final class View3D implements HitFx.Projection {
         float f = -lay.keyMoveZ(n) * depth / DEPTH;
         spaceStamps[k] = stamp;
         float pz = f - 0.5f * thick(lay.keyChartLength(n));
-        return spaceFrames[k] = addFrame(lay.keyCentre(n, lay.beat()), py, pz, f);
+        return spaceFrames[k] = addFrame(lay.keyCentre(n, lay.beat()), py, pz, f, 1f);
     }
 
     /**
      * @return the frame key n's lane had at an earlier moment, {@code past} (a layout at that moment) and the chart's
      *         lines then at world y {@code yl} and {@code yu} placing it as {@link #poseFrames} does: where an
      *         afterimage copy of a key moving with its lane shows (Kelvin 2026-11-10 02:17 「残影要加上」); made this
-     *         frame, the last one again when it is the same; −1 while that lane was not turned
+     *         frame, the last one again when it is the same; −1 while that lane had none ({@link #ownFrame})
      */
     public int pastFrame(LaneLayout past, Note n, float yl, float yu) {
         int i = past.keyLane(n);
-        if (!active || !(depth > 0f) || i < 0 || !past.turned(i)) return -1;
-        LaneLayout.turn(past.pose(i, LaneLayout.P_FX), past.pose(i, LaneLayout.P_FY), past.pose(i, LaneLayout.P_FZ),
-            axes);
+        if (!active || !(depth > 0f) || i < 0 || !ownFrame(past, i)) return -1;
+        past.axes(i, axes);
         float ky = Field.ky();
         float f = -past.moveZ(i) * depth / DEPTH;
         float py = 0.5f * (yl + past.lift(i, Line.LOWER) * ky + yu + past.lift(i, Line.UPPER) * ky);
-        int k = addFrame(past.centre(i), py, f - 0.5f * thick(past.chartLength(i)), f);
+        int k = addFrame(past.centre(i), py, f - 0.5f * thick(past.chartLength(i)), f, past.scale(i));
         if (k == 0 || !sameAsLast(k)) return k;
         frameCount--;
         return k - 1;
@@ -804,7 +846,8 @@ public final class View3D implements HitFx.Projection {
      */
     public float frameFx(int f, float x, float y, float z, float[] out) {
         framePoint(f, x, y, worldZ(z) - shift, fxTmp);
-        return sinkPoint(fxTmp[0], fxTmp[1], fxTmp[2], out);
+        float t = sinkPoint(fxTmp[0], fxTmp[1], fxTmp[2], out);
+        return frameK[f] != 1f ? t * frameK[f] : t; // a lane its groups size: its effects too
     }
 
     private final float[] fxTmp = new float[3];
@@ -895,6 +938,8 @@ public final class View3D implements HitFx.Projection {
         float z = v.z - (direction ? 0f : frames[o + 11]);
         v.set(frames[o] * x + frames[o + 3] * y + frames[o + 6] * z, frames[o + 1] * x + frames[o + 4] * y
             + frames[o + 7] * z, frames[o + 2] * x + frames[o + 5] * y + frames[o + 8] * z);
+        float k = frameK[f];
+        if (k != 1f) v.scl(1f / (k * k)); // its turn is k times a turn's
     }
 
     /** @return the world depth of reference depth z (a key's z: 0 the columns' front, positive inward) */
@@ -960,25 +1005,26 @@ public final class View3D implements HitFx.Projection {
             float r = l + w;
             int m = column(lay, i, n, yl, yu, down, up, fade);
             frame(laneFrame(i));
+            tint(lay.mine(i));
             for (int k = 0; k + 1 < m; k++) {
                 float y0 = cur[2 * k];
                 float y1 = cur[2 * k + 2];
                 float a0 = FACE_A * op * cur[2 * k + 1];
                 float a1 = FACE_A * op * cur[2 * k + 3];
-                quadZ(l, y0, a0, l, y1, a1, FACE);  // left side
-                quadZ(r, y0, a0, r, y1, a1, FACE);  // right side
+                quadZ(l, y0, a0, l, y1, a1, face);  // left side
+                quadZ(r, y0, a0, r, y1, a1, face);  // right side
                 wall(l, r, y0, a0, y1, a1, back);   // back
                 wall(l, r, y0, a0, y1, a1, front);  // front
             }
             for (int li = 0; li < Line.COUNT; li++) {
                 float y = e.lineY(Line.of(li)) + lay.lift(i, Line.of(li)) * ky;
                 float pa = PLANE_A * op;
-                vertex(l, y, front, PLANE, pa);
-                vertex(r, y, front, PLANE, pa);
-                vertex(r, y, back, PLANE, pa);
-                vertex(l, y, front, PLANE, pa);
-                vertex(r, y, back, PLANE, pa);
-                vertex(l, y, back, PLANE, pa);
+                vertex(l, y, front, plane, pa);
+                vertex(r, y, front, plane, pa);
+                vertex(r, y, back, plane, pa);
+                vertex(l, y, front, plane, pa);
+                vertex(r, y, back, plane, pa);
+                vertex(l, y, back, plane, pa);
             }
             frame(-1);
         }
@@ -991,25 +1037,27 @@ public final class View3D implements HitFx.Projection {
             float r = l + w;
             int m = column(lay, i, n, yl, yu, down, up, fade);
             frame(laneFrame(i));
+            tint(lay.mine(i));
             for (int k = 0; k + 1 < m; k++) {
                 for (int c = 0; c < 4; c++) {
                     float x = c % 2 == 0 ? l : r;
                     float z = c < 2 ? front : back;
-                    vertex(x, cur[2 * k], z, EDGE, EDGE_A * op * cur[2 * k + 1]);
-                    vertex(x, cur[2 * k + 2], z, EDGE, EDGE_A * op * cur[2 * k + 3]);
+                    vertex(x, cur[2 * k], z, edge, EDGE_A * op * cur[2 * k + 1]);
+                    vertex(x, cur[2 * k + 2], z, edge, EDGE_A * op * cur[2 * k + 3]);
                 }
             }
             for (int li = 0; li < Line.COUNT; li++) {
                 float y = e.lineY(Line.of(li)) + lay.lift(i, Line.of(li)) * ky;
-                vertex(l, y, back, Color.WHITE, op);
-                vertex(r, y, back, Color.WHITE, op);
-                vertex(l, y, front, Color.WHITE, op);
-                vertex(l, y, back, Color.WHITE, op);
-                vertex(r, y, front, Color.WHITE, op);
-                vertex(r, y, back, Color.WHITE, op);
+                vertex(l, y, back, rim, op);
+                vertex(r, y, back, rim, op);
+                vertex(l, y, front, rim, op);
+                vertex(l, y, back, rim, op);
+                vertex(r, y, front, rim, op);
+                vertex(r, y, back, rim, op);
             }
             frame(-1);
         }
+        tint(0f);
         front = 0f;
         end();
         boxCount = 0;
@@ -1020,8 +1068,8 @@ public final class View3D implements HitFx.Projection {
     /**
      * Lane i's column this frame (Kelvin 2026-11-07 22:54, 11-08 23:10): its stops ({@link #cur}: the shared {@code n}
      * of {@link #stops}, or its own when its lines lie apart from the chart's ({@link LaneLayout#lift}) or its reach is
-     * scaled) and its front's depth ({@link #front}, view units: 0 the columns' front, negative inward; 0 for a turned
-     * lane, whose frame puts it back).
+     * scaled) and its front's depth ({@link #front}, view units: 0 the columns' front, negative inward; 0 for a lane
+     * with a frame of its own, {@link #ownFrame}, which puts it back).
      *
      * @return the number of stops
      */
@@ -1046,7 +1094,6 @@ public final class View3D implements HitFx.Projection {
      * Works out {@link #laneSeen} for this frame (Kelvin 2026-11-10 01:34 「想尽一切办法让弱一点的手机/平板也能正常游玩」;
      * My Soul Deep's graveyard has 1079 lanes): a lane is left out when its column, grown by its field picture's reach
      * (the zone round each of its lines, the column glow, {@link #CULL_MARGIN}), lies wholly outside the camera's view.
-     * A column sunk in depth without a turn is drawn scaled on the front plane instead ({@link FieldRenderer}): kept.
      */
     private void cull(LaneLayout lay, int n, float yl, float yu, float down, float up, float fade) {
         laneSeenCount = lay.count();
@@ -1056,7 +1103,7 @@ public final class View3D implements HitFx.Projection {
         for (int i = 0; i < laneSeenCount; i++) {
             float w = lay.columnWidth(i);
             int f = laneFrame(i);
-            if (!(w > 0f) || f < 0 && lay.moveZ(i) != 0f) {
+            if (!(w > 0f)) {
                 laneSeen[i] = true;
                 continue;
             }
@@ -1870,14 +1917,22 @@ public final class View3D implements HitFx.Projection {
         vertex(x1, y1, front, c, a1);
     }
 
+    /** Sets the column colours ({@link #face} …) for a lane {@code k} red as a mine lane (0: the usual blue). */
+    private void tint(float k) {
+        face.set(FACE).lerp(MINE_FACE, k);
+        edge.set(EDGE).lerp(Theme.MINE, k);
+        plane.set(PLANE).lerp(MINE_PLANE, k);
+        rim.set(Color.WHITE).lerp(MINE_LIGHT, k);
+    }
+
     /** A face across a column at depth z from (y0, a0) to (y1, a1). */
     private void wall(float l, float r, float y0, float a0, float y1, float a1, float z) {
-        vertex(l, y0, z, FACE, a0);
-        vertex(r, y0, z, FACE, a0);
-        vertex(r, y1, z, FACE, a1);
-        vertex(l, y0, z, FACE, a0);
-        vertex(r, y1, z, FACE, a1);
-        vertex(l, y1, z, FACE, a1);
+        vertex(l, y0, z, face, a0);
+        vertex(r, y0, z, face, a0);
+        vertex(r, y1, z, face, a1);
+        vertex(l, y0, z, face, a0);
+        vertex(r, y1, z, face, a1);
+        vertex(l, y1, z, face, a1);
     }
 
     private void begin(int type) {

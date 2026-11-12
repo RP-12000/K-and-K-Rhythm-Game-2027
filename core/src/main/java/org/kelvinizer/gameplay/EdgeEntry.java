@@ -162,6 +162,7 @@ public final class EdgeEntry {
             bodyReach[i] = 0f;
             from[i] = Float.NaN;
             drawFrom[i] = n.visibleFrom();
+            if (n.fromLane()) continue; // a mine lane's mine: never drawn (visibleFrom +∞)
             if (n.orbit() != null) continue; // drawn about its orbit centre, not on its way to the line
             if (n.spaceTrack()) continue; // its path is in space or on its lane as frozen, not this frame's line
             float s;

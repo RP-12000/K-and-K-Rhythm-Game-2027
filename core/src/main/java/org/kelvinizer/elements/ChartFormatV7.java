@@ -12,12 +12,14 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -25,8 +27,10 @@ import java.util.regex.Pattern;
  *
  * <p>Reads and writes chart format v7 (Kelvin 2026-11-09 18:44–18:45; model {@link Chart7}):
  * <pre>
- * {"format": 7, "charter": "…", "constant": 12.5,
- *  "lanes":   [{"id": 1, "u": {"x","y","z"}, "v": {"x","y","z"}, "a": {"w","h"}, "S", "s", "F", "f", "o"}],
+ * {"format": "2.1", "charter": "…", "constant": 12.5,
+ *  "groups":  [{"id": 1, "name": "…", "p": 2, "P": {"x","y","z"}, "R": {"x","y","z"}, "K", "o"}],
+ *  "lanes":   [{"id": 1, "g": 1, "u": {"x","y","z"}, "n": {"x","y","z"}, "v": {"x","y","z"}, "a": {"w","h"},
+ *               "S", "s", "F", "f", "o", "l", "m"}],
  *  "keys":    [{"type": "tap", "lane": 1, "face": "sky", "fake": true, "h": […], "o": …,
  *               "trails": […], "glitches": […], "distortions": […]},
  *              {"type": "tide", "lanes": [1, 2], "h": […], "H": […]}],
@@ -40,16 +44,32 @@ import java.util.regex.Pattern;
  * read and written as in format v5 ({@link ChartFormatV5}), left out when there are none. The writer leaves
  * out a function at its default constant with no segments ({@code e} when it is 1, {@code face} for the ground,
  * {@code fake} when false, {@code H} for the kinds without a height, {@code volumes} and {@code camera} when there are
- * none or it is at its default), but always writes a lane's {@code v.x} and a key's {@code h}. The reader keeps file
+ * none or it is at its default; {@code groups}, a group's {@code name} and {@code p} and a lane's {@code g} when there
+ * are none), but always writes a lane's {@code v.x} and a key's {@code h}. The reader keeps file
  * order, sorts each function's segments by {@code ti} and drops a key with no {@code h} segments, of an unknown type,
  * or in a lane id the chart does not have (a wave or tide keeps the lanes that exist), and a wave or tide mine is never
- * fake; a lane without an id, or with one used before, gets a new id. Keys and objects not listed here are skipped, so
- * they are lost on the next write.
+ * fake; a lane without an id, or with one used before, gets a new id, and so does a group (never 0); a group in a
+ * group the chart does not have, or in a ring of groups, and a lane in a group the chart does not have are in none
+ * ({@link Group7}). Keys and objects not listed here are skipped, so they are lost on the next write.
  */
 public final class ChartFormatV7 {
+    /** The first format this reads ({@code "format"} 7 or more, chart version 2.0). */
     public static final int FORMAT = 7;
+    /**
+     * The format this writes: 8, chart version 2.1 (Kelvin 2026-11-10 06:45 「谱面版本为2.0，以后谱面版本更改都是0.1 0.1的改」;
+     * 2.0 is format 7), which adds a lane's {@code n} (7.234), {@code m} (Kelvin 2026-11-10 23:01) and {@code l}
+     * (2026-11-11 02:12), and groups ({@link Group7}, 7.242). It is written as its chart version, {@code "format":
+     * "2.1"} ({@link #version}; Kelvin 2026-11-11 04:14–04:19, 7.239), the editor's version too, the two always the
+     * same (Kelvin 2026-11-12 06:03 「制谱器版本号，format都放在2.1」「这两个要始终同步的」). Files of 7.234–7.238 say 8 or 9
+     * and files of 7.242 "2.2", all read as 2.1.
+     */
+    public static final int WRITE_FORMAT = 8;
+    /** The chart version this writes, {@link #version} of {@link #WRITE_FORMAT}: "2.1" (the editor shows it). */
+    public static final String VERSION = version(WRITE_FORMAT);
 
     private static final JsonFactory FACTORY = new JsonFactory();
+    /** A chart version as a file writes it ({@link #version}). */
+    private static final Pattern VERSION_TEXT = Pattern.compile("([0-9]{1,3})\\.([0-9])");
     private static final Pattern JSON_NUMBER = Pattern.compile("-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?");
     /** Marks a missing or unreadable id. */
     private static final int NO_ID = Integer.MIN_VALUE;
@@ -62,19 +82,53 @@ public final class ChartFormatV7 {
 
     /** @return true when the JSON object has a top-level {@code "format"} of 7 or more (false for unreadable JSON) */
     public static boolean isV7(byte[] json) {
-        if (json == null) return false;
+        return formatOf(json) >= FORMAT;
+    }
+
+    /**
+     * @return the top-level {@code "format"} of a chart file as {@link #format} reads it (the editor compares it with
+     *         {@link #WRITE_FORMAT}); NaN for none or unreadable JSON
+     */
+    public static float formatOf(byte[] json) {
+        if (json == null) return Float.NaN;
         try (JsonParser p = FACTORY.createParser(json)) {
-            if (p.nextToken() != JsonToken.START_OBJECT) return false;
+            if (p.nextToken() != JsonToken.START_OBJECT) return Float.NaN;
             while (p.nextToken() == JsonToken.FIELD_NAME) {
                 String name = p.currentName();
                 JsonToken v = p.nextToken();
-                if ("format".equals(name)) return v != null && v.isNumeric() && p.getDoubleValue() >= FORMAT;
+                if ("format".equals(name)) return format(p, v);
                 p.skipChildren();
             }
         } catch (IOException e) {
-            return false;
+            return Float.NaN;
         }
-        return false;
+        return Float.NaN;
+    }
+
+    /**
+     * @return the chart version format {@code f} is written as (Kelvin 2026-11-11 04:14 「文件里的format也改成2.0」):
+     *         format {@code 7 + 10·(a − 2) + b} is version {@code "a.b"}, so 7 is "2.0", 8 "2.1" and 17 "3.0"; null
+     *         below format 7
+     */
+    public static String version(int f) {
+        return f < FORMAT ? null : (2 + (f - FORMAT) / 10) + "." + (f - FORMAT) % 10;
+    }
+
+    /**
+     * @return the format a {@code "format"} value names: a chart version {@code "a.b"} with a at least 2 as its format
+     *         ({@link #version}; "2.2", which 7.242 wrote for groups, is 2.1, Kelvin 2026-11-12 06:03); otherwise as a
+     *         number (files before 7.239 wrote 1–9; 9 is 8, chart version 2.1, Kelvin 2026-11-11 04:19), NaN for
+     *         anything else
+     */
+    public static float format(JsonParser p, JsonToken v) throws IOException {
+        if (v == JsonToken.VALUE_STRING) {
+            Matcher m = VERSION_TEXT.matcher(p.getText().trim());
+            int a = m.matches() ? Integer.parseInt(m.group(1)) : 0;
+            if (a == 2 && Integer.parseInt(m.group(2)) == 2) return 8f;
+            if (a >= 2) return FORMAT + 10 * (a - 2) + Integer.parseInt(m.group(2));
+        }
+        float f = number(p, v);
+        return f == 9f ? 8f : f;
     }
 
     // ------------------------------------------------------------------ reading
@@ -96,9 +150,16 @@ public final class ChartFormatV7 {
                 String name = p.currentName();
                 JsonToken v = p.nextToken();
                 switch (name) {
-                    case "format": format = number(p, v); break;
+                    case "format": format = format(p, v); break;
                     case "charter": c.charter = text(p, v); break;
                     case "constant": c.constant = text(p, v); break;
+                    case "groups":
+                        if (v != JsonToken.START_ARRAY) p.skipChildren();
+                        else while ((t = p.nextToken()) != null && t != JsonToken.END_ARRAY) {
+                            if (t == JsonToken.START_OBJECT) c.groups.add(readGroup7(p));
+                            else p.skipChildren();
+                        }
+                        break;
                     case "lanes":
                         if (v != JsonToken.START_ARRAY) p.skipChildren();
                         else while ((t = p.nextToken()) != null && t != JsonToken.END_ARRAY) {
@@ -145,6 +206,7 @@ public final class ChartFormatV7 {
             if (t != JsonToken.END_OBJECT) throw new IOException("truncated chart JSON");
             if (!(format >= FORMAT)) throw new IOException("not a chart of format " + FORMAT);
             fixLaneIds(c.lanes);
+            fixGroups(c);
             Set<Integer> ids = new HashSet<>();
             for (Lane7 l : c.lanes) ids.add(l.id);
             for (Key7 k : keys) {
@@ -161,7 +223,9 @@ public final class ChartFormatV7 {
             JsonToken v = p.nextToken();
             switch (name) {
                 case "id": l.id = intValue(p, v); break;
+                case "g": l.g = intValue(p, v); break;
                 case "u": readGroup(p, v, XYZ, l.u.x, l.u.y, l.u.z); break;
+                case "n": readGroup(p, v, XYZ, l.n.x, l.n.y, l.n.z); break;
                 case "v": readGroup(p, v, XYZ, l.v.x, l.v.y, l.v.z); break;
                 case "a": readGroup(p, v, WH, l.w, l.h); break;
                 case "S": readFn(p, v, l.S); break;
@@ -169,10 +233,67 @@ public final class ChartFormatV7 {
                 case "F": readFn(p, v, l.F); break;
                 case "f": readFn(p, v, l.f); break;
                 case "o": readFn(p, v, l.o); break;
+                case "l": readFn(p, v, l.l); break;
+                case "m": readFn(p, v, l.m); break;
                 default: p.skipChildren(); break;
             }
         }
         return l;
+    }
+
+    private static Group7 readGroup7(JsonParser p) throws IOException {
+        Group7 g = new Group7(NO_ID);
+        while (p.nextToken() == JsonToken.FIELD_NAME) {
+            String name = p.currentName();
+            JsonToken v = p.nextToken();
+            switch (name) {
+                case "id": g.id = intValue(p, v); break;
+                case "name": g.name = text(p, v); break;
+                case "p": g.p = intValue(p, v); break;
+                case "P": readGroup(p, v, XYZ, g.P.x, g.P.y, g.P.z); break;
+                case "R": readGroup(p, v, XYZ, g.R.x, g.R.y, g.R.z); break;
+                case "K": readFn(p, v, g.K); break;
+                case "o": readFn(p, v, g.o); break;
+                default: p.skipChildren(); break;
+            }
+        }
+        return g;
+    }
+
+    /**
+     * Gives a group without an id, with id 0 or with an id an earlier group has the next unused id (lanes keep the
+     * first); puts a group in a group the chart does not have, or in a ring of groups, and a lane in a group the chart
+     * does not have, in none.
+     */
+    private static void fixGroups(Chart7 c) {
+        Map<Integer, Group7> byId = new HashMap<>();
+        int next = 1;
+        for (Group7 g : c.groups) {
+            if (g.id != NO_ID) next = Math.max(next, g.id + 1);
+        }
+        for (Group7 g : c.groups) {
+            if (g.id == NO_ID || g.id == 0 || byId.containsKey(g.id)) {
+                while (byId.containsKey(next) || next == 0) next++;
+                g.id = next;
+            }
+            byId.put(g.id, g);
+        }
+        for (Group7 g : c.groups) {
+            if (!byId.containsKey(g.p)) g.p = 0;
+        }
+        for (Group7 g : c.groups) { // up from each group: one met again is in none
+            Set<Integer> seen = new HashSet<>();
+            seen.add(g.id);
+            for (Group7 a = g; a.p != 0; a = byId.get(a.p)) {
+                if (!seen.add(a.p)) {
+                    a.p = 0;
+                    break;
+                }
+            }
+        }
+        for (Lane7 l : c.lanes) {
+            if (!byId.containsKey(l.g)) l.g = 0;
+        }
     }
 
     /** Gives a lane without an id, or with an id an earlier lane has, the next unused id (keys keep the first). */
@@ -421,19 +542,24 @@ public final class ChartFormatV7 {
 
     // ------------------------------------------------------------------ writing
 
-    /** Writes {@code c} as v7 JSON (UTF-8), one lane, key or volume per line. The stream is flushed, not closed. */
+    /** Writes {@code c} as v7 JSON (UTF-8), one group, lane, key or volume per line. Flushed, not closed. */
     public static void write(Chart7 c, OutputStream out) throws IOException {
         try (JsonGenerator g = FACTORY.createGenerator(out, JsonEncoding.UTF8)) {
             g.disable(JsonGenerator.Feature.AUTO_CLOSE_TARGET);
             g.setPrettyPrinter(new Layout());
             g.writeStartObject();
-            g.writeNumberField("format", FORMAT);
+            g.writeStringField("format", VERSION);
             if (c.charter != null && !c.charter.isEmpty()) g.writeStringField("charter", c.charter);
             if (c.constant != null && !c.constant.trim().isEmpty()) {
                 g.writeFieldName("constant");
                 String k = c.constant.trim();
                 if (JSON_NUMBER.matcher(k).matches()) g.writeNumber(k);
                 else g.writeString(c.constant);
+            }
+            if (!c.groups.isEmpty()) {
+                g.writeArrayFieldStart("groups");
+                for (Group7 o : c.groups) writeGroup7(g, o);
+                g.writeEndArray();
             }
             g.writeArrayFieldStart("lanes");
             for (Lane7 l : c.lanes) writeLane(g, l);
@@ -463,10 +589,24 @@ public final class ChartFormatV7 {
         }
     }
 
+    private static void writeGroup7(JsonGenerator g, Group7 o) throws IOException {
+        g.writeStartObject();
+        g.writeNumberField("id", o.id);
+        if (o.name != null && !o.name.isEmpty()) g.writeStringField("name", o.name);
+        if (o.p != 0) g.writeNumberField("p", o.p);
+        writeGroup(g, "P", XYZ, null, o.P.x, o.P.y, o.P.z);
+        writeGroup(g, "R", XYZ, null, o.R.x, o.R.y, o.R.z);
+        writeFn(g, "K", o.K, false);
+        writeFn(g, "o", o.o, false);
+        g.writeEndObject();
+    }
+
     private static void writeLane(JsonGenerator g, Lane7 l) throws IOException {
         g.writeStartObject();
         g.writeNumberField("id", l.id);
+        if (l.g != 0) g.writeNumberField("g", l.g);
         writeGroup(g, "u", XYZ, null, l.u.x, l.u.y, l.u.z);
+        writeGroup(g, "n", XYZ, null, l.n.x, l.n.y, l.n.z);
         writeGroup(g, "v", XYZ, l.v.x, l.v.x, l.v.y, l.v.z);
         writeGroup(g, "a", WH, null, l.w, l.h);
         writeFn(g, "S", l.S, false);
@@ -474,6 +614,8 @@ public final class ChartFormatV7 {
         writeFn(g, "F", l.F, false);
         writeFn(g, "f", l.f, false);
         writeFn(g, "o", l.o, false);
+        writeFn(g, "l", l.l, false);
+        writeFn(g, "m", l.m, false);
         g.writeEndObject();
     }
 
@@ -599,8 +741,8 @@ public final class ChartFormatV7 {
     }
 
     /**
-     * Layout of a written chart: one top-level key per line, one entry per line in the top-level arrays (a lane, a
-     * key or a volume per line), everything deeper on that line.
+     * Layout of a written chart: one top-level key per line, one entry per line in the top-level arrays (a group, a
+     * lane, a key or a volume per line), everything deeper on that line.
      */
     private static final class Layout implements PrettyPrinter {
         private int depth;

@@ -6,12 +6,13 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 谱面格式 v7（简单函数）：轨道、键、水幕水帘、镜头位置和视角；其他（判定线、海面、全屏判定……）都没有了。
+ * 谱面格式 v7（简单函数）：轨道和组、键、水幕水帘、镜头位置和视角；其他（判定线、海面、全屏判定……）都没有了。
  *
- * <p>A chart of format v7 (Kelvin 2026-11-09 18:44–18:45): lanes ({@link Lane7}), keys ({@link Key7}), veils and
- * curtains ({@link Volume7}), the camera position {@link #camera} (P) and its field of view {@link #fov}. The camera
- * always looks at the chart origin (0, 0, 0) with +y up. The song values (BPM and its changes, offset) stay in
- * {@code song.json}; {@link #editor} is the chart editor's own block, kept as read.
+ * <p>A chart of format v7 (Kelvin 2026-11-09 18:44–18:45): lanes ({@link Lane7}) and their groups ({@link Group7},
+ * chart version 2.1), keys ({@link Key7}), veils and curtains ({@link Volume7}), the camera position {@link #camera}
+ * (P) and its field of view {@link #fov}. The camera always looks at the chart origin (0, 0, 0) with +y up. The song
+ * values (BPM and its changes, offset) stay in {@code song.json}; {@link #editor} is the chart editor's own block, kept
+ * as read.
  */
 public final class Chart7 {
     /**
@@ -23,6 +24,8 @@ public final class Chart7 {
     /** The charter's name and the chart constant (as written in the file), or null. */
     public String charter, constant;
     public final List<Lane7> lanes = new ArrayList<>();
+    /** The groups lanes are in (chart version 2.1, {@link Group7}); none by default. */
+    public final List<Group7> groups = new ArrayList<>();
     public final List<Key7> keys = new ArrayList<>();
     public final List<Volume7> volumes = new ArrayList<>();
     /** The camera position P, default straight on at {@link #CAMERA_DIST}. */

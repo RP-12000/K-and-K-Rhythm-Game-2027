@@ -19,7 +19,8 @@ import org.kelvinizer.ui.Theme;
 
 /**
  * 浪花命中效果：一整条柔和光带从判定线浮起、散开，被抬起的水退回淡出，并短暂变暗；潮汐按住时，细光带按
- * 固定节奏不断浮起。The TIDE hit effect, v3 (DESIGN §19.2, §20.3, §21.1, §21.6): a soft
+ * 固定节奏不断浮起。轨道分开时（v7 的轨道都是）只在浪花跨过的每条轨道上各出一段，3D 里是贴着那条轨道的立体光带。
+ * The TIDE hit effect, v3 (DESIGN §19.2, §20.3, §21.1, §21.6): a soft
  * window-wide band of light lifts off the hit line and floats away as a whole, dissolves, and the
  * water it lifted slides back and fades under a brief darkening; a running TIDE STREAM keeps thin
  * bands peeling off its line on a fixed clock. There is no point effect at the touch x: TIDE hits
@@ -55,6 +56,13 @@ import org.kelvinizer.ui.Theme;
  *       under a veil of α .12. Either way emission stops and the bands in flight finish.</li>
  *   <li>{@code reduceFlashing}: α × .5, no veil, reach at most 30 %. Particle quality Off keeps
  *       the rise and recede, without the dissolve widening, the line swell or the stream bands.</li>
+ *   <li><b>Separate lanes</b> (all of chart format v7's; Kelvin 2026-11-11 05:30 「原来的那种，但只在那些跨过的轨道+变成
+ *       三维」): every part plays per column instead of across the window, on each column the TIDE spans
+ *       ({@link #columns}; with no lanes listed, every column): from that column's line toward its other line, across
+ *       its width without soft ends, and without the line swell. In 3D a column's part is a box as wide and deep as the
+ *       column, through the lane's frame: its strips on the four upright faces at {@value #FACE_K} α each (facing
+ *       straight the front and back lie over each other as the one strip did), each band also a sheet across the box
+ *       at its centre ({@link #face}).</li>
  * </ul>
  *
  * <p><b>Layering and blend.</b> Drawn in normal block A after the lane field
@@ -160,6 +168,11 @@ final class TideWash {
     static final int WATER_QUADS = 2 * STRIP_QUADS;
     static final int BAND_QUADS = STRIP_QUADS;
     static final int VEIL_QUADS = 3 * STRIP_QUADS;
+    /** α factor of each upright face of a column's box in 3D (separate lanes, see the class notes). */
+    static final float FACE_K = 0.5f;
+    /** Quads of a strip on a column's box (its four upright faces), and of a band there (and its sheet). */
+    static final int BOX_STRIP_QUADS = 4;
+    static final int BOX_BAND_QUADS = BOX_STRIP_QUADS + 1;
 
     private final Batch batch;
     private final Texture tex;
@@ -172,12 +185,32 @@ final class TideWash {
     private final float[] q = new float[20];
     /** Column edges of the current window: outer left, inner left, inner right, outer right. */
     private float xa, xb, xc, xd;
+    /** True while the strips have soft ends (the window, a sea); false on a lane's column ({@link #column}). */
+    private boolean soft = true;
+    // the column drawn now ({@link #column}): its line's y, toward its other line, their gap; in 3D its box
+    private float colY, colDir, colGap;
+    /** True while the parts go on the four upright faces of the column's box ({@link #face}). */
+    private boolean box;
+    /** The depth of the box's back (view units, negative inward) and the column's edges. */
+    private float boxZ, boxL, boxR;
+    /** The projection of the column's front (through its lane's frame), a face's own and its local map. */
+    private final Matrix4 pose = new Matrix4();
+    private final Matrix4 faceP = new Matrix4();
+    private final Matrix4 faceM = new Matrix4();
 
-    // hit effect per line
-    private final float[] effT = new float[Line.COUNT];
-    private final float[] effReach = new float[Line.COUNT];
-    private final boolean[] effVeil = new boolean[Line.COUNT];
-    private final boolean[] effEcho = new boolean[Line.COUNT];
+    /** True over separate lanes: every part plays per column ({@link #columns}). */
+    private boolean apart;
+    /** Columns this chart: 1 (the window) unless {@link #apart}, then the lane count. */
+    private int cols = 1;
+    /** The columns {@link #columns} found last. */
+    private int[] spanCols = new int[8];
+    /** The engine of the last {@link #update}, for the triggers that name none. */
+    private GameEngine eng;
+    // hit effect per line and column ([line][column]; column 0 the window unless apart)
+    private final float[][] effT = new float[Line.COUNT][1];
+    private final float[][] effReach = new float[Line.COUNT][1];
+    private final boolean[][] effVeil = new boolean[Line.COUNT][1];
+    private final boolean[][] effEcho = new boolean[Line.COUNT][1];
     // hit effect of the latest TIDE on a sea (Kelvin 2026-11-07 16:04): along that sea, turned with it
     private Sea sea;
     private Line seaLine;
@@ -188,12 +221,18 @@ final class TideWash {
     /** The 3D view this frame, for a turned sea's frame ({@link #setSpace}); null while flat. */
     private View3D space;
     private final Matrix4 seaTurn = new Matrix4();
-    // tide level and drain per line
-    private final float[] level = new float[Line.COUNT];
-    private final float[] drainT = new float[Line.COUNT];
-    private final float[] drainH = new float[Line.COUNT];
-    private final float[] drainA = new float[Line.COUNT];
+    // tide level and drain per line and column
+    private final float[][] level = new float[Line.COUNT][1];
+    private final float[][] drainT = new float[Line.COUNT][1];
+    private final float[][] drainH = new float[Line.COUNT][1];
+    private final float[][] drainA = new float[Line.COUNT][1];
+    /** Per line and column: a running TIDE STREAM covers it ({@link #markRunning}). */
+    private final boolean[][] running = new boolean[Line.COUNT][1];
     // band emitters (struct of arrays); a rate change splits an emitter into segments
+    /** Over separate lanes, per emitter: {@link #stamp} on each column its TIDE STREAM spans this frame. */
+    private final int[][] emCol = new int[MAX_EMITTERS][0];
+    private final int[] emColN = new int[MAX_EMITTERS];
+    private int stamp;
     private final boolean[] emActive = new boolean[MAX_EMITTERS];
     private final boolean[] emSeen = new boolean[MAX_EMITTERS];
     private final int[] emNote = new int[MAX_EMITTERS];
@@ -250,14 +289,14 @@ final class TideWash {
     /** Clears every running effect, level, drain and stream band. */
     void clear() {
         for (int l = 0; l < Line.COUNT; l++) {
-            effT[l] = -100f;
-            effReach[l] = 0f;
-            effVeil[l] = false;
-            effEcho[l] = false;
-            level[l] = 0f;
-            drainT[l] = -100f;
-            drainH[l] = 0f;
-            drainA[l] = 0f;
+            java.util.Arrays.fill(effT[l], -100f);
+            java.util.Arrays.fill(effReach[l], 0f);
+            java.util.Arrays.fill(effVeil[l], false);
+            java.util.Arrays.fill(effEcho[l], false);
+            java.util.Arrays.fill(level[l], 0f);
+            java.util.Arrays.fill(drainT[l], -100f);
+            java.util.Arrays.fill(drainH[l], 0f);
+            java.util.Arrays.fill(drainA[l], 0f);
         }
         for (int s = 0; s < MAX_EMITTERS; s++) emActive[s] = false;
         sea = null;
@@ -292,18 +331,35 @@ final class TideWash {
 
     // ------------------------------------------------------------------ triggers
 
+    /** {@link #hit(GameEngine, int, Line, boolean, float)} of no TIDE in particular (separate lanes: every column). */
+    void hit(Line line, boolean resonance, float now) {
+        hit(eng, -1, line, resonance, now);
+    }
+
     /**
      * A TIDE (drop or TIDE STREAM head, or a whole group) judged on {@code line} at run time
      * {@code now}: the rise, dissolve, recede and veil (RESONANCE reaches 45 % of the gap, ECHO
-     * 30 %) and, unless the particle quality is Off, the line swell.
+     * 30 %) and, unless the particle quality is Off, the line swell. Over separate lanes TIDE {@code note}'s, on each
+     * column it spans and along each sea it spans ({@link #hitSea}), without the swell.
      */
-    void hit(Line line, boolean resonance, float now) {
-        if (start(line, resonance ? REACH_RESONANCE : REACH_ECHO, true, !resonance, now)
-            && quality != HitFx.QUALITY_OFF) {
+    void hit(GameEngine e, int note, Line line, boolean resonance, float now) {
+        if (line == null) return;
+        triggers++;
+        boolean look = false;
+        for (int k = 0, n = columns(e, note); k < n; k++) {
+            look |= start(line, spanCols[k], resonance ? REACH_RESONANCE : REACH_ECHO, true, !resonance, now);
+        }
+        if (look && !apart && quality != HitFx.QUALITY_OFF) {
             swells++;
             if (field != null) {
                 field.swell(line, colour(line, !resonance), (reduce ? 0.5f : 1f) * (resonance ? 1f : ECHO_K), now);
             }
+        }
+        Note n = apart && e != null && note >= 0 ? e.chart().note(note) : null;
+        for (int k = 0; n != null && k < n.spanCount(); k++) {
+            int j = n.spanValue(k);
+            if (!n.spanSea(k) || j < 0 || j >= e.chart().seas().size()) continue;
+            hitSea(e.chart().seas().get(j), line, resonance, now);
         }
     }
 
@@ -327,66 +383,185 @@ final class TideWash {
         return sea != null && t >= 0f && t < END_SEC;
     }
 
-    /** A TIDE STREAM of {@code line} completed: one rise/recede at 30 % in its head's colour, no veil. */
+    /** {@link #complete(GameEngine, int, Line, boolean, float)} of no particular TIDE STREAM. */
     void complete(Line line, boolean resonance, float now) {
-        start(line, REACH_COMPLETE, false, !resonance, now);
+        complete(eng, -1, line, resonance, now);
     }
 
     /**
-     * Starts (or, in the same frame, merges into) the effect of a line.
-     *
-     * @return true when the line's effect starts or takes this trigger's look
+     * TIDE STREAM {@code note} of {@code line} completed: one rise/recede at 30 % in its head's colour, no veil (over
+     * separate lanes on each column it spans).
      */
-    private boolean start(Line line, float reach, boolean veil, boolean echo, float t) {
-        if (line == null) return false;
-        int l = line.ordinal();
+    void complete(GameEngine e, int note, Line line, boolean resonance, float now) {
+        if (line == null) return;
         triggers++;
-        if (effT[l] == t) { // one effect per line per frame: keep the larger reach
-            effVeil[l] |= veil;
-            if (reach <= effReach[l]) return false;
-            effReach[l] = reach;
-            effEcho[l] = echo;
+        for (int k = 0, n = columns(e, note); k < n; k++) {
+            start(line, spanCols[k], REACH_COMPLETE, false, !resonance, now);
+        }
+    }
+
+    /**
+     * Starts (or, in the same frame, merges into) the effect of a line's column c.
+     *
+     * @return true when the effect starts or takes this trigger's look
+     */
+    private boolean start(Line line, int c, float reach, boolean veil, boolean echo, float t) {
+        int l = line.ordinal();
+        if (effT[l][c] == t) { // one effect per line and column per frame: keep the larger reach
+            effVeil[l][c] |= veil;
+            if (reach <= effReach[l][c]) return false;
+            effReach[l][c] = reach;
+            effEcho[l][c] = echo;
             return true;
         }
-        effT[l] = t;
-        effReach[l] = reach;
-        effVeil[l] = veil;
-        effEcho[l] = echo;
+        effT[l][c] = t;
+        effReach[l][c] = reach;
+        effVeil[l][c] = veil;
+        effEcho[l][c] = echo;
         return true;
     }
 
-    /** A TIDE STREAM of {@code line} broke: its level drains back to the line over 150 ms. */
+    /** {@link #drain(GameEngine, int, Line, float)} of no particular TIDE STREAM. */
     void drain(Line line, float now) {
-        if (line == null) return;
+        drain(eng, -1, line, now);
+    }
+
+    /**
+     * TIDE STREAM {@code note} of {@code line} broke: its level drains back to the line over 150 ms, unless another
+     * running one keeps it up (over separate lanes on each column it spans that no other running one spans).
+     */
+    void drain(GameEngine e, int note, Line line, float now) {
+        if (line == null || !apart && e != null && e.tideRunning(line)) return;
         int l = line.ordinal();
-        if (level[l] <= 0.001f) return;
-        drainT[l] = now;
-        drainH[l] = level[l] * LEVEL_REACH;
-        drainA[l] = levelAlpha(l, now);
-        level[l] = 0f;
+        if (apart) markRunning(e, note);
+        for (int k = 0, n = columns(e, note); k < n; k++) {
+            int c = spanCols[k];
+            if (apart && running[l][c] || level[l][c] <= 0.001f) continue;
+            drainT[l][c] = now;
+            drainH[l][c] = level[l][c] * LEVEL_REACH;
+            drainA[l][c] = levelAlpha(l, c, now);
+            level[l][c] = 0f;
+        }
+    }
+
+    /**
+     * Puts into {@link #spanCols} the columns the effects of TIDE {@code note} go to (after {@link #fit}): 0, the
+     * window, unless the lanes are separate; then the columns it spans this frame, as its pieces are drawn
+     * ({@link NoteRenderer}): its listed lanes (none for one on a sea), else (or for note −1) every column, only active
+     * ones with a width.
+     *
+     * @return how many
+     */
+    int columns(GameEngine e, int note) {
+        fit(e);
+        if (!apart || e == null) {
+            spanCols[0] = 0;
+            return 1;
+        }
+        LaneLayout lay = e.layout();
+        Chart chart = e.chart();
+        Note n = note >= 0 && chart != null ? chart.note(note) : null;
+        if (n != null && n.sea() != null) return 0;
+        boolean listed = n != null && n.spanCount() > 0;
+        int count = 0;
+        for (int k = 0; k < (listed ? n.spanCount() : cols); k++) {
+            int i = k;
+            if (listed) {
+                if (n.spanSea(k)) continue;
+                i = chart.laneIndexOf(n.spanValue(k));
+            }
+            if (i < 0 || i >= cols || !lay.active(i) || !(lay.columnWidth(i) > 0f)) continue;
+            if (count == spanCols.length) spanCols = java.util.Arrays.copyOf(spanCols, 2 * count);
+            spanCols[count++] = i;
+        }
+        return count;
+    }
+
+    /** @return column k of those {@link #columns} found last */
+    int column(int k) {
+        return spanCols[k];
+    }
+
+    /** Reads whether {@code e}'s lanes are separate and makes room for as many columns as it has. */
+    private void fit(GameEngine e) {
+        if (e == null) return;
+        LaneLayout lay = e.layout();
+        apart = lay.separate();
+        cols = apart ? Math.max(1, lay.count()) : 1;
+        int have = effT[0].length;
+        if (cols <= have) return;
+        int n = Math.max(cols, 2 * have);
+        for (int l = 0; l < Line.COUNT; l++) {
+            effT[l] = grow(effT[l], n, -100f);
+            effReach[l] = grow(effReach[l], n, 0f);
+            effVeil[l] = java.util.Arrays.copyOf(effVeil[l], n);
+            effEcho[l] = java.util.Arrays.copyOf(effEcho[l], n);
+            level[l] = grow(level[l], n, 0f);
+            drainT[l] = grow(drainT[l], n, -100f);
+            drainH[l] = grow(drainH[l], n, 0f);
+            drainA[l] = grow(drainA[l], n, 0f);
+            running[l] = java.util.Arrays.copyOf(running[l], n);
+        }
+    }
+
+    private static float[] grow(float[] a, int n, float fill) {
+        float[] b = java.util.Arrays.copyOf(a, n);
+        java.util.Arrays.fill(b, a.length, n, fill);
+        return b;
+    }
+
+    /** Marks {@link #running} the line and columns of every running TIDE STREAM but {@code except}'s. */
+    private void markRunning(GameEngine e, int except) {
+        fit(e);
+        for (int l = 0; l < Line.COUNT; l++) java.util.Arrays.fill(running[l], 0, cols, false);
+        if (e == null) return;
+        if (!apart) {
+            for (int l = 0; l < Line.COUNT; l++) running[l][0] = e.tideRunning(Line.of(l));
+            return;
+        }
+        Chart chart = e.chart();
+        for (int k = 0; chart != null && k < e.activeHoldCount(); k++) {
+            int i = e.activeHold(k);
+            Note n = chart.note(i);
+            if (i == except || !n.isTideStream() || n.line() == null) continue;
+            boolean[] r = running[n.line().ordinal()];
+            for (int j = 0, m = columns(e, i); j < m; j++) r[spanCols[j]] = true;
+        }
     }
 
     // ------------------------------------------------------------------ update
 
     /**
-     * Per frame, after the events of the frame: eases each line's tide level toward "a TIDE
-     * STREAM of this line runs" and keeps one band emitter per running TIDE STREAM.
+     * Per frame, after the events of the frame: eases each line's (column's) tide level toward "a TIDE
+     * STREAM of this line runs (over it)" and keeps one band emitter per running TIDE STREAM.
      *
      * @param dt  run delta (0 while paused)
      * @param now run seconds
      */
     void update(float dt, GameEngine e, float now) {
         this.now = now;
+        eng = e;
         songMs = e.judgeMs();
+        markRunning(e, -1);
         for (int l = 0; l < Line.COUNT; l++) {
-            if (e.tideRunning(Line.of(l))) {
-                level[l] = Math.min(1f, level[l] + dt / LEVEL_RISE_SEC);
-                drainT[l] = -100f;
-            } else if (level[l] > 0f) {
-                level[l] = Math.max(0f, level[l] - dt / LEVEL_FALL_SEC);
+            for (int c = 0; c < cols; c++) {
+                if (running[l][c]) {
+                    level[l][c] = Math.min(1f, level[l][c] + dt / LEVEL_RISE_SEC);
+                    drainT[l][c] = -100f;
+                } else if (level[l][c] > 0f) {
+                    level[l][c] = Math.max(0f, level[l][c] - dt / LEVEL_FALL_SEC);
+                }
             }
         }
         updateEmitters(e);
+        stamp++;
+        for (int s = 0; apart && s < MAX_EMITTERS; s++) { // the columns each emitter's bands go over this frame
+            emColN[s] = 0;
+            if (!emActive[s]) continue;
+            if (emCol[s].length < cols) emCol[s] = java.util.Arrays.copyOf(emCol[s], cols);
+            emColN[s] = columns(e, emNote[s]);
+            for (int j = 0; j < emColN[s]; j++) emCol[s][spanCols[j]] = stamp;
+        }
     }
 
     private void updateEmitters(GameEngine e) {
@@ -460,7 +635,9 @@ final class TideWash {
     /** @return true when nothing is drawn this frame. */
     boolean idle() {
         for (int l = 0; l < Line.COUNT; l++) {
-            if (effActive(l) || level[l] > 0f || drainActive(l)) return false;
+            for (int c = 0; c < cols; c++) {
+                if (effActive(l, c) || level[l][c] > 0f || drainActive(l, c)) return false;
+            }
         }
         if (seaActive()) return false;
         for (int s = 0; s < MAX_EMITTERS; s++) {
@@ -469,14 +646,19 @@ final class TideWash {
         return true;
     }
 
-    private boolean effActive(int l) {
-        float t = now - effT[l];
+    private boolean effActive(int l, int c) {
+        float t = now - effT[l][c];
         return t >= 0f && t < END_SEC;
     }
 
-    private boolean drainActive(int l) {
-        float t = now - drainT[l];
+    private boolean drainActive(int l, int c) {
+        float t = now - drainT[l][c];
         return t >= 0f && t < DRAIN_SEC;
+    }
+
+    /** @return true when emitter s's bands go over column c ({@link #update}; the window always) */
+    private boolean emits(int s, int c) {
+        return !apart || c < emCol[s].length && emCol[s][c] == stamp;
     }
 
     /**
@@ -485,21 +667,26 @@ final class TideWash {
      *         share a flush with block B
      */
     int quadsBound() {
+        int sq = apart ? BOX_STRIP_QUADS : STRIP_QUADS;
         int n = 0;
         for (int l = 0; l < Line.COUNT; l++) {
-            if (effActive(l)) n += WATER_QUADS + BAND_QUADS + VEIL_QUADS;
-            if (drainActive(l)) n += LEVEL_QUADS + VEIL_QUADS;
-            else if (level[l] > 0f) n += LEVEL_QUADS;
+            for (int c = 0; c < cols; c++) {
+                if (effActive(l, c)) n += 5 * sq + (apart ? BOX_BAND_QUADS : BAND_QUADS); // water, veil, band
+                if (drainActive(l, c)) n += 5 * sq; // level, veil
+                else if (level[l][c] > 0f) n += 2 * sq;
+            }
         }
         if (seaActive()) n += WATER_QUADS + BAND_QUADS;
         for (int s = 0; s < MAX_EMITTERS; s++) {
-            if (emActive[s] && !duplicate(s)) n += BAND_QUADS * (int) Math.max(0L, bandLast(s) - bandFirst(s) + 1);
+            if (!emActive[s] || !apart && duplicate(s, 0)) continue;
+            int bands = (int) Math.max(0L, bandLast(s) - bandFirst(s) + 1);
+            n += apart ? BOX_BAND_QUADS * bands * emColN[s] : BAND_QUADS * bands;
         }
         return n;
     }
 
-    private float levelAlpha(int l, float t) {
-        return (LEVEL_A + LEVEL_BREATH * MathUtils.sin(MathUtils.PI2 * LEVEL_HZ * t)) * level[l];
+    private float levelAlpha(int l, int c, float t) {
+        return (LEVEL_A + LEVEL_BREATH * MathUtils.sin(MathUtils.PI2 * LEVEL_HZ * t)) * level[l][c];
     }
 
     /** Index of the oldest band of segment {@code s} still in flight (greater than {@link #bandLast} when none). */
@@ -515,11 +702,14 @@ final class TideWash {
         return (long) Math.floor((hi - emOrigin[s]) / emPeriod[s]);
     }
 
-    /** True for the second emitter of one TIDE group on one line: its bands coincide, so it draws nothing. */
-    private boolean duplicate(int s) {
+    /**
+     * True for the second emitter of one TIDE group on one line (over column c): its bands coincide, so it draws
+     * nothing there.
+     */
+    private boolean duplicate(int s, int c) {
         for (int o = 0; o < s; o++) {
             if (emActive[o] && emLine[o] == emLine[s] && emOrigin[o] == emOrigin[s] && emPeriod[o] == emPeriod[s]
-                && emFrom[o] == emFrom[s] && emEnd[o] == emEnd[s] && emEcho[o] == emEcho[s]) {
+                && emFrom[o] == emFrom[s] && emEnd[o] == emEnd[s] && emEcho[o] == emEcho[s] && emits(o, c)) {
                 return true;
             }
         }
@@ -560,52 +750,133 @@ final class TideWash {
      */
     void draw(GameEngine e) {
         if (idle()) return;
-        LaneLayout lay = e.layout();
-        float x0 = lay.windowLeft() + INSET;
-        float x1 = lay.windowRight() - INSET;
-        float w = x1 - x0;
-        if (!(w > 8f)) return;
-        float f = Math.min(END_FEATHER, w * 0.25f);
-        xa = x0;
-        xb = x0 + f;
-        xc = x1 - f;
-        xd = x1;
         // α factor of every additive part: reduceFlashing halves it, the normal-blend draw scales it
-        float am = (reduce ? 0.5f : 1f) * ADD_GAIN;
+        float am0 = (reduce ? 0.5f : 1f) * ADD_GAIN;
         boolean widen = quality != HitFx.QUALITY_OFF;
         for (int l = 0; l < Line.COUNT; l++) {
             Line line = Line.of(l);
-            float ly = e.lineY(line);
-            float gap = gap(e, line);
-            float dir = line == Line.UPPER ? -1f : 1f;
             Color tide = drawColour(line, false);
-            // tide level of a running TIDE STREAM, or its drain after a break
-            float lh = 0f, la = 0f;
-            if (drainActive(l)) {
-                float p = (now - drainT[l]) / DRAIN_SEC;
-                lh = drainH[l] * gap * (1f - Anim.POW2_IN.apply(p));
-                la = drainA[l] * (1f - p) * am;
-            } else if (level[l] > 0f) {
-                lh = level[l] * LEVEL_REACH * gap;
-                la = levelAlpha(l, now) * am;
+            for (int c = 0; c < cols; c++) {
+                if (!busy(l, c) || !column(e, c, line)) continue;
+                float am = box ? am0 * FACE_K : am0;
+                float ly = colY;
+                float gap = colGap;
+                float dir = colDir;
+                // tide level of a running TIDE STREAM, or its drain after a break
+                float lh = 0f, la = 0f;
+                if (drainActive(l, c)) {
+                    float p = (now - drainT[l][c]) / DRAIN_SEC;
+                    lh = drainH[l][c] * gap * (1f - Anim.POW2_IN.apply(p));
+                    la = drainA[l][c] * (1f - p) * am;
+                } else if (level[l][c] > 0f) {
+                    lh = level[l][c] * LEVEL_REACH * gap;
+                    la = levelAlpha(l, c, now) * am;
+                }
+                levelWater(ly, dir, lh, la, tide);
+                // light bands of the running (and just ended) TIDE STREAMs, over the level
+                for (int s = 0; s < MAX_EMITTERS; s++) {
+                    if (emActive[s] && emLine[s] == l && emits(s, c) && !duplicate(s, c)) {
+                        streamBands(s, ly, dir, gap, am, lh, la);
+                    }
+                }
+                // the hit: lifted water, then the band
+                if (effActive(l, c)) {
+                    hitShape(ly, dir, gap, now - effT[l][c], effReach[l][c], effEcho[l][c], line, am, widen);
+                }
+                columnEnd();
             }
-            levelWater(ly, dir, lh, la, tide);
-            // light bands of the running (and just ended) TIDE STREAMs, over the level
-            for (int s = 0; s < MAX_EMITTERS; s++) {
-                if (emActive[s] && emLine[s] == l && !duplicate(s)) streamBands(s, ly, dir, gap, am, lh, la);
-            }
-            // the hit: lifted water, then the band
-            if (effActive(l)) hitShape(ly, dir, gap, now - effT[l], effReach[l], effEcho[l], line, am, widen);
         }
-        if (seaActive()) seaHit(e, am, widen);
+        if (seaActive() && column(e, 0, null)) seaHit(e, am0, widen);
         if (reduce) return;
         // veils last, so a veil also dims the other line's band beneath it
         for (int l = 0; l < Line.COUNT; l++) {
-            float v = veilAlpha(l);
-            if (v <= 0.002f) continue;
-            Line line = Line.of(l);
-            veil(e.lineY(line), line == Line.UPPER ? -1f : 1f, gap(e, line), v);
+            for (int c = 0; c < cols; c++) {
+                float v = veilAlpha(l, c);
+                if (v <= 0.002f || !column(e, c, Line.of(l))) continue;
+                veil(colY, colDir, colGap, box ? v * FACE_K : v);
+                columnEnd();
+            }
         }
+    }
+
+    /** @return true when line l's column c has something to draw this frame */
+    private boolean busy(int l, int c) {
+        if (effActive(l, c) || level[l][c] > 0f || drainActive(l, c)) return true;
+        for (int s = 0; s < MAX_EMITTERS; s++) {
+            if (emActive[s] && emLine[s] == l && emits(s, c)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Sets up where the parts drawn next go: {@code line == null} or the lanes not separate, across the window (soft
+     * ends inside its inset) from that line toward the other; else across lane c's column from its own line toward its
+     * other line, in 3D on its box ({@link #face}), through its frame (as {@link FieldRenderer} poses it).
+     *
+     * @return false when nothing of it shows
+     */
+    private boolean column(GameEngine e, int c, Line line) {
+        LaneLayout lay = e.layout();
+        box = false;
+        soft = !apart || line == null;
+        if (line != null) colDir = line == Line.UPPER ? -1f : 1f;
+        if (soft) {
+            float x0 = lay.windowLeft() + INSET;
+            float x1 = lay.windowRight() - INSET;
+            float w = x1 - x0;
+            if (!(w > 8f)) return false;
+            float f = Math.min(END_FEATHER, w * 0.25f);
+            xa = x0;
+            xb = x0 + f;
+            xc = x1 - f;
+            xd = x1;
+            if (line != null) {
+                colY = e.lineY(line);
+                colGap = gap(e, line);
+            }
+            return true;
+        }
+        if (c >= lay.count() || !lay.active(c) || !(lay.columnWidth(c) > 0f)) return false;
+        if (space != null && !space.laneSeen(c)) return false;
+        float w = lay.columnWidth(c);
+        Line other = line == Line.UPPER ? Line.LOWER : Line.UPPER;
+        float ky = Field.ky();
+        xa = xb = boxL = lay.columnLeft(c);
+        xc = xd = boxR = boxL + w;
+        colY = e.lineY(line) + lay.lift(c, line) * ky;
+        colGap = Math.max(Field.dist(MIN_GAP), Math.abs(e.lineY(other) + lay.lift(c, other) * ky - colY));
+        if (space == null) return true;
+        int f = space.laneFrame(c);
+        pose.set(f >= 0 ? space.frameCombined(f, 0f) : space.combined());
+        boxZ = space.worldZ(lay.length(c));
+        box = boxZ != 0f;
+        if (!box) batch.setProjectionMatrix(pose);
+        return true;
+    }
+
+    /** Ends {@link #column}: the batch draws through the view again. */
+    private void columnEnd() {
+        if (!soft && space != null) batch.setProjectionMatrix(space.combined());
+    }
+
+    /**
+     * Sets the batch to draw on face {@code f} of the column's box: 0 its front, 1 its back, 2 and 3 its left and right
+     * sides (x 0 → 1 from its front to its back), 4 a sheet across it at height {@code y} (y 0 → 1 front to back).
+     */
+    private void face(int f, float y) {
+        float[] m = faceM.idt().val;
+        if (f == 1) {
+            m[Matrix4.M23] = boxZ;
+        } else if (f == 2 || f == 3) {
+            m[Matrix4.M00] = 0f;
+            m[Matrix4.M20] = boxZ;
+            m[Matrix4.M03] = f == 2 ? boxL : boxR;
+        } else if (f == 4) {
+            m[Matrix4.M11] = 0f;
+            m[Matrix4.M21] = boxZ;
+            m[Matrix4.M13] = y;
+        }
+        batch.setProjectionMatrix(faceP.set(pose).mul(faceM));
     }
 
     /** A hit {@code t} seconds in, from {@code ly} toward {@code dir}: the lifted water, then the band. */
@@ -678,19 +949,19 @@ final class TideWash {
         xd = sd;
     }
 
-    /** Veil α of line {@code l} now: the hit's (not a completion's) and a drain's, the larger. */
-    private float veilAlpha(int l) {
+    /** Veil α of line {@code l}'s column c now: the hit's (not a completion's) and a drain's, the larger. */
+    private float veilAlpha(int l, int c) {
         float v = 0f;
-        if (effActive(l) && effVeil[l]) {
-            float t = now - effT[l];
+        if (effActive(l, c) && effVeil[l][c]) {
+            float t = now - effT[l][c];
             if (t > VEIL_FROM_SEC && t < VEIL_END_SEC) {
                 v = t < VEIL_PEAK_SEC
                     ? VEIL_A * (t - VEIL_FROM_SEC) / (VEIL_PEAK_SEC - VEIL_FROM_SEC)
                     : VEIL_A * (VEIL_END_SEC - t) / (VEIL_END_SEC - VEIL_PEAK_SEC);
             }
         }
-        if (drainActive(l)) {
-            float p = (now - drainT[l]) / DRAIN_SEC;
+        if (drainActive(l, c)) {
+            float p = (now - drainT[l][c]) / DRAIN_SEC;
             v = Math.max(v, DRAIN_VEIL_A * (p < 0.3f ? p / 0.3f : (1f - p) / 0.7f));
         }
         return v;
@@ -751,11 +1022,18 @@ final class TideWash {
         strip(ly + dir * base, ly + dir * (base + WATER_EDGE), c, edge, 0f, wu, wv, wv);
     }
 
-    /** A soft band of profile exp(−(d/σ)²) centred at y with peak α {@code a} ({@code glow_v}). */
+    /**
+     * A soft band of profile exp(−(d/σ)²) centred at y with peak α {@code a} ({@code glow_v}); on a column's box also a
+     * sheet of α {@code a} across it at y.
+     */
     private void band(float y, float sigma, float a, Color c) {
         if (a <= 0.002f) return;
         float hh = 0.5f * GLOW_V_PER_SIGMA * sigma;
         strip(y - hh, y + hh, c, a, a, gu, gv1, gv0);
+        if (!box) return;
+        face(4, y);
+        float k = Color.toFloatBits(c.r, c.g, c.b, MathUtils.clamp(a, 0f, 1f));
+        quad(xa, 0f, k, xa, 1f, k, xd, 1f, k, xd, 0f, k, wu, wv, wv);
     }
 
     /**
@@ -787,11 +1065,25 @@ final class TideWash {
     /**
      * One horizontal strip across the window from {@code yNear} to {@code yFar}: α {@code aNear}
      * → {@code aFar} across it, soft over {@link #END_FEATHER} at both window ends (three quads);
-     * texture column u, v {@code vNear} → {@code vFar}.
+     * texture column u, v {@code vNear} → {@code vFar}. On a lane's column one quad across it, in 3D on each upright
+     * face of its box.
      */
     private void strip(float yNear, float yFar, Color c, float aNear, float aFar, float u, float vNear, float vFar) {
         float cn = Color.toFloatBits(c.r, c.g, c.b, MathUtils.clamp(aNear, 0f, 1f));
         float cf = Color.toFloatBits(c.r, c.g, c.b, MathUtils.clamp(aFar, 0f, 1f));
+        if (!soft) {
+            for (int f = 0; f < (box ? 4 : 1); f++) {
+                float l = xa;
+                float r = xd;
+                if (box) face(f, 0f);
+                if (f >= 2) { // a side: from the box's front to its back
+                    l = 0f;
+                    r = 1f;
+                }
+                quad(l, yNear, cn, l, yFar, cf, r, yFar, cf, r, yNear, cn, u, vNear, vFar);
+            }
+            return;
+        }
         float z = Color.toFloatBits(c.r, c.g, c.b, 0f);
         quad(xa, yNear, z, xa, yFar, z, xb, yFar, cf, xb, yNear, cn, u, vNear, vFar);
         quad(xb, yNear, cn, xb, yFar, cf, xc, yFar, cf, xc, yNear, cn, u, vNear, vFar);
@@ -824,9 +1116,11 @@ final class TideWash {
         return swells;
     }
 
-    /** @return the tide level of {@code line} (0..1). */
+    /** @return the tide level of {@code line} (0..1; over separate lanes its highest column's). */
     float level(Line line) {
-        return level[line.ordinal()];
+        float v = 0f;
+        for (int c = 0; c < cols; c++) v = Math.max(v, level[line.ordinal()][c]);
+        return v;
     }
 
     /** @return band emitters (segments) alive, emitting or finishing. */

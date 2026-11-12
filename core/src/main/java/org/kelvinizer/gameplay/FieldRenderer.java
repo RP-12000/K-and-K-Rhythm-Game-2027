@@ -83,11 +83,13 @@ final class FieldRenderer {
     /** A lane's piece of a line at its opacity ({@link LaneLayout#lineOpacity}). */
     private final Color lineC = new Color();
     private final Color c1 = new Color();
+    /** A mine lane's piece of a line ({@link #across}): as red as the lane is ({@link LaneLayout#mine}). */
+    private final Color mineC = new Color();
     /** The view lanes' depth is drawn through (Kelvin 2026-11-07 22:54), or null while the field is flat. */
     private View3D space;
-    /** The column {@link #columnPose} last read: how far its lines are lifted (world), its depth's shrink. */
-    private float liftG, liftS, sinkK = 1f;
-    /** True while the batch draws through a turned lane's frame ({@link #columnPose}, {@link #columnEnd}). */
+    /** The column {@link #columnPose} last read: how far its lines are lifted (world). */
+    private float liftG, liftS;
+    /** True while the batch draws through a lane's frame ({@link #columnPose}, {@link #columnEnd}). */
     private boolean framed;
 
     private final float[][] ripX = new float[Line.COUNT][MAX_RIPPLES];
@@ -425,8 +427,8 @@ final class FieldRenderer {
                 float cl = lay.columnLeft(i);
                 if (op > 0.01f && lay.columnWidth(i) > 0f && !hidden(i)) {
                     columnPose(lay, i);
-                    separator(cx(cl), cy(y0, Line.LOWER), cy(y1, Line.UPPER), op);
-                    separator(cx(cl + lay.columnWidth(i)), cy(y0, Line.LOWER), cy(y1, Line.UPPER), op);
+                    separator(cl, cy(y0, Line.LOWER), cy(y1, Line.UPPER), op);
+                    separator(cl + lay.columnWidth(i), cy(y0, Line.LOWER), cy(y1, Line.UPPER), op);
                 }
                 continue;
             }
@@ -446,15 +448,15 @@ final class FieldRenderer {
         return chart != null ? chart.lanesShown(e.layout().beat()) : 1f;
     }
 
-    /** Sets the view a moved column's depth is drawn through ({@link View3D#sink}), or null while the field is flat. */
+    /** Sets the view a moved or turned column is drawn through ({@link #columnPose}), or null while flat. */
     void setSpace(View3D v) {
         space = v;
     }
 
     /**
      * Reads lane i's pose this frame (Kelvin 2026-11-07 22:54, 11-08 23:10: {@link LaneLayout#lift},
-     * {@link LaneLayout#moveZ}) for {@link #cx} and {@link #cy}: its line segments, edges and glows go with it; a
-     * turned lane's ({@link View3D#laneFrame}) through its frame until the next lane or {@link #columnEnd}.
+     * {@link LaneLayout#moveZ}) for {@link #cy}: its line segments, edges and glows go with it; a lane turned or moved
+     * in depth ({@link View3D#laneFrame}) through its frame until the next lane or {@link #columnEnd}.
      */
     private void columnPose(LaneLayout lay, int i) {
         liftG = lay.lift(i, Line.LOWER) * Field.ky();
@@ -463,12 +465,9 @@ final class FieldRenderer {
         if (f >= 0) {
             batch.setProjectionMatrix(space.frameCombined(f, 0f));
             framed = true;
-            sinkK = 1f;
             return;
         }
         columnEnd();
-        float z = lay.moveZ(i);
-        sinkK = space != null && z != 0f ? space.sink(z) : 1f;
     }
 
     /**
@@ -486,15 +485,9 @@ final class FieldRenderer {
         batch.setProjectionMatrix(space.combined());
     }
 
-    /** @return world x of the posed column's point at x, drawn at its depth (towards the eye) */
-    private float cx(float x) {
-        return sinkK == 1f ? x : space.eyeX() + (x - space.eyeX()) * sinkK;
-    }
-
-    /** @return world y of the posed column's point at y on {@code line}: at that line, drawn at its depth */
+    /** @return world y of the posed column's point at y on {@code line}: at that line */
     private float cy(float y, Line line) {
-        y += line == Line.UPPER ? liftS : liftG;
-        return sinkK == 1f ? y : space.eyeY() + (y - space.eyeY()) * sinkK;
+        return y + (line == Line.UPPER ? liftS : liftG);
     }
 
     /** Edges of the pieces {@link #zoneAcross} draws (window ends, seas' ends, columns' edges); grown as needed. */
@@ -574,12 +567,12 @@ final class FieldRenderer {
             if (!posed(lay, i, line) || !lay.active(i) || !(cw > 0f) || op * a <= 0.001f || hidden(i)) continue;
             columnPose(lay, i);
             float cl = lay.columnLeft(i);
-            zoneQuads(cx(cl), cw * sinkK, cy(y, line), Field.zoneHalf() * sinkK, c, a * op);
+            zoneQuads(cl, cw, cy(y, line), Field.zoneHalf(), c, a * op);
         }
         columnEnd();
     }
 
-    /** @return true when lane i's {@code line} lies apart from the chart's or the lane is turned this frame */
+    /** @return true when lane i's {@code line} is apart from the chart's or it has a frame ({@link View3D#ownFrame}) */
     private boolean posed(LaneLayout lay, int i, Line line) {
         return lay.lift(i, line) != 0f || space != null && space.laneFrame(i) >= 0;
     }
@@ -655,7 +648,7 @@ final class FieldRenderer {
                     if (lay.active(i) && lay.columnWidth(i) > 0f && lay.lineOpacity(i) > 0.002f && !hidden(i)) {
                         columnPose(lay, i);
                         lineC.set(c).a *= lay.lineOpacity(i);
-                        rippleCore(li, cx(cl), cx(cl + lay.columnWidth(i)), cy(yc, line), half, lineC, now);
+                        rippleCore(li, cl, cl + lay.columnWidth(i), cy(yc, line), half, lineC, now);
                     }
                 }
                 columnEnd();
@@ -672,8 +665,8 @@ final class FieldRenderer {
                     if (k > 0f && op > 0.01f && lay.columnWidth(i) > 0f && !hidden(i)) {
                         columnPose(lay, i);
                         float ty = cy(y, line) - 10f * k;
-                        draw.rect(cx(cl) - 1f, ty, 2f, 20f * k, Theme.INK1, TICK_A * op);
-                        draw.rect(cx(cl + lay.columnWidth(i)) - 1f, ty, 2f, 20f * k, Theme.INK1, TICK_A * op);
+                        draw.rect(cl - 1f, ty, 2f, 20f * k, Theme.INK1, TICK_A * op);
+                        draw.rect(cl + lay.columnWidth(i) - 1f, ty, 2f, 20f * k, Theme.INK1, TICK_A * op);
                     }
                     continue;
                 }
@@ -706,7 +699,9 @@ final class FieldRenderer {
             if (!lay.active(i) || lay.columnWidth(i) <= 0f || hidden(i)) continue;
             float l = lay.columnLeft(i);
             columnPose(lay, i);
-            piece(rect, cx(l), cx(l + lay.columnWidth(i)), cy(y, line), h, c, a * g * lay.lineOpacity(i));
+            float k = lay.mine(i);
+            Color pc = k > 0f ? mineC.set(c).lerp(Theme.MINE, k) : c;
+            piece(rect, l, l + lay.columnWidth(i), cy(y, line), h, pc, a * g * lay.lineOpacity(i));
         }
         columnEnd();
     }
@@ -836,8 +831,8 @@ final class FieldRenderer {
                 boolean gapped = lay.separate();
                 if (gapped && hidden(i)) continue;
                 columnPose(lay, i); // its column's lines, depth and turn (Kelvin 2026-11-07 22:54, 11-08 23:10)
-                float lx = cx(gapped ? lay.columnLeft(i) : lay.left(i));
-                float lw = (gapped ? lay.columnWidth(i) : lay.width(i)) * sinkK;
+                float lx = gapped ? lay.columnLeft(i) : lay.left(i);
+                float lw = gapped ? lay.columnWidth(i) : lay.width(i);
                 float ly = cy(y, line);
                 float op = lay.opacity(i) * shown;
                 float ap = approachA[j];

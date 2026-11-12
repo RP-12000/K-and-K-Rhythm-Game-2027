@@ -4,6 +4,7 @@ import com.badlogic.gdx.files.FileHandle;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
+import org.kelvinizer.elements.ChartFormatV7;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -51,8 +52,19 @@ public final class ChartHeaderReader {
         public String level;
         /** True when the chart has a {@code notes} array. */
         public boolean hasNotes;
-        /** The v5 {@code "format"} (0 for an old chart, whose header carries the song values). */
+        /**
+         * The v5 {@code "format"}, a v7 chart version as its format ({@link ChartFormatV7#format}; 0 for an old chart,
+         * whose header carries the song values).
+         */
         public int format;
+        /** The chart version the file is ({@link ChartFormatV7#version}: "2.0", "2.1"…; null below v7). */
+        public String version;
+        /**
+         * True when the file is written the current way, its {@code "format"} being {@link ChartFormatV7#VERSION}
+         * ("2.1"); false for v1–v6, the numbers 7–9, an older chart version and the "2.2" of 7.242 (the editor saves
+         * those again when it first opens them, 7.239).
+         */
+        public boolean current;
     }
 
     /**
@@ -98,7 +110,9 @@ public final class ChartHeaderReader {
                     case "chartConstant":
                     case "constant": h.chartConstant = text(p, v); break;
                     case "format":
-                        h.format = v != null && v.isNumeric() ? p.getIntValue() : 0;
+                        h.current = v == JsonToken.VALUE_STRING && ChartFormatV7.VERSION.equals(p.getText().trim());
+                        h.format = (int) ChartFormatV7.format(p, v); // NaN: 0
+                        h.version = ChartFormatV7.version(h.format);
                         break;
                     case "level": h.level = text(p, v); break;
                     case "bpm":

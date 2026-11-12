@@ -202,6 +202,8 @@ final class NoteRenderer {
     private float glitchFlicker;
     private int glitchQuads;
     private int glitchedNotes;
+    /** True once {@link #glitchPiece} replayed some of the note drawn now. */
+    private boolean glitchOut;
     /** First glow the glitching note added (its glows replay with its glitch in {@link #drawGlows}). */
     private int glowMark;
     /** The note being recorded tears (an active glitch) and / or bends (an active distortion). */
@@ -270,6 +272,9 @@ final class NoteRenderer {
     private final float[] crestPad = new float[CREST_MAX];
     private final float[] crestNx = new float[CREST_MAX];
     private final float[] crestNy = new float[CREST_MAX];
+    /** The frame a line glow is drawn through ({@link #keyFrame}; −1: none) and its key's own depth. */
+    private final int[] crestFrame = new int[CREST_MAX];
+    private final float[] crestFz = new float[CREST_MAX];
     private final float[] cpx = new float[CREST_PTS];
     private final float[] cpy = new float[CREST_PTS];
     /**
@@ -523,6 +528,7 @@ final class NoteRenderer {
         glitch.begin(atlas);
         batch = glitch;
         glowMark = glows;
+        glitchOut = false;
         return true;
     }
 
@@ -568,7 +574,7 @@ final class NoteRenderer {
     /** Replays the recorded note, bent and with its glitch, into the atlas batch. */
     private void glitchEnd() {
         batch = atlas;
-        boolean drew = glitch.recorded() > 0;
+        boolean drew = glitch.recorded() > 0 || glitchOut;
         if (bending) glitch.bend(bendX, bendY, bendStrength, bendT, Field.shapeScale());
         if (tearing) {
             if (drew) glitchedNotes++;
@@ -632,7 +638,7 @@ final class NoteRenderer {
         for (int i = start; i < end; i++) {
             if (e.noteState(i) != GameEngine.STATE_PENDING) continue;
             Note n = notes[i];
-            if (n.fake()) continue; // a decoration lights no lane
+            if (n.fake() || n.fromLane()) continue; // a decoration or a mine lane's mine lights no lane
             double dt = n.judgementMs() - vis;
             if (dt <= 0.0 || dt > APPROACH_MS) continue;
             float k = 1f - (float) dt / APPROACH_MS;
@@ -1846,7 +1852,8 @@ final class NoteRenderer {
         boolean up = n.isUpper();
         float lineY = e.landY(n);
         int q = 0;
-        float b = NoteShapes.blockLook(e.judgeMs(), n.judgementMs(), n.endMs(), GameEngine.LANE_MINE_LEAD_MS);
+        float b = n.fake() ? 0f // a decoration blocks nothing (as the line's glow, drawMine)
+            : NoteShapes.blockLook(e.judgeMs(), n.judgementMs(), n.endMs(), GameEngine.LANE_MINE_LEAD_MS);
         if (b > 0f) {
             if (!dry) {
                 Color m = Theme.MINE;
@@ -2267,6 +2274,8 @@ final class NoteRenderer {
             crestCol[c0] = packed;
             crestNx[c0] = s * (tideTurned ? -ttSin : 0f);
             crestNy[c0] = s * (tideTurned ? ttCos : 1f);
+            crestFrame[c0] = keyFrame; // a piece on a turned lane (a carrier lane among them): through its frame
+            crestFz[c0] = keyFrame >= 0 ? keyZ : 0f;
             for (int k = 0; k <= strips; k++) {
                 float xr = x0 + (x1 - x0) * k / strips;
                 float px = xr + jx;
@@ -2581,11 +2590,13 @@ final class NoteRenderer {
     private int paintPiece(int f, float z, float cl, float cw, float a, float b, float y, boolean up, float grey,
                            float jx, float alpha, LaneLayout lay, float seconds, boolean glow, boolean gold,
                            boolean halo) {
+        boolean own = f >= 0 || z != 0f && space != null;
+        if (own) glitchPiece(); // a glitching TIDE: what it recorded so far goes out through the view
         if (f >= 0) {
             atlas.setProjectionMatrix(space.frameCombined(f, 0f));
             keyFrame = f;
             keyZ = 0f;
-        } else if (z != 0f && space != null) {
+        } else if (own) {
             atlas.setProjectionMatrix(space.combinedAt(z));
             pieceZ = z;
         }
@@ -2593,10 +2604,25 @@ final class NoteRenderer {
         pieceW = cw;
         int q = paintTideT4(a, b, y, up, grey, jx, alpha, lay, seconds, glow, gold, halo);
         pieceL = Float.NaN;
+        if (own) glitchPiece(); // and this piece through its own frame
         if (f >= 0 || pieceZ != 0f) atlas.setProjectionMatrix(space.combined());
         if (f >= 0) keyFrame = -1;
         pieceZ = 0f;
         return q;
+    }
+
+    /**
+     * Replays what the glitching or bending note drawn now recorded so far through the projection set now, and records
+     * on: a TIDE's pieces each go through their own lane's frame (7.238; replayed all at {@link #glitchEnd} they were
+     * drawn through the view, flat and unturned).
+     */
+    private void glitchPiece() {
+        if (batch != glitch || glitch.recorded() == 0) return;
+        if (bending) glitch.bend(bendX, bendY, bendStrength, bendT, Field.shapeScale());
+        if (tearing) glitchQuads += glitch.emit(glitchSeed, glitchIntensity, glitchSplit, glitchSlice, glitchFlicker);
+        else glitch.emitPlain();
+        glitch.begin(atlas);
+        glitchOut = true;
     }
 
     /** The TIDE with its own spans drawn now ({@link Note#spanCount()}), its engine, and its distance from its line. */
@@ -2808,6 +2834,8 @@ final class NoteRenderer {
     static final int BAND_HOLE_QUADS = 5;
     /** Band opacity factor while a TIDE STREAM is held (DESIGN §19.1). */
     static final float BAND_HELD = 1.6f;
+    /** Band fill opacity factor in 3D, a shade heavier on the box's faces (Kelvin 2026-11-11 07:09). */
+    static final float BAND_BOX = 1.3f;
     /** Longest stretch of band (from the head) the two ripple lines travel through. */
     private static final float RIPPLE_SPAN = 720f;
     /** Seconds a ripple line takes over its span. */
@@ -2837,9 +2865,11 @@ final class NoteRenderer {
         for (int i = end - 1; i >= start; i--) {
             Note n = notes[i];
             if (!n.isLaneMine() || entry.drawFrom(i) > beat) continue;
+            keyBegin(e, n, beat); // on a turned lane through its frame, as its cap (draw)
             boolean g = glitchBegin(e, i, n, beat);
             laneMineBody(e, i, n, beat, frame, false);
             if (g) glitchEnd();
+            keyEnd();
         }
         for (int i = end - 1; i >= start; i--) {
             Note n = notes[i];
@@ -2899,7 +2929,9 @@ final class NoteRenderer {
         float y = up ? lineY - pos : lineY + pos;
         float deg = angle(n, lb);
         boolean turned = NoteShapes.turned(deg);
-        if (!turned && offScreen(up, y, tail, FLAT_CULL)) return;
+        // its pieces where their lanes and seas are, as its head's (Kelvin 2026-11-11 06:20), and culled as its head
+        boolean posed = !turned && (spans || sea == null && lay.moving());
+        if (!turned && !spans && offScreen(up, y, tail, FLAT_CULL)) return;
         float alpha = n.shownOpacityAt(lb) * fadeIn(i, lineY, up);
         if (alpha <= MIN_ALPHA) return;
         float grey = 0f;
@@ -2922,16 +2954,10 @@ final class NoteRenderer {
         mineTint = n.isTideMine();
         spanTide = spans ? n : null;
         spanEngine = e;
-        if (cap) {
-            for (int k = 0; k < bandPieces(lay, x0, x1); k++) {
-                paintTideCap(span[2 * k], span[2 * k + 1], y, tail, up, grey, alpha);
-            }
-            mineTint = false;
-            spanTide = null;
-            return;
-        }
+        // in 3D a box over each column (Kelvin 2026-11-11 06:20 「潮汐也做成四面纹理，潮汐水雷类似」), not turned or on a sea
+        boolean solid = space != null && !turned && sea == null && batch == atlas;
         holes = 0;
-        if (!up && !turned) {
+        if (!cap && !up && !turned) {
             for (int k = 0; k < skyBands && holes < NoteShapes.MAX_HOLES; k++) {
                 if (!NoteShapes.overlapRows(y, 1f, tail, skyBandLo[k], skyBandHi[k], ov)) continue;
                 holeLo[holes] = ov[0];
@@ -2943,11 +2969,19 @@ final class NoteRenderer {
         }
         boolean held = st == GameEngine.STATE_HOLDING && e.isHoldHeld(i);
         int pieces = bandPieces(lay, x0, x1);
-        float[] ps = pieces > 1 ? bandSpans : span;
-        if (pieces > 1) System.arraycopy(span, 0, ps, 0, 2 * pieces); // paintTideBand uses span itself
+        float[] ps = bandSpans;
+        System.arraycopy(span, 0, ps, 0, 2 * pieces); // paintTideBand uses span itself
         for (int k = 0; k < pieces; k++) {
-            paintTideBand(ps[2 * k], ps[2 * k + 1], y, tail, up, held ? BAND_HELD : 1f, grey, now, tideReach(), alpha);
+            float a0 = ps[2 * k];
+            float a1 = ps[2 * k + 1];
+            float py = bandPose(e, lay, posed ? k : -1, y, lineY, up, a0, a1);
+            for (int f = 0; f < BAND_FACES; f++) {
+                if (!bandFace(lay, k, f, a0, a1, up ? py - tail : py, tail, solid)) continue;
+                if (cap) paintTideCap(a0, a1, py, tail, up, grey, alpha);
+                else paintTideBand(a0, a1, py, tail, up, held ? BAND_HELD : 1f, grey, now, tideReach(), alpha);
+            }
         }
+        bandPose(e, lay, -1, y, lineY, up, 0f, 0f);
         mineTint = false;
         spanTide = null;
         holes = 0;
@@ -2955,10 +2989,113 @@ final class NoteRenderer {
 
     /** The spans of a band split over gapped columns, {@link #bandPieces} copied out of {@link #span}. */
     private float[] bandSpans = new float[0];
+    /** For each piece of {@link #bandPieces}: the lane whose column it lies over and the sea it lies on (−1: none). */
+    private int[] pieceLane = new int[0], pieceSea = new int[0];
+    /** Faces of a TIDE STREAM piece's box ({@link #bandFace}): its front, its right and left sides and its back. */
+    private static final int BAND_FACES = 4;
+    /** The projection of the band piece being painted ({@link #bandPose}), the frame and depth it was made from. */
+    private final Matrix4 pieceP = new Matrix4();
+    private int poseF = -1;
+    private float poseZ;
+    /** {@link #bandFace}'s map of the flat picture onto a face, and the projection through it. */
+    private final Matrix4 faceM = new Matrix4();
+    private final Matrix4 faceP = new Matrix4();
+    /** True while the batch draws through a face of {@link #bandFace} other than the front. */
+    private boolean faced;
+
+    /**
+     * Sets the batch to paint piece k of {@link #bandPieces} where its head's piece is ({@link #spanPieces},
+     * {@link #tidePieces}; Kelvin 2026-11-11 06:20, its box on its column): through its lane's or its sea's frame,
+     * else its column's depth, at its lane's lift; k −1 paints through the view again. Changing the frame sends what
+     * a glitching band recorded through the last one first.
+     *
+     * @return the y of the piece's leading edge ({@code y} unless k is a piece on a lane's lift or on a sea)
+     */
+    private float bandPose(GameEngine e, LaneLayout lay, int k, float y, float lineY, boolean up, float x0, float x1) {
+        int f = -1;
+        float z = 0f;
+        float py = y;
+        if (k >= 0 && pieceLane[k] >= 0) {
+            int i = pieceLane[k];
+            py = y + lay.lift(i, up ? Line.UPPER : Line.LOWER) * Field.ky();
+            f = space != null ? space.laneFrame(i) : -1;
+            z = f < 0 && space != null ? lay.moveZ(i) : 0f;
+        } else if (k >= 0 && pieceSea[k] >= 0) {
+            Sea s = e.chart().seas().get(pieceSea[k]);
+            float sb = lay.beat();
+            f = space != null ? space.seaFrame(pieceSea[k]) : -1;
+            py = (f >= 0 ? Field.y(s.yAt(sb)) : GameEngine.seaY(s, lay, sb, 0.5f * (x0 + x1))) + y - lineY;
+        }
+        if (space == null) return py;
+        boolean change = f != poseF || z != poseZ || faced;
+        if (change) glitchPiece();
+        pieceP.set(f >= 0 ? space.frameCombined(f, 0f) : z != 0f ? space.combinedAt(z) : space.combined());
+        if (change) atlas.setProjectionMatrix(pieceP);
+        poseF = f;
+        poseZ = z;
+        faced = false;
+        return py;
+    }
+
+    /**
+     * Sets the batch to paint face f of piece k of {@link #bandPieces} over {@code [x0, x1]}, its rows
+     * {@code [lo, lo + len]} (Kelvin 2026-11-11 06:20 「潮汐也做成四面纹理，潮汐水雷类似」): 0 its front, as
+     * {@link #bandPose} set it; with {@code solid} (3D) and the piece over a lane's column also 1 its right side and
+     * 2 its left, its across running from its front to its back, as deep as its column's base, and 3 its back, each
+     * only while it faces the eye (a LANE MINE column's sides and back alike), its turn on the screen telling.
+     *
+     * @return false when face f is not painted
+     */
+    private boolean bandFace(LaneLayout lay, int k, int f, float x0, float x1, float lo, float len, boolean solid) {
+        if (f == 0) {
+            if (faced) atlas.setProjectionMatrix(pieceP);
+            faced = false;
+            return true;
+        }
+        if (!solid || !(x1 > x0) || pieceLane[k] < 0) return false;
+        float z = space.worldZ(lay.length(pieceLane[k]));
+        if (!(z < 0f)) return false;
+        float[] m = faceM.idt().val;
+        if (f == 3) {
+            m[Matrix4.M23] = z;
+        } else {
+            float s = z / (x1 - x0);
+            m[Matrix4.M00] = 0f;
+            m[Matrix4.M03] = f == 1 ? x1 : x0;
+            m[Matrix4.M20] = s;
+            m[Matrix4.M23] = -x0 * s;
+        }
+        faceP.set(pieceP).mul(faceM);
+        // the right side turns counter-clockwise on the screen while it faces the eye; the left and the back mirrored
+        float turn = screenTurn(faceP.val, x0, x1, lo, lo + len);
+        if (f == 1 ? !(turn > 0f) : !(turn < 0f)) return false;
+        atlas.setProjectionMatrix(faceP);
+        faced = true;
+        return true;
+    }
+
+    /**
+     * @return the turn on the screen of the flat picture's corners (x0, y0), (x1, y0), (x0, y1) through projection m
+     *         (positive counter-clockwise); NaN when one lies behind the eye
+     */
+    private static float screenTurn(float[] m, float x0, float x1, float y0, float y1) {
+        float w0 = m[Matrix4.M30] * x0 + m[Matrix4.M31] * y0 + m[Matrix4.M33];
+        float w1 = m[Matrix4.M30] * x1 + m[Matrix4.M31] * y0 + m[Matrix4.M33];
+        float w2 = m[Matrix4.M30] * x0 + m[Matrix4.M31] * y1 + m[Matrix4.M33];
+        if (!(w0 > 0f && w1 > 0f && w2 > 0f)) return Float.NaN;
+        float ax = (m[Matrix4.M00] * x0 + m[Matrix4.M01] * y0 + m[Matrix4.M03]) / w0;
+        float ay = (m[Matrix4.M10] * x0 + m[Matrix4.M11] * y0 + m[Matrix4.M13]) / w0;
+        float bx = (m[Matrix4.M00] * x1 + m[Matrix4.M01] * y0 + m[Matrix4.M03]) / w1 - ax;
+        float by = (m[Matrix4.M10] * x1 + m[Matrix4.M11] * y0 + m[Matrix4.M13]) / w1 - ay;
+        float cx = (m[Matrix4.M00] * x0 + m[Matrix4.M01] * y1 + m[Matrix4.M03]) / w2 - ax;
+        float cy = (m[Matrix4.M10] * x0 + m[Matrix4.M11] * y1 + m[Matrix4.M13]) / w2 - ay;
+        return bx * cy - by * cx;
+    }
 
     /**
      * Splits a TIDE STREAM band's {@code [x0, x1]} (as drawn) over gapped columns into {@link #span}: one span over
-     * each column it covers ({@link LaneLayout#gap()}, Kelvin 2026-11-07 06:35), or the whole band.
+     * each column it covers ({@link LaneLayout#gap()}, Kelvin 2026-11-07 06:35), or the whole band; which lane or sea
+     * each lies on into {@link #pieceLane} and {@link #pieceSea}.
      *
      * @return number of spans
      */
@@ -2966,28 +3103,38 @@ final class NoteRenderer {
         int need = 2 * Math.max(1, Math.max(lay.count(), spanTide != null ? spanTide.spanCount() : 0));
         if (span.length < need) span = new float[need];
         if (bandSpans.length < need) bandSpans = new float[need];
+        if (pieceLane.length < need / 2) {
+            pieceLane = new int[need / 2];
+            pieceSea = new int[need / 2];
+        }
         if (spanTide != null) { // its own lanes' columns and seas (Kelvin 2026-11-09 00:01), at its line
             int k = 0;
             for (int s = 0; s < spanTide.spanCount(); s++) {
                 float a;
                 float b;
+                int lane = -1;
+                int on = -1;
                 if (spanTide.spanSea(s)) {
                     int j = spanTide.spanValue(s);
                     if (j < 0 || j >= spanEngine.chart().seas().size()) continue;
                     Sea sea = spanEngine.chart().seas().get(j);
                     a = lay.freeX(sea.xMin(lay.beat()));
                     b = lay.freeX(sea.xMax(lay.beat()));
+                    on = j;
                 } else {
                     int i = spanEngine.chart().laneIndexOf(spanTide.spanValue(s));
                     if (i < 0 || i >= lay.count() || !lay.active(i)) continue;
                     a = lay.columnLeft(i);
                     b = a + lay.columnWidth(i);
+                    lane = i;
                 }
                 float lo = Math.max(x0, tideLo(a, b));
                 float hi = Math.min(x1, tideHi(a, b));
                 if (hi <= lo) continue;
                 span[2 * k] = lo;
                 span[2 * k + 1] = hi;
+                pieceLane[k] = lane;
+                pieceSea[k] = on;
                 k++;
             }
             return k;
@@ -2995,6 +3142,8 @@ final class NoteRenderer {
         if (!lay.separate()) {
             span[0] = x0;
             span[1] = x1;
+            pieceLane[0] = -1;
+            pieceSea[0] = -1;
             return 1;
         }
         int k = 0;
@@ -3007,6 +3156,8 @@ final class NoteRenderer {
             if (b <= a) continue;
             span[2 * k] = a;
             span[2 * k + 1] = b;
+            pieceLane[k] = i;
+            pieceSea[k] = -1;
             k++;
         }
         return k;
@@ -3015,12 +3166,12 @@ final class NoteRenderer {
     /**
      * Paints a TIDE STREAM band (DESIGN §19.1, §21.6–21.7) across {@code [x0, x1]} from the
      * head's leading edge at {@code y} for {@code len} away from the line, in the band colour
-     * ({@code skyTide} on the sky line, {@code tide} on the ground line): fill α .14 → .08, 2 px
-     * rails at α .6 at both ends and, when {@code ripple} is not NaN, two 1 px ripple lines
-     * ({@code @ .18}) scrolling toward the line. Where the knock-outs set by {@link #drawBand}
-     * overlap (a sky band over this ground band) it draws nothing under the sky band
-     * {@code [holeX0, holeX1]}: no fill, no ripple, and rails only when the side strips beside the
-     * sky band hold them. The tail cap is {@link #paintTideCap}. Normal blend, axis-aligned;
+     * ({@code skyTide} on the sky line, {@code tide} on the ground line): fill α .14 → .08 (×
+     * {@link #BAND_BOX} in 3D), 2 px rails at α .6 at both ends and, when {@code ripple} is not
+     * NaN, two 1 px ripple lines ({@code @ .18}) scrolling toward the line. Where the knock-outs
+     * set by {@link #drawBand} overlap (a sky band over this ground band) it draws nothing under
+     * the sky band {@code [holeX0, holeX1]}: no fill, no ripple, and rails only when the side
+     * strips beside the sky band hold them. The tail cap is {@link #paintTideCap}. Normal blend, axis-aligned;
      * leaves the batch colour changed.
      *
      * @param mul    band opacity factor (1, {@link #BAND_HELD} while held)
@@ -3038,8 +3189,9 @@ final class NoteRenderer {
         else c.set(base);
         float w = x1 - x0;
         float dir = up ? -1f : 1f;
-        float aHead = Math.min(1f, NoteShapes.BAND_HEAD_A * mul) * alpha;
-        float aTail = Math.min(1f, NoteShapes.BAND_TAIL_A * mul) * alpha;
+        float fill = space != null ? mul * BAND_BOX : mul;
+        float aHead = Math.min(1f, NoteShapes.BAND_HEAD_A * fill) * alpha;
+        float aTail = Math.min(1f, NoteShapes.BAND_TAIL_A * fill) * alpha;
         float rail = NoteShapes.BAND_RAIL;
         float ra = Math.min(1f, NoteShapes.BAND_RAIL_A * mul) * alpha * (1f - 0.4f * grey);
         segs = holes > 0 ? NoteShapes.rowSegments(len, holes, holeLo, holeHi, segLo, segHi, segHole) : 0;
@@ -3290,10 +3442,20 @@ final class NoteRenderer {
         batch.draw(r, gx[k] - w * 0.5f, gy[k] - h * 0.5f, w * 0.5f, h * 0.5f, w, h, 1f, 1f, grot[k]);
     }
 
-    /** Draws the line glows collected by {@link #lineGlow}: one strip of quads per side, sharing their corners. */
+    /**
+     * Draws the line glows collected by {@link #lineGlow}: one strip of quads per side, sharing their corners, each
+     * through its frame (a piece on a turned lane, 7.238).
+     */
     private void drawCrests() {
         float[] q = glowQuad;
+        int on = -1;
+        float onZ = 0f;
         for (int c = 0; c < crests; c++) {
+            if (space != null && (crestFrame[c] != on || crestFz[c] != onZ)) {
+                on = crestFrame[c];
+                onZ = crestFz[c];
+                atlas.setProjectionMatrix(on >= 0 ? space.frameCombined(on, onZ) : space.combined());
+            }
             TextureRegion r = gaussSlice;
             float u = (r.getU() + r.getU2()) * 0.5f;
             float vb = r.getV2();
@@ -3327,6 +3489,7 @@ final class NoteRenderer {
                 batch.draw(r.getTexture(), q, 0, 20);
             }
         }
+        if (on >= 0) atlas.setProjectionMatrix(space.combined());
     }
 
     /**

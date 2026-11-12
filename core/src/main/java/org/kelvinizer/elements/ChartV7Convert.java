@@ -7,7 +7,8 @@ import java.util.List;
 
 /**
  * 把旧格式（v1–v6）的谱面换成 v7 谱面（{@link Chart7}）：轨道照旧画面逐拍取样拟合成简单函数，键的移动和长度原样换成 h、H，
- * 视角换成镜头位置 P，水幕水帘换成长方体或椭球体，假键还是假键，残影、故障、扭曲照留；其他的（判定线、全局缩放、海面……）都不要了。
+ * 视角换成镜头位置 P，水幕水帘换成长方体或椭球体，假键还是假键，残影、故障、扭曲、透明度照留，画面离开轨道的键（横移、旋转、公转）放到
+ * 不画的载体轨道上（{@link ChartV7Carry}）；其他的（判定线、全局缩放、海面……）都不要了。
  *
  * <p>Converts a chart of an older format (a built {@link Chart}) to chart format v7 (Kelvin 2026-11-09 18:44–18:45),
  * so it looks and plays as before as far as v7 can say it:
@@ -22,6 +23,8 @@ import java.util.List;
  *       a stream's or tide's length and height events become {@code H} exactly, ending at its end. A key keeps its
  *       lane, one with its own x or between lanes takes the lane nearest to it at its judgement; waves and tides span
  *       their lanes (the field: every lane). A fake key stays fake, and its trails, glitches and distortions stay;
+ *       its opacity as drawn becomes {@code o} ({@link #fade}); a key whose picture leaves its lane (its shift, its
+ *       own x, its turn, its orbit) rides a carrier lane of its own ({@link ChartV7Carry}, Kelvin 2026-11-11 02:22);
  *       every other key setting is dropped;</li>
  *   <li><b>camera</b>: the view's turn, distance and lens as the camera position P at the 11° lens;</li>
  *   <li><b>veils and curtains</b>: a circle as an ellipsoid, a polygon as the box around it (not turned), its centre
@@ -45,6 +48,8 @@ public final class ChartV7Convert {
     static final float CLEAR = 0.05f;
     /** How often a key's opacity is looked at, beats. */
     static final float CLEAR_STEP = 1f / 64f;
+    /** How far a key's fitted opacity may stray from its old one ({@link #fade}). */
+    static final float FADE_TOL = 0.02f;
     /** Where a camera at the 11° lens sees what an old view sees: tan 5.5°. */
     private static final double TAN_LENS = Math.tan(Math.toRadians(5.5));
 
@@ -58,10 +63,14 @@ public final class ChartV7Convert {
         c.constant = old.chartConstant();
         LaneLayout lay = new LaneLayout(old);
         lanes(old, c, lay);
+        ChartV7Carry carry = new ChartV7Carry(old, lay, c.lanes);
         for (Note n : old.notes()) {
             Key7 k = key(n, lay);
-            if (k != null) c.keys.add(k);
+            if (k == null) continue;
+            carry.carry(n, k); // a key drawn off its lane rides a lane of its own (Kelvin 2026-11-11 02:22)
+            c.keys.add(k);
         }
+        c.lanes.addAll(carry.lanes());
         camera(old, c);
         for (Veil v : old.veils()) volume(v, false, c);
         for (Veil v : old.curtains()) volume(v, true, c);
@@ -166,6 +175,7 @@ public final class ChartV7Convert {
         }
         move(n, k.h);
         hide(n, k.h);
+        fade(n, k, 0f);
         if (k.kind.hasHeight()) height(n, k.H);
         k.trails = new ArrayList<>(n.trails()); // Kelvin 2026-11-10 02:17 「故障效果和残影要加上啊」
         k.glitches = new ArrayList<>(n.glitches());
@@ -192,6 +202,42 @@ public final class ChartV7Convert {
             }
         }
         return best;
+    }
+
+    /**
+     * Key n's opacity as drawn ({@link Note#shownOpacity}, a blink past 1 included) as its {@code o} (Kelvin 2026-11-11
+     * 02:22, old charts open as before): sampled every {@link #CLEAR_STEP} beats and where its events change, from its
+     * first beat to its end, in straight pieces within {@link #FADE_TOL}; none while it is drawn whole throughout. With
+     * {@code spawn} beats (a key put on a carrier lane, {@link ChartV7Carry}), times the fade-in the old picture gave
+     * it over that long from where it appeared.
+     */
+    static void fade(Note n, Key7 k, float spawn) {
+        boolean in = spawn > 0f;
+        if (n.disappearEvents().isEmpty() && !in || k.h.isEmpty()) return;
+        float a = k.h.firstTi(), b = Math.max(a, k.endBeat()), v = n.visibleFrom();
+        Changes ch = new Changes();
+        ch.add(n.disappearEvents());
+        for (int i = 0; a + i * CLEAR_STEP < b; i++) ch.at(a + i * CLEAR_STEP);
+        ch.at(a);
+        ch.at(b);
+        if (in) {
+            ch.at(v);
+            ch.at(v + spawn);
+        }
+        float[] ts = ch.beats();
+        float[] s = new float[2 * ts.length];
+        int m = 0;
+        boolean whole = true;
+        for (float t : ts) {
+            if (t < a || t > b) continue;
+            float o = Note.shownOpacity(n.opacityAt(t));
+            if (in) o *= Math.max(0f, Math.min(1f, (t - v) / spawn));
+            s[2 * m] = t;
+            s[2 * m + 1] = o;
+            whole &= o >= 1f - FADE_TOL;
+            m++;
+        }
+        if (!whole) ChartV7Carry.fit(k.o, Arrays.copyOf(s, 2 * m), 2, 0, FADE_TOL);
     }
 
     /**

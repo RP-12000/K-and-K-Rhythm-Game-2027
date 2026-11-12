@@ -150,9 +150,10 @@ public final class Note {
     boolean spaceTrack;
     /** {@code "spans"} ({@link #spanCount()}): pairs of a kind (0 a lane id, 1 a sea index) and its value; or null. */
     int[] spans;
-    /** A chart format v7 key's opacity and its lanes' ({@link #setOpacity7}), or null. */
+    /** A chart format v7 key's opacity and its lanes' and their groups' ({@link #setOpacity7}), or null. */
     private Fn opacity7;
     private Fn[] laneOpacity7;
+    private Group7.Pose[] laneGroups7;
     /**
      * A space key's lane at its judgement beat ({@link LaneLayout#freezeSpaceKeys}; null for other keys): reference
      * units, {@link LaneLayout#FROZEN_COUNT} floats.
@@ -694,6 +695,17 @@ public final class Note {
      */
     public boolean fake() { return fake; }
 
+    /** Set by {@link ChartV7Runtime#build} on the stretches a red lane makes ({@link #fromLane}). */
+    boolean fromLane;
+
+    /**
+     * @return true for a stretch of a red lane (a mine lane, Kelvin 2026-11-10 23:01 「水雷轨道」: a v7 lane's {@code m}
+     *         above 0, {@link Lane7#m}), a LANE MINE in form only: no mine (Kelvin 2026-11-12, counted in no total),
+     *         it only cuts the window of the keys of its lane on it to RESONANCE ({@code GameEngine}); never drawn, and
+     *         in no sync group
+     */
+    public boolean fromLane() { return fromLane; }
+
     /**
      * @return true when an orbit with a radius and angle places the note at {@code beat} (Kelvin 2026-10-29 20:55):
      *         from the start of the first of its centre, radius and angle events to the end of the last (always when
@@ -774,9 +786,9 @@ public final class Note {
 
     /**
      * @return earliest beat at which any of the note's events (the default approach included)
-     *         starts, or its judgement beat
+     *         starts, or its judgement beat; +∞ for a mine lane's mine ({@link #fromLane}), never drawn
      */
-    public float visibleFrom() { return visibleFrom; }
+    public float visibleFrom() { return fromLane ? Float.POSITIVE_INFINITY : visibleFrom; }
 
     /**
      * @return speed (ref units per beat) at its end of the movement event in effect at the judgement (0 if none or
@@ -914,15 +926,20 @@ public final class Note {
 
     /**
      * @return note opacity at {@code beat} (authored {@code DisappearEvents}, base 1); a chart format v7 key's is its
-     *         {@code o} times its lane's (Kelvin 2026-11-09 21:37 「加回透明度」), each clamped to 0..1 (a wave or tide:
-     *         the most of its lanes')
+     *         {@code o} times its lane's (Kelvin 2026-11-09 21:37 「加回透明度」) and its lane's groups' (chart version
+     *         2.1), each clamped to 0..1 (a wave or tide: the most of its lanes')
      */
     public float opacityAt(float beat) {
         if (opacity7 == null) return Events.calculateValue(disappearEvents, beat, 1f);
         float o = Lane.clamp01(opacity7.at(beat));
         if (o > 0f && laneOpacity7 != null) {
             float l = 0f;
-            for (Fn f : laneOpacity7) l = Math.max(l, f != null ? Lane.clamp01(f.at(beat)) : 1f);
+            for (int i = 0; i < laneOpacity7.length; i++) {
+                Fn f = laneOpacity7[i];
+                float a = f != null ? Lane.clamp01(f.at(beat)) : 1f;
+                if (laneGroups7 != null && laneGroups7[i] != null) a *= laneGroups7[i].opacityAt(beat);
+                l = Math.max(l, a);
+            }
             o *= l;
         }
         return o;
@@ -933,8 +950,17 @@ public final class Note {
      * lanes = the key's alone).
      */
     void setOpacity7(Fn key, Fn[] lanes) {
+        setOpacity7(key, lanes, null);
+    }
+
+    /**
+     * {@link #setOpacity7(Fn, Fn[])} with the poses of its lanes' groups ({@link Lane7#g}, chart version 2.1; in the
+     * lanes' order, an entry null for a lane in none; null: none in a group).
+     */
+    void setOpacity7(Fn key, Fn[] lanes, Group7.Pose[] groups) {
         opacity7 = key;
         laneOpacity7 = lanes != null && lanes.length > 0 ? lanes : null;
+        laneGroups7 = laneOpacity7 != null ? groups : null;
     }
 
     /** @return the opacity the note is drawn with at {@code beat}: {@link #shownOpacity} of {@link #opacityAt}. */

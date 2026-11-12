@@ -852,7 +852,7 @@ public class GameplayScreen extends KkScreen<Main> {
                     boolean res = ev.judgement == Judgement.RESONANCE;
                     Note on = universal && ev.note >= 0 ? chart.note(ev.note) : null;
                     if (on != null && on.sea() != null) tideWash.hitSea(on.sea(), line, res, runTime); // along its sea
-                    else if (universal) tideWash.hit(line, res, runTime);
+                    else if (universal) tideWash.hit(engine, ev.note, line, res, runTime); // on the lanes it spans
                     else contact(line, ly, true, auto); // TIDE: no contact ring at the finger either (§19.2)
                     hud.judgement(ev.judgement, ev.dtMs, ev.x, line, ly, runTime);
                     if (auto && autoHitMs == null) game.audio().playHit(ev.judgement);
@@ -900,22 +900,21 @@ public class GameplayScreen extends KkScreen<Main> {
                     if (completed) {
                         game.audio().playHoldEnd(); // optional Sounds/hold_end.* (DESIGN §5.14)
                         if (ev.has(GameEvent.FLAG_TIDE_STREAM)) {
-                            tideWash.complete(line, ev.judgement == Judgement.RESONANCE, runTime);
+                            tideWash.complete(engine, ev.note, line, ev.judgement == Judgement.RESONANCE, runTime);
                         }
                     } else {
                         fx.lost(ev.x, line == Line.UPPER ? ly - 120f : ly + 120f, 1f);
-                        field.flash(line, ev.lane, false, runTime); // a TIDE STREAM (lane −1) flashes the window
+                        // a TIDE STREAM (lane −1) flashes the window, or over separate lanes each column it spans
+                        if (!spanFlash(ev.note, line)) field.flash(line, ev.lane, false, runTime);
                         hud.judgement(Judgement.LOST, 0f, ev.x, line, ly, runTime);
                         // a broken TIDE STREAM drains the tide level (unless another one keeps it up)
-                        if (ev.has(GameEvent.FLAG_TIDE_STREAM) && !engine.tideRunning(line)) {
-                            tideWash.drain(line, runTime);
-                        }
+                        if (ev.has(GameEvent.FLAG_TIDE_STREAM)) tideWash.drain(engine, ev.note, line, runTime);
                     }
                     break;
                 }
                 case GameEvent.LOST:
                     fx.lost(ev.x, line == Line.UPPER ? ly - 120f : ly + 120f, 1f);
-                    if (universal) field.flashWindow(line, false, runTime);
+                    if (universal && !spanFlash(ev.note, line)) field.flashWindow(line, false, runTime);
                     else if (ev.lane >= 0) field.flash(line, ev.lane, false, runTime); // a DRAG off the lanes: none
                     hud.judgement(Judgement.LOST, 0f, ev.x, line, ly, runTime);
                     break;
@@ -1025,6 +1024,21 @@ public class GameplayScreen extends KkScreen<Main> {
             if (holdFx[i] < 0) continue; // TIDE STREAMs have no stream FX slot (no HOLD_START)
             if (holdBase(i)) fx.holdMove(holdFx[i], basePt[0], basePt[1]);
         }
+    }
+
+    /**
+     * A missed TIDE or TIDE STREAM {@code note} over separate lanes (Kelvin 2026-11-11 05:30 「只在那些跨过的轨道」): each
+     * column it spans flashes, as a missed key's lane does, instead of the window.
+     *
+     * @return false when it is not one (no note, one on a sea, or the lanes are not separate)
+     */
+    private boolean spanFlash(int note, Line line) {
+        if (note < 0 || line == null || !engine.layout().separate()) return false;
+        Note n = chart.note(note);
+        if (n.type().inLane() || n.sea() != null) return false;
+        int m = tideWash.columns(engine, note);
+        for (int k = 0; k < m; k++) field.flash(line, tideWash.column(k), false, runTime);
+        return true;
     }
 
     /**

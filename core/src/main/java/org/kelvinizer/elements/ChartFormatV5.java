@@ -34,14 +34,17 @@ public final class ChartFormatV5 {
     private ChartFormatV5() {
     }
 
-    /** @return true when the JSON object has a top-level {@code "format"} of 5 or more (false for unreadable JSON) */
+    /**
+     * @return true when the JSON object has a top-level {@code "format"} of 5 or more, a v7 chart version
+     *         ({@link ChartFormatV7#format}) included (false for unreadable JSON)
+     */
     static boolean isV5(JsonFactory factory, byte[] json) {
         try (JsonParser p = factory.createParser(json)) {
             if (p.nextToken() != JsonToken.START_OBJECT) return false;
             while (p.nextToken() == JsonToken.FIELD_NAME) {
                 String name = p.currentName();
                 JsonToken v = p.nextToken();
-                if ("format".equals(name)) return v != null && v.isNumeric() && p.getDoubleValue() >= FORMAT;
+                if ("format".equals(name)) return ChartFormatV7.format(p, v) >= FORMAT;
                 p.skipChildren();
             }
         } catch (IOException e) {

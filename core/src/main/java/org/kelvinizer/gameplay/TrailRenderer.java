@@ -533,7 +533,7 @@ final class TrailRenderer {
         // through a turned lane's frame the flat picture's edges say nothing about where it shows, as for the live key
         int lane = g.layout.keyLane(n);
         boolean framed = space != null && (n.sea() != null || n.spaceTrack() || n.spacePath()
-            ? space.keyFrame(e.layout(), n) >= 0 : lane >= 0 && g.layout.turned(lane));
+            ? space.keyFrame(e.layout(), n) >= 0 : lane >= 0 && View3D.ownFrame(g.layout, lane));
         switch (n.type()) {
             case MINE: {
                 float pad = NoteRenderer.rotPad(g.rot, g.laneWidth);

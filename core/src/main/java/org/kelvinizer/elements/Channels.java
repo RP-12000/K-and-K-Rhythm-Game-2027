@@ -47,14 +47,17 @@ public final class Channels {
     private static final float[] LANE_DEFAULTS = {Float.NaN, Float.NaN, 0f, 0f, -1f, 0f, Float.NaN, 1f, 240f};
     /**
      * A lane of chart format v7 (Kelvin 2026-11-09 18:44, {@link Lane7}): its fall u, its origin v, its base's width
-     * and length (a), where its sky face and its base lie from the origin along its up axis (S, F) and how far its
-     * column goes on past each (s, f). Read {@link #held}: a value holds between its segments.
+     * and length (a), where its sky face and its base lie from the origin along its up axis (S, F), how far its
+     * column goes on past each (s, f) and the normal its front faces (n; NaN while not written: the shortest turn,
+     * {@link LaneLayout#turn}). Read {@link #held}: a value holds between its segments.
      */
-    public static final String[] LANE7 = {"ux", "uy", "uz", "vx", "vy", "vz", "w", "h", "S", "s", "F", "f"};
+    public static final String[] LANE7 =
+        {"ux", "uy", "uz", "vx", "vy", "vz", "w", "h", "S", "s", "F", "f", "nx", "ny", "nz"};
     public static final int U_X = 0, U_Y = 1, U_Z = 2, V_X = 3, V_Y = 4, V_Z = 5, A_W = 6, A_H = 7, SKY = 8,
-        SKY_REACH = 9, GROUND = 10, GROUND_REACH = 11;
+        SKY_REACH = 9, GROUND = 10, GROUND_REACH = 11, N_X = 12, N_Y = 13, N_Z = 14;
     /** {@link #LANE7}'s defaults ({@link Lane7}). */
-    private static final float[] LANE7_DEFAULTS = {0f, -1f, 0f, 0f, 0f, 0f, 240f, 240f, 480f, 820f, -480f, 820f};
+    private static final float[] LANE7_DEFAULTS =
+        {0f, -1f, 0f, 0f, 0f, 0f, 240f, 240f, 480f, 820f, -480f, 820f, Float.NaN, Float.NaN, Float.NaN};
     /** The camera of chart format v7 (its position P, {@link Chart7#camera}), {@link #held}. */
     public static final String[] CAMERA7 = {"x", "y", "z"};
 

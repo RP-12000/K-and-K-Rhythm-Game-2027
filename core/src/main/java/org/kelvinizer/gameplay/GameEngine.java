@@ -37,16 +37,16 @@ import java.util.Arrays;
  *       the screen by {@link Field} (line y with {@code ky}, window bounds with {@code kx}).</li>
  * </ul>
  *
- * <h2>Judging (one tap judges one target, a TIDE group counts as one; plus its sync partner where the lines are
- * close)</h2>
+ * <h2>Judging (one tap judges one target, a TIDE group counts as one; plus its sync partner on the other line)</h2>
  * <ul>
  *   <li><b>Whole columns</b> (Kelvin 2026-11-07 04:14 「改回垂直判定」, 04:18 「整列」): a note's column counts at any
  *       height and the two lines no longer split the screen (was half the screen each, {@code |y − lineY| ≤ 480·ky}),
  *       so every touch looks at the notes of both lines, wherever it is. Only the mines still touch only inside their
  *       own line's zone {@code |y − lineY| ≤ 480·ky} ({@link Field#zoneHalf}, 0.4 of the screen height). A touch
- *       inside both lines' zones (lines less than 960·ky apart) that judges a note also judges the other line's
- *       pending note in the same lane with exactly the same judgement beat, and that line's TIDE group at that beat
- *       ({@code judgeOtherLine}); anywhere else a sky + ground pair in one column takes two touches, as before.</li>
+ *       that judges a note also judges the other line's pending note in the same lane with exactly the same
+ *       judgement beat, and that line's TIDE group at that beat ({@code judgeOtherLine}): a sky + ground pair in one
+ *       lane takes one touch (Kelvin 2026-11-11 05:30 「改为全判」; until 7.239 only a touch inside both lines' zones,
+ *       lines less than 960·ky apart, did so, and anywhere else the pair took two touches).</li>
  *   <li>Candidates, on each line: the earliest unjudged tap/hold head with
  *       {@code |dt| ≤ TIER2} in the lane under x ({@link LaneLayout#indexAtX}); if that lane has
  *       none and x is within 30 % of the lane width of a boundary, the neighbouring lane; plus the
@@ -147,6 +147,10 @@ import java.util.Arrays;
  *       {@code T + TIER1}). A RESONANCE on such a note at {@code t} also keeps every LANE MINE in its lane and
  *       line asleep until {@code t + RESONANCE_GUARD_MS} (150 ms, Kelvin 2026-10-30); a finger or key still in
  *       place when that ends is a contact. A LOST gives no guard.</li>
+ *   <li><b>Red lanes</b> (a v7 lane's {@code m} above 0, {@link Note#fromLane}; Kelvin 2026-11-12: 「红色轨道（水雷轨道）：
+ *       按到了，没有键，不加分，不断连击，不报lost，但是落在这种轨道上的键只能打出resonance」): no mines. Each stretch only cuts
+ *       the keys of its lane whose RESONANCE window meets it to that window, as a LANE MINE does (a press outside it
+ *       does nothing, LOST at {@code T + TIER1}); a press on it, with or without a key, touches nothing.</li>
  *   <li><b>DRAGs</b> (Kelvin 2026-11-05: 「加 Drag，手指在对应判定线就判」, 「手指提前放着或者滑过去都算，到点时手指在那儿就是共鸣，
  *       不在就是迷失，没有回响」; in a lane like a tap since 2026-11-08 02:51 「也上轨道」): never tapped and never
  *       taking a tap. A DRAG is at its lane's centre ({@link LaneLayout#keyCentre}, following the lane), its lane wide;
@@ -384,6 +388,12 @@ public final class GameEngine {
     private Note[] laneMineArr = new Note[0];
     private int laneMineCount;
     private int laneMineLo;
+    /**
+     * A red lane's stretches ({@link Note#fromLane}) in chart order, valid up to {@link #redCount}: never touched, only
+     * their keys' window cut to RESONANCE ({@link #findShadows}).
+     */
+    private Note[] redArr = new Note[0];
+    private int redCount;
     // Per LANE MINE (indexed by Note.index()): pointers / key slots counted inside its box (bit
     // masks), the number of contacts and the time of the last one.
     private int[] minePtrMask = new int[0];
@@ -567,14 +577,21 @@ public final class GameEngine {
             freeCursor[l] = 0;
         }
         Note[] allMines = chart.mines();
-        int blockTotal = 0;
-        for (Note m : allMines) if (m.isBlockMine()) blockTotal++;
-        if (mines.length < allMines.length - blockTotal) mines = new Note[allMines.length - blockTotal];
+        int blockTotal = 0, redTotal = 0;
+        for (Note m : allMines) {
+            if (m.fromLane()) redTotal++;
+            else if (m.isBlockMine()) blockTotal++;
+        }
+        int plainTotal = allMines.length - blockTotal - redTotal;
+        if (mines.length < plainTotal) mines = new Note[plainTotal];
         if (laneMineArr.length < blockTotal) laneMineArr = new Note[blockTotal];
+        if (redArr.length < redTotal) redArr = new Note[redTotal];
         mineCount = 0;
         laneMineCount = 0;
+        redCount = 0;
         for (Note m : allMines) {
-            if (m.isBlockMine()) laneMineArr[laneMineCount++] = m;
+            if (m.fromLane()) redArr[redCount++] = m;
+            else if (m.isBlockMine()) laneMineArr[laneMineCount++] = m;
             else mines[mineCount++] = m;
         }
         mineLo = 0;
@@ -1138,8 +1155,7 @@ public final class GameEngine {
         if (!autoplay) stepCoverage(t);
         pVeiled[pointer] = veiled || Veils.containsAny(veils, x, y, evBeat);
         if (pVeiled[pointer]) return INPUT_VEILED;
-        // whole columns: both lines take the touch at any height; inside both zones a sync pair takes one tap
-        boolean both = Math.abs(y - evLowerY) <= Field.zoneHalf() && Math.abs(y - evUpperY) <= Field.zoneHalf();
+        // whole columns: both lines take the touch at any height, and a sync pair one tap
         int own = lane >= 0 && lane < inputLayout.count() ? lane : inputLayout.indexAtX(x);
         int zone = nearerLine(y, evLowerY, evUpperY);
         lastInputLane = own;
@@ -1199,28 +1215,26 @@ public final class GameEngine {
         }
         judgeBest(pointer, pointer, x, y, t, bestKind == KIND_NEIGHBOUR ? GameEvent.FLAG_NEIGHBOUR : 0);
         Judgement j = lastJudgement;
-        if (both) judgeOtherLine(pointer, x, y, t, own);
-        for (int k = 0; k < ov; k++) judgeJoint(pointer, x, y, t, j, overlapLane[k], both);
-        if (own >= 0 && own != bestLane) judgeJoint(pointer, x, y, t, j, own, both);
+        judgeOtherLine(pointer, x, y, t, own);
+        for (int k = 0; k < ov; k++) judgeJoint(pointer, x, y, t, j, overlapLane[k]);
+        if (own >= 0 && own != bestLane) judgeJoint(pointer, x, y, t, j, own);
         return INPUT_JUDGED;
     }
 
     /**
      * The keys of lane {@code lane}, another lane whose area the press that judged {@link #bestNote} is in, at exactly
-     * its beat (on its line, else on the other line, or on both lines when the press is in both zones): judged with it,
-     * the same grade and Δt (Kelvin 2026-11-10 02:19 「之前“同时点击重合判定区域能够判定两个轨道的键”也还可以保留」, as
-     * {@link #judgeOtherLine}). The other line's key counts as the press is anywhere on the lane's column (Kelvin
+     * its beat on either line (Kelvin 2026-11-11 05:30 「改为全判」; until 7.239 the other line's only when the lane had
+     * none on its line or the press was in both zones): judged with it, the same grade and Δt (Kelvin 2026-11-10
+     * 02:19 「之前“同时点击重合判定区域能够判定两个轨道的键”也还可以保留」, as {@link #judgeOtherLine}). The other line's
+     * key counts as the press is anywhere on the lane's column (Kelvin
      * 2026-11-10 04:22 「同时点击垂直轨道和水平轨道的交界处好像不能同时判定两个按键」: a lane lying toward the player met a
      * standing column with its sky key at the beat of the column's ground key).
      */
-    private void judgeJoint(int pointer, float x, float y, double t, Judgement j, int lane, boolean both) {
+    private void judgeJoint(int pointer, float x, float y, double t, Judgement j, int lane) {
         Note n = notes[bestNote];
         if (lane < 0 || lane == bestLane || n.type() == NoteType.UNIVERSAL || j == null) return;
         float d = (float) (t - n.judgementMs());
-        int line = n.line().ordinal();
-        boolean same = pendingLaneAt(line, lane, n.judgement()) >= 0;
         for (int l = 0; l < Line.COUNT; l++) {
-            if (l != line && same && !both) continue;
             int c = pendingLaneAt(l, lane, n.judgement());
             if (c < 0) continue;
             int keep = pHold[pointer];
@@ -1256,9 +1270,9 @@ public final class GameEngine {
     }
 
     /**
-     * Overlapping zones (Kelvin 10-12): a touch inside both zones also judges the other line's note in
-     * the same lane, and that line's TIDE group, when they share the judged note's beat exactly, with
-     * the same grade and Δt. A sky + ground sync pair then takes one tap. A second hold follows the
+     * A touch also judges the other line's note in the same lane, and that line's TIDE group, when they share the
+     * judged note's beat exactly, with the same grade and Δt: a sky + ground sync pair takes one tap (Kelvin
+     * 2026-11-11 05:30 「改为全判」; from 10-12 until 7.239 only a touch inside both lines' zones). A second hold follows the
      * same pointer through its owner; the pointer keeps the first one.
      */
     private void judgeOtherLine(int pointer, float x, float y, double t, int own) {
@@ -2245,18 +2259,18 @@ public final class GameEngine {
     /**
      * Mines and taps (Kelvin 2026-10-31) and LANE MINE priority (Kelvin 2026-10-14), see the class doc: pairs every
      * MINE with the taps / STREAM heads of its lane and line whose ±TIER2 window meets its window, and every LANE
-     * MINE with those whose RESONANCE window meets its block, then sets how long each note can be judged. Called by
-     * {@link #load}; allocates only for a chart with more such pairs than any before.
+     * MINE (a red lane's stretch too) with those whose RESONANCE window meets its block, then sets how long each note
+     * can be judged. Called by {@link #load}; allocates only for a chart with more such pairs than any before.
      */
     private void findShadows(int n) {
         Arrays.fill(noEcho, 0, n, false);
         Arrays.fill(cutLen, 0, n, 0);
         Arrays.fill(shadowLen, 0, n, 0);
-        int total = mineCount + laneMineCount;
+        int blocks = mineCount + laneMineCount, total = blocks + redCount;
         for (int pass = 0, pairs = 0; pass < 2; pass++) {
             int at = 0;
             for (int k = 0; k < total; k++) {
-                Note m = k < mineCount ? mines[k] : laneMineArr[k - mineCount];
+                Note m = k < mineCount ? mines[k] : k < blocks ? laneMineArr[k - mineCount] : redArr[k - blocks];
                 boolean laneMine = m.isBlockMine();
                 double lo = laneMine ? m.judgementMs() - LANE_MINE_LEAD_MS : m.judgementMs() - MINE_WINDOW_MS;
                 double hi = laneMine ? m.endMs() : m.judgementMs() + MINE_WINDOW_MS;

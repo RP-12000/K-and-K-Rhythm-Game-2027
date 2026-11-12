@@ -95,6 +95,8 @@ public final class Chart {
     private final int[] typeCounts = new int[NoteType.count()];
     private int tideStreams;
     private int laneMineTotal;
+    /** A red lane's stretches ({@link Note#fromLane}): in {@link #mines()} but no mines, so in no count. */
+    private int redStretches;
     private final float lastNoteEndBeat;
     private final float firstVisibleBeat;
 
@@ -263,7 +265,8 @@ public final class Chart {
             n.index = i;
             n.judgementMs = beatToMs(n.judgement());
             n.endMs = beatToMs((double) n.judgement() + n.duration());
-            if (!n.fake()) { // decorations are drawn only (Kelvin 2026-11-02)
+            if (n.fromLane()) redStretches++;
+            else if (!n.fake()) { // decorations are drawn only (Kelvin 2026-11-02)
                 typeCounts[n.type().ordinal()]++;
                 if (n.isTideStream()) tideStreams++;
                 if (n.isLaneMine()) laneMineTotal++;
@@ -272,7 +275,7 @@ public final class Chart {
             firstVisible = i == 0 ? n.visibleFrom() : Math.min(firstVisible, n.visibleFrom());
         }
         lastNoteEndBeat = lastEnd;
-        firstVisibleBeat = firstVisible;
+        firstVisibleBeat = firstVisible < Float.POSITIVE_INFINITY ? firstVisible : 0f; // only mine lanes' mines
 
         laneNotes = new Note[Line.COUNT * laneCount][];
         laneMines = new Note[Line.COUNT * laneCount][];
@@ -282,13 +285,16 @@ public final class Chart {
         buildSyncGroups();
     }
 
-    /** Global note order (on one beat decorations after the rest); ties keep the input order (stable sort). */
+    /**
+     * Global note order (on one beat decorations and a mine lane's mines, {@link #aside}, after the rest); ties keep
+     * the input order (stable sort).
+     */
     private static final Comparator<Note> NOTE_ORDER = new Comparator<Note>() {
         @Override
         public int compare(Note a, Note b) {
             int c = Float.compare(a.judgement(), b.judgement());
             if (c != 0) return c;
-            c = Boolean.compare(a.fake(), b.fake());
+            c = Boolean.compare(aside(a), aside(b));
             if (c != 0) return c;
             c = a.line().ordinal() - b.line().ordinal();
             if (c != 0) return c;
@@ -339,7 +345,8 @@ public final class Chart {
         }
         Arrays.fill(dragCounts, 0);
         Arrays.fill(freeCounts, 0);
-        Note[] allMines = totalMines() == 0 ? NO_NOTES : new Note[totalMines()];
+        int mineTotal = totalMines() + redStretches;
+        Note[] allMines = mineTotal == 0 ? NO_NOTES : new Note[mineTotal];
         Arrays.fill(laneCounts, 0);
         Arrays.fill(mineCounts, 0);
         Arrays.fill(universalCounts, 0);
@@ -410,12 +417,13 @@ public final class Chart {
     /**
      * Sync groups (same line, same beat, judged notes) and the shared-beat flag (any other note of
      * any type, either line, at exactly the same beat: {@link Note#sharesBeat()}). Decorations
-     * ({@link Note#fake()}, after the rest on their beat) are in neither.
+     * ({@link Note#fake()}) and a mine lane's mines ({@link Note#fromLane()}), after the rest on their beat, are in
+     * neither.
      */
     private void buildSyncGroups() {
         int i = 0;
         while (i < notes.length) {
-            if (notes[i].fake()) {
+            if (aside(notes[i])) {
                 notes[i].sharesBeat = false;
                 notes[i].syncStart = i;
                 notes[i].syncSize = 1;
@@ -424,7 +432,7 @@ public final class Chart {
             }
             // Cluster of notes with exactly the same judgement beat (both lines).
             int end = i + 1;
-            while (end < notes.length && !notes[end].fake() && notes[end].judgement() == notes[i].judgement()) end++;
+            while (end < notes.length && !aside(notes[end]) && notes[end].judgement() == notes[i].judgement()) end++;
             boolean shared = end - i > 1;
             for (int q = i; q < end; q++) notes[q].sharesBeat = shared;
             int k = i;
@@ -446,6 +454,11 @@ public final class Chart {
             }
             i = end;
         }
+    }
+
+    /** @return true for a note outside the sync groups: a decoration or a mine lane's mine */
+    private static boolean aside(Note n) {
+        return n.fake() || n.fromLane();
     }
 
     // ------------------------------------------------------------------ metadata
@@ -635,7 +648,10 @@ public final class Chart {
         return drags[line.ordinal()];
     }
 
-    /** @return every mine (LANE MINEs included) in chart order (shared). */
+    /**
+     * @return every mine (LANE MINEs included) and every red lane's stretch ({@link Note#fromLane}) in chart order
+     *         (shared)
+     */
     public Note[] mines() { return mines; }
 
     /** @return notes counted for score and combo: tap + hold + universal + drag. */
@@ -669,7 +685,8 @@ public final class Chart {
         if (laneMineTotal == 0) return 0;
         int count = 0;
         for (Note m : mines) {
-            if (!m.isLaneMine() || m.laneIndex < 0) continue; // one placed by position blocks no lane
+            // one placed by position blocks no lane, a red lane's stretch nothing (its keys are meant to be there)
+            if (!m.isLaneMine() || m.laneIndex < 0 || m.fromLane) continue;
             int k = m.line().ordinal() * lanes.length + m.laneIndex;
             double from = m.judgementMs - leadMs;
             double to = m.endMs;

@@ -59,6 +59,12 @@ public final class Lane {
     private final Channels space;
     /** A v7 lane's opacity {@code o} ({@link #v7(int, Channels, Fn)}), or null. */
     private Fn opacity7;
+    /** A v7 lane's own opacity {@code l} ({@link #v7(int, Channels, Fn, Fn, Fn)}), or null: 1. */
+    private Fn own7;
+    /** A v7 lane's mine {@code m} ({@link #v7(int, Channels, Fn, Fn, Fn)}), or null: none. */
+    private Fn mine7;
+    /** The pose of a v7 lane's group ({@link Lane7#g}, chart version 2.1), or null: none. */
+    private Group7.Pose group7;
 
     /** Creates a lane with default width, opacity and no events. */
     public Lane(int id) {
@@ -101,14 +107,39 @@ public final class Lane {
      * null = 1).
      */
     static Lane v7(int id, Channels functions, Fn opacity) {
+        return v7(id, functions, opacity, null, null);
+    }
+
+    /**
+     * {@link #v7(int, Channels, Fn)} with its own opacity {@code l} ({@link Lane7#l}; null = 1) and its mine {@code m}
+     * ({@link Lane7#m}; null = none), both kept, not copied.
+     */
+    static Lane v7(int id, Channels functions, Fn opacity, Fn own, Fn mine) {
+        return v7(id, functions, opacity, own, mine, null);
+    }
+
+    /**
+     * {@link #v7(int, Channels, Fn, Fn, Fn)} in a group ({@link Lane7#g}, chart version 2.1; its pose, kept; null:
+     * none): {@link LaneLayout} places, turns and sizes it with the group, and the group's opacity fades it.
+     */
+    static Lane v7(int id, Channels functions, Fn opacity, Fn own, Fn mine, Group7.Pose group) {
         if (functions == null || functions.keys() != Channels.LANE7) throw new IllegalArgumentException("no v7 lane");
         Lane l = new Lane(new Lane(id, false), functions);
         l.opacity7 = opacity;
+        l.own7 = own;
+        l.mine7 = mine;
+        l.group7 = group;
         return l;
     }
 
+    /** @return the pose of a v7 lane's group (chart version 2.1), or null for a lane in none */
+    public Group7.Pose group7() { return group7; }
+
     /** @return true for a lane of chart format v7 ({@link #v7}) */
     public boolean isV7() { return space != null && space.keys() == Channels.LANE7; }
+
+    /** @return true for a v7 lane whose own opacity {@code l} is 0 throughout: it draws nothing of its own */
+    public boolean drawsNothing() { return own7 != null && own7.isEmpty() && !(own7.constant > 0f); }
 
     /**
      * @param id            non-zero lane id
@@ -181,6 +212,9 @@ public final class Lane {
         this.deletedFrom = o.deletedFrom;
         this.space = space;
         this.opacity7 = o.opacity7;
+        this.own7 = o.own7;
+        this.mine7 = o.mine7;
+        this.group7 = o.group7;
     }
 
     /**
@@ -255,9 +289,25 @@ public final class Lane {
         return o < 1f ? o : 1f;
     }
 
-    /** @return the opacity at {@code beat}, clamped to 0..1 (NaN → 0); a v7 lane's is its {@code o}. */
+    /**
+     * @return how red the lane is at {@code beat} as a mine lane (Kelvin 2026-11-10 23:01 「这些轨道会变红」): a v7
+     *         lane's {@code m} clamped to 0..1, else 0
+     */
+    public float mineAt(float beat) {
+        return mine7 == null ? 0f : clamp01(mine7.at(beat));
+    }
+
+    /**
+     * @return the opacity at {@code beat}, clamped to 0..1 (NaN → 0); a v7 lane's is its {@code o} times its
+     *         groups' and its own {@code l} (only what the lane draws; its keys leave out its {@code l},
+     *         {@link Note#opacityAt})
+     */
     public float opacityAt(float beat) {
-        if (isV7()) return opacity7 == null ? 1f : clamp01(opacity7.at(beat));
+        if (isV7()) {
+            float o = opacity7 == null ? 1f : clamp01(opacity7.at(beat));
+            if (group7 != null) o *= group7.opacityAt(beat);
+            return own7 == null ? o : o * clamp01(own7.at(beat));
+        }
         float o = opacityEvents.isEmpty() ? opacity : Events.calculateValue(opacityEvents, beat, opacity);
         if (!(o > 0f)) return 0f;
         return o < 1f ? o : 1f;
