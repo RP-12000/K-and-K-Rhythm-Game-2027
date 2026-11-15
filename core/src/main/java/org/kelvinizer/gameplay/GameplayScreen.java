@@ -903,7 +903,8 @@ public class GameplayScreen extends KkScreen<Main> {
                             tideWash.complete(engine, ev.note, line, ev.judgement == Judgement.RESONANCE, runTime);
                         }
                     } else {
-                        fx.lost(ev.x, line == Line.UPPER ? ly - 120f : ly + 120f, 1f);
+                        float k = sinkFx(-1, ev.x, line == Line.UPPER ? ly - 120f : ly + 120f); // fills fxPt
+                        fx.lost(fxPt[0], fxPt[1], k);
                         // a TIDE STREAM (lane −1) flashes the window, or over separate lanes each column it spans
                         if (!spanFlash(ev.note, line)) field.flash(line, ev.lane, false, runTime);
                         hud.judgement(Judgement.LOST, 0f, ev.x, line, ly, runTime);
@@ -912,12 +913,14 @@ public class GameplayScreen extends KkScreen<Main> {
                     }
                     break;
                 }
-                case GameEvent.LOST:
-                    fx.lost(ev.x, line == Line.UPPER ? ly - 120f : ly + 120f, 1f);
+                case GameEvent.LOST: {
+                    float k = sinkFx(-1, ev.x, line == Line.UPPER ? ly - 120f : ly + 120f); // fills fxPt
+                    fx.lost(fxPt[0], fxPt[1], k);
                     if (universal && !spanFlash(ev.note, line)) field.flashWindow(line, false, runTime);
                     else if (ev.lane >= 0) field.flash(line, ev.lane, false, runTime); // a DRAG off the lanes: none
                     hud.judgement(Judgement.LOST, 0f, ev.x, line, ly, runTime);
                     break;
+                }
                 case GameEvent.MINE:
                     if (Gdx.graphics.getFrameId() != mineSoundFrame) {
                         mineSoundFrame = Gdx.graphics.getFrameId();
@@ -1041,43 +1044,42 @@ public class GameplayScreen extends KkScreen<Main> {
         return true;
     }
 
-    /**
-     * How much bigger key {@code note}'s hit effects show than a default key's (Kelvin 2026-11-10 04:35 「76的那个按键的
-     * 打击特效要大一点」「把打击特效的大小和按键大小绑定」): its width over {@link Lane#DEFAULT_WIDTH}, at least 1 (a
-     * narrower key's as before) and at most {@link #FX_KEY_MAX}.
-     */
+    /** {@link #keyFx(LaneLayout, Note)} of key {@code note} (−1: none, 1). */
     private float keyFx(int note) {
-        if (note < 0) return 1f;
-        LaneLayout lay = engine.layout();
-        return MathUtils.clamp(lay.keyWidth(chart.note(note)) / (Lane.DEFAULT_WIDTH * lay.unitX()), 1f, FX_KEY_MAX);
+        return note < 0 ? 1f : keyFx(engine.layout(), chart.note(note));
     }
 
-    /** The most {@link #keyFx} makes a key's hit effects grow: a key four default keys wide or wider. */
-    private static final float FX_KEY_MAX = 4f;
+    /**
+     * How much bigger key {@code n}'s hit effects show than a default key's (Kelvin 2026-11-10 04:35 「76的那个按键的
+     * 打击特效要大一点」「把打击特效的大小和按键大小绑定」): its width over {@link Lane#DEFAULT_WIDTH}, at least 1 (a
+     * narrower key's as before), with no most (2026-11-15 04:18 「然后打击特效怎么那么小，轨道不是很大吗」: a key on a lane
+     * 2800 wide splashes as wide as it). Public for the chart editor's preview.
+     */
+    public static float keyFx(LaneLayout lay, Note n) {
+        float k = lay.keyWidth(n) / (Lane.DEFAULT_WIDTH * lay.unitX());
+        return k > 1f && k < Float.POSITIVE_INFINITY ? k : 1f;
+    }
 
     /**
      * Puts into {@link #fxPt} where the hit effect of note {@code note} at (x, y) shows (Kelvin 2026-11-07 22:54): at
      * its column's and its own depth ({@link LaneLayout#keyMoveZ}, {@link Note#space()}), drawn on the effects' plane
-     * towards the eye ({@link View3D#sinkMiddle}).
+     * towards the eye ({@link View3D#frameFx}); without a note (−1) the point (x, y) of the flat picture at the
+     * columns' middle (a LOST mark).
      *
-     * @return the effect's size factor: 1 at the columns' depth, without a note or while the view is flat
+     * @return the effect's size factor: 1 at the columns' depth facing straight and while the view is flat; 0 behind
+     *         the eye (nothing of it shows)
      */
     private float sinkFx(int note, float x, float y) {
         fxPt[0] = x;
         fxPt[1] = y;
-        if (note < 0 || !view.active()) return 1f;
+        if (!view.active()) return 1f;
+        if (note < 0) return view.frameFx(-1, x, y, 0f, fxPt);
         Note n = chart.note(note);
         // at its column's middle, its origin (Kelvin 2026-11-09 05:00: a base shorter than 240 brings its front in)
         float own = Channels.at(n.space(), Channels.SOLID, Channels.Z, engine.visualBeat())
             - 0.5f * (LaneLayout.DEFAULT_LENGTH - engine.layout().keyLength(n));
-        int f = view.keyFrame(engine.layout(), n);
-        if (f >= 0) return view.frameFx(f, x, y, own, fxPt); // on its turned lane or sea (Kelvin 2026-11-09 00:13)
-        float z = engine.layout().keyMoveZ(n) + own;
-        if (z == 0f) return 1f;
-        float t = view.sinkMiddle(z);
-        fxPt[0] = view.eyeX() + (x - view.eyeX()) * t;
-        fxPt[1] = view.eyeY() + (y - view.eyeY()) * t;
-        return t;
+        int f = view.keyFrame(engine.layout(), n); // on its turned lane or sea (Kelvin 2026-11-09 00:13): its frame
+        return view.frameFx(f, x, y, f >= 0 ? own : engine.layout().keyMoveZ(n) + own, fxPt);
     }
 
     /**

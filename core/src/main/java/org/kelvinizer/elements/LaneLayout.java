@@ -345,9 +345,10 @@ public final class LaneLayout {
      * {@code p} from {@code o}, the chart's lines at {@code upper} and {@code lower} then: its sky face lies {@code S}
      * and its base {@code F} from its origin v along its up axis (against its fall u), so its box's middle, which it
      * turns about, lies {@code (S + F) / 2} along it; its base is {@code w} across and {@code h} deep; its column goes
-     * on {@code f} past its base and {@code s} past its sky face (factors on the chart's 820). In a group (chart
-     * version 2.1, {@code group} its pose; null: none) all that is in the group's axes: its box's middle goes where
-     * the group takes it, it turns with the group and is drawn at the group's size about its box's middle
+     * on {@code f} past its base and {@code s} past its sky face (factors on the chart's 820). Its own turn R (chart
+     * version 2.2, {@link Lane7#R}) turns its axes about its origin, so its box swings about the origin. In a group
+     * (chart version 2.1, {@code group} its pose; null: none) all that is in the group's axes: its box's middle goes
+     * where the group takes it, it turns with the group and is drawn at the group's size about its box's middle
      * ({@link #P_K}).
      *
      * @param a nine floats to work in
@@ -373,6 +374,19 @@ public final class LaneLayout {
         p[o + P_NX] = facing ? nx / nl : 0f;
         p[o + P_NY] = facing ? ny / nl : 0f;
         p[o + P_NZ] = facing ? nz / nl : 0f;
+        float rx = finite(c.at(Channels.R_X, beat)), ry = finite(c.at(Channels.R_Y, beat));
+        float rz = finite(c.at(Channels.R_Z, beat));
+        if (rx != 0f || ry != 0f || rz != 0f) { // its own turn (chart version 2.2): its up and depth axes turned
+            turn(fx, fy, fz, p[o + P_NX], p[o + P_NY], p[o + P_NZ], a);
+            Group7.turn(rx, ry, rz, a, 3, 2);
+            fx = -a[3];
+            fy = -a[4];
+            fz = -a[5];
+            for (int r = 0; r < 3; r++) {
+                p[o + P_FX + r] = -a[3 + r];
+                p[o + P_NX + r] = -a[6 + r];
+            }
+        }
         float sky = finite(c.at(Channels.SKY, beat)), ground = finite(c.at(Channels.GROUND, beat));
         float mid = 0.5f * (sky + ground), half = 0.5f * (sky - ground);
         // the box's middle: the origin plus mid along the up axis (−fall)

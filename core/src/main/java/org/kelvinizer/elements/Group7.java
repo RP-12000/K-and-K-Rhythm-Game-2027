@@ -61,6 +61,26 @@ public final class Group7 {
     }
 
     /**
+     * Turns {@code count} vectors of {@code a}, three floats each from {@code from}, by (rx, ry, rz) degrees as a group
+     * turns ({@link #R}: about z first, then x, then y; {@code Ry·Rx·Rz}). A lane's own turn ({@link Lane7#R}) too.
+     * An angle that is not finite counts as 0.
+     */
+    public static void turn(float rx, float ry, float rz, float[] a, int from, int count) {
+        double ax = Math.toRadians(Pose.finite(rx)), ay = Math.toRadians(Pose.finite(ry));
+        double az = Math.toRadians(Pose.finite(rz));
+        double cx = Math.cos(ax), sx = Math.sin(ax), cy = Math.cos(ay), sy = Math.sin(ay);
+        double cz = Math.cos(az), sz = Math.sin(az);
+        for (int i = from, end = from + 3 * count; i < end; i += 3) {
+            double x = a[i], y = a[i + 1], z = a[i + 2];
+            double x1 = x * cz - y * sz, y1 = x * sz + y * cz; // about z
+            double y2 = y1 * cx - z * sx, z2 = y1 * sx + z * cx; // about x
+            a[i] = (float) (x1 * cy + z2 * sy); // about y
+            a[i + 1] = (float) y2;
+            a[i + 2] = (float) (z2 * cy - x1 * sy);
+        }
+    }
+
+    /**
      * 一个组在某一拍的变换（连同它所在的组）：组里的点 q 在谱面坐标里是 t + k·m·q。
      *
      * <p>A group's transform at a beat with the groups it is in ({@link #at}): a point q of the group is

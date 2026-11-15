@@ -201,10 +201,17 @@ public final class ChartV7Runtime {
 
     /** @return lane l's functions ({@link Channels#LANE7} order) */
     static Channels functions(Lane7 l) {
-        Fn[] f = {l.u.x, l.u.y, l.u.z, l.v.x, l.v.y, l.v.z, l.w, l.h, l.S, l.s, l.F, l.f, l.n.x, l.n.y, l.n.z};
-        // n not written: the lane turns the shortest way (Channels#LANE7)
-        if (!l.facing()) f = Arrays.copyOf(f, Channels.N_X);
-        return Channels.held(Channels.LANE7, bases(f), segments(f));
+        Fn[] f = {l.u.x, l.u.y, l.u.z, l.v.x, l.v.y, l.v.z, l.w, l.h, l.S, l.s, l.F, l.f, l.n.x, l.n.y, l.n.z,
+            l.R.x, l.R.y, l.R.z};
+        float[] b = bases(f);
+        List<List<Events>> e = segments(f);
+        if (!l.facing()) { // n not written: the lane turns the shortest way (Channels#LANE7)
+            for (int c = Channels.N_X; c <= Channels.N_Z; c++) {
+                b[c] = Float.NaN;
+                e.set(c, null);
+            }
+        }
+        return Channels.held(Channels.LANE7, b, e);
     }
 
     /** @return each function's value before its first segment (its constant when it has none) */

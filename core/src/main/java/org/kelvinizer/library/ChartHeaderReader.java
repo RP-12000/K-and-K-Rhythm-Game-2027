@@ -61,8 +61,8 @@ public final class ChartHeaderReader {
         public String version;
         /**
          * True when the file is written the current way, its {@code "format"} being {@link ChartFormatV7#VERSION}
-         * ("2.1"); false for v1–v6, the numbers 7–9, an older chart version and the "2.2" of 7.242 (the editor saves
-         * those again when it first opens them, 7.239).
+         * ("2.2"); false for v1–v6, the numbers 7–9 and an older chart version (the editor saves those again when it
+         * first opens them, 7.239).
          */
         public boolean current;
     }

@@ -27,10 +27,10 @@ import java.util.regex.Pattern;
  *
  * <p>Reads and writes chart format v7 (Kelvin 2026-11-09 18:44–18:45; model {@link Chart7}):
  * <pre>
- * {"format": "2.1", "charter": "…", "constant": 12.5,
+ * {"format": "2.2", "charter": "…", "constant": 12.5,
  *  "groups":  [{"id": 1, "name": "…", "p": 2, "P": {"x","y","z"}, "R": {"x","y","z"}, "K", "o"}],
- *  "lanes":   [{"id": 1, "g": 1, "u": {"x","y","z"}, "n": {"x","y","z"}, "v": {"x","y","z"}, "a": {"w","h"},
- *               "S", "s", "F", "f", "o", "l", "m"}],
+ *  "lanes":   [{"id": 1, "g": 1, "u": {"x","y","z"}, "n": {"x","y","z"}, "R": {"x","y","z"}, "v": {"x","y","z"},
+ *               "a": {"w","h"}, "S", "s", "F", "f", "o", "l", "m"}],
  *  "keys":    [{"type": "tap", "lane": 1, "face": "sky", "fake": true, "h": […], "o": …,
  *               "trails": […], "glitches": […], "distortions": […]},
  *              {"type": "tide", "lanes": [1, 2], "h": […], "H": […]}],
@@ -56,15 +56,16 @@ public final class ChartFormatV7 {
     /** The first format this reads ({@code "format"} 7 or more, chart version 2.0). */
     public static final int FORMAT = 7;
     /**
-     * The format this writes: 8, chart version 2.1 (Kelvin 2026-11-10 06:45 「谱面版本为2.0，以后谱面版本更改都是0.1 0.1的改」;
-     * 2.0 is format 7), which adds a lane's {@code n} (7.234), {@code m} (Kelvin 2026-11-10 23:01) and {@code l}
-     * (2026-11-11 02:12), and groups ({@link Group7}, 7.242). It is written as its chart version, {@code "format":
-     * "2.1"} ({@link #version}; Kelvin 2026-11-11 04:14–04:19, 7.239), the editor's version too, the two always the
-     * same (Kelvin 2026-11-12 06:03 「制谱器版本号，format都放在2.1」「这两个要始终同步的」). Files of 7.234–7.238 say 8 or 9
-     * and files of 7.242 "2.2", all read as 2.1.
+     * The format this writes: 9, chart version 2.2 (Kelvin 2026-11-10 06:45 「谱面版本为2.0，以后谱面版本更改都是0.1 0.1的改」;
+     * 2.0 is format 7), which adds a lane's own turn {@code R} (Kelvin 2026-11-13 「这个关键帧只能调动位置不能调动角度」,
+     * 7.244) to chart version 2.1 (format 8: a lane's {@code n} (7.234), {@code m} (Kelvin 2026-11-10 23:01) and
+     * {@code l} (2026-11-11 02:12), and groups ({@link Group7}, 7.242)). It is written as its chart version,
+     * {@code "format": "2.2"} ({@link #version}; Kelvin 2026-11-11 04:14–04:19, 7.239), the editor's version too, the
+     * two always the same (Kelvin 2026-11-12 06:03 「制谱器版本号，format都放在2.1」「这两个要始终同步的」). Files of
+     * 7.234–7.238 say 8 or 9, both read as 2.1.
      */
-    public static final int WRITE_FORMAT = 8;
-    /** The chart version this writes, {@link #version} of {@link #WRITE_FORMAT}: "2.1" (the editor shows it). */
+    public static final int WRITE_FORMAT = 9;
+    /** The chart version this writes, {@link #version} of {@link #WRITE_FORMAT}: "2.2" (the editor shows it). */
     public static final String VERSION = version(WRITE_FORMAT);
 
     private static final JsonFactory FACTORY = new JsonFactory();
@@ -116,15 +117,13 @@ public final class ChartFormatV7 {
 
     /**
      * @return the format a {@code "format"} value names: a chart version {@code "a.b"} with a at least 2 as its format
-     *         ({@link #version}; "2.2", which 7.242 wrote for groups, is 2.1, Kelvin 2026-11-12 06:03); otherwise as a
-     *         number (files before 7.239 wrote 1–9; 9 is 8, chart version 2.1, Kelvin 2026-11-11 04:19), NaN for
-     *         anything else
+     *         ({@link #version}); otherwise as a number (files before 7.239 wrote 1–9; 9 is 8, chart version 2.1,
+     *         Kelvin 2026-11-11 04:19), NaN for anything else
      */
     public static float format(JsonParser p, JsonToken v) throws IOException {
         if (v == JsonToken.VALUE_STRING) {
             Matcher m = VERSION_TEXT.matcher(p.getText().trim());
             int a = m.matches() ? Integer.parseInt(m.group(1)) : 0;
-            if (a == 2 && Integer.parseInt(m.group(2)) == 2) return 8f;
             if (a >= 2) return FORMAT + 10 * (a - 2) + Integer.parseInt(m.group(2));
         }
         float f = number(p, v);
@@ -226,6 +225,7 @@ public final class ChartFormatV7 {
                 case "g": l.g = intValue(p, v); break;
                 case "u": readGroup(p, v, XYZ, l.u.x, l.u.y, l.u.z); break;
                 case "n": readGroup(p, v, XYZ, l.n.x, l.n.y, l.n.z); break;
+                case "R": readGroup(p, v, XYZ, l.R.x, l.R.y, l.R.z); break;
                 case "v": readGroup(p, v, XYZ, l.v.x, l.v.y, l.v.z); break;
                 case "a": readGroup(p, v, WH, l.w, l.h); break;
                 case "S": readFn(p, v, l.S); break;
@@ -607,6 +607,7 @@ public final class ChartFormatV7 {
         if (l.g != 0) g.writeNumberField("g", l.g);
         writeGroup(g, "u", XYZ, null, l.u.x, l.u.y, l.u.z);
         writeGroup(g, "n", XYZ, null, l.n.x, l.n.y, l.n.z);
+        writeGroup(g, "R", XYZ, null, l.R.x, l.R.y, l.R.z);
         writeGroup(g, "v", XYZ, l.v.x, l.v.x, l.v.y, l.v.z);
         writeGroup(g, "a", WH, null, l.w, l.h);
         writeFn(g, "S", l.S, false);

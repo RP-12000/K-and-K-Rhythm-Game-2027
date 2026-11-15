@@ -340,7 +340,7 @@ final class NoteRenderer {
     private float plen = LaneLayout.DEFAULT_LENGTH;
     /** The 3D view of this frame ({@link #collectBoxes}), for the keys' depth; null while flat. */
     private View3D space;
-    /** True while {@link #effectPoint} asks: a key's depth is then sunk onto the hit effects' plane. */
+    /** True while {@link #effectPoint} asks: a key is then put at its column's middle, which the view sinks. */
     private boolean fxSink;
     /**
      * The frame the key drawn now goes through (its turned lane's or sea's, {@link View3D#keyFrame}; −1: none) and its
@@ -425,6 +425,15 @@ final class NoteRenderer {
         entry.begin(chart);
         entry.update(Ui.bottom(), Ui.top(), Ui.worldW(), noteSize);
         windowTable();
+        rewind();
+    }
+
+    /**
+     * Starts the chart of the last {@link #begin} again from its first note and keeps its tables: the chart
+     * editor seeking back (Kelvin 2026-11-15「时间轴正向前进速度远高于倒退」), where {@link #begin} took half a
+     * second on a chart of thousands of lanes.
+     */
+    void rewind() {
         start = 0;
         end = 0;
         glows = 0;
@@ -1131,7 +1140,7 @@ final class NoteRenderer {
             phk *= Math.abs(MathUtils.cosDeg(prx));
         }
         if (fxSink) pz -= 0.5f * (LaneLayout.DEFAULT_LENGTH - plen); // the effects at its column's middle
-        if (space != null && pz != 0f && keyFrame < 0) pk = fxSink ? space.sinkMiddle(pz) : space.sink(pz);
+        if (space != null && pz != 0f && keyFrame < 0 && !fxSink) pk = space.sink(pz);
     }
 
     /** @return world x drawn {@link #pk} of the way from the eye ({@link View3D#sink}) */
@@ -1186,7 +1195,7 @@ final class NoteRenderer {
         float shift = hitShift();
         out[0] = sx - MathUtils.sinDeg(srot) * shift;
         out[1] = sy + MathUtils.cosDeg(srot) * shift;
-        if (f >= 0) space.frameFx(f, out[0], out[1], pz, out);
+        if (space != null) space.frameFx(f, out[0], out[1], pz, out); // onto the hit effects' plane
         return true;
     }
 

@@ -1,7 +1,7 @@
 package org.kelvinizer.elements;
 
 /**
- * 谱面格式 v7 的轨道：只有下落向量朝向 u、法向量 n、原点 v、底面大小 a、天面高度 S、天面延申 s、底面高度 F、底面延申 f、透明度 o、轨道本身的透明度 l 和水雷 m。
+ * 谱面格式 v7 的轨道：只有下落向量朝向 u、法向量 n、旋转 R、原点 v、底面大小 a、天面高度 S、天面延申 s、底面高度 F、底面延申 f、透明度 o、轨道本身的透明度 l 和水雷 m。
  *
  * <p>A lane of chart format v7 (Kelvin 2026-11-09 18:44, item 1), all functions of the beat:
  * <ul>
@@ -10,6 +10,10 @@ package org.kelvinizer.elements;
  *       一样」; normalised when used): the lane turns about its up axis so its front faces n as near as its fall lets
  *       it. Left at its default, to the player, it is not written and the lane turns the shortest way to its fall
  *       ({@link LaneLayout#turn});</li>
+ *   <li>{@link #R} its own turn (Kelvin 2026-11-13 「这个关键帧只能调动位置不能调动角度」, chart version 2.2), degrees
+ *       about x, y and z as a group turns ({@link Group7#R}): the axes u and n give it turned about its origin
+ *       {@code v}, so its column swings about the origin and its keys go with it. Each angle is a plain function, so
+ *       one segment from 0 to 540 is one and a half turns. Left at (0, 0, 0) it is not written;</li>
  *   <li>{@link #v} the origin, in chart axes;</li>
  *   <li>{@link #w}, {@link #h} the base size {@code a}: {@code w} across, {@code h} its length in depth;</li>
  *   <li>{@link #S}, {@link #F} where the sky face and the base (ground face) sit along the lane's up axis
@@ -21,9 +25,10 @@ package org.kelvinizer.elements;
  *       clamped to 0..1 where used: it multiplies only what the lane itself draws (its column, faces, edges, pieces of
  *       the judgement lines and their glows), not its keys, so 0 leaves a lane that only carries keys.</li>
  *   <li>{@link #m} mine (Kelvin 2026-11-10 23:01 「在一定时间内（一维事件）这些轨道会变红，效力跟轨道水雷一样，对天地同时
- *       生效」, 2026-11-11 01:48 「整个红色轨道作为另一种性质」, chart version 2.1): while it is above 0 the lane is a mine
- *       lane, its sky and ground faces judged as LANE MINEs ({@link ChartV7Runtime}), and it is drawn as red as it is,
- *       up to 1. Left at 0 it is not written. Wave and tide mines stay keys of their own.</li>
+ *       生效」, 2026-11-11 01:48 「整个红色轨道作为另一种性质」, chart version 2.1): while it is above 0 the lane is a red
+ *       lane, drawn as red as it is, up to 1, and the keys on it can only be RESONANCE; pressing it costs nothing
+ *       (Kelvin 2026-11-12 「红色轨道只是强制严判轨道」, {@link ChartV7Runtime}). Left at 0 it is not written. Wave and
+ *       tide mines stay keys of their own.</li>
  * </ul>
  * Nothing else: a lane shows up or goes away by its functions (for example {@code w} from 0, or {@code o}).
  */
@@ -39,6 +44,8 @@ public final class Lane7 {
     public final Fn3 u = new Fn3(0f, -1f, 0f);
     /** Facing, default (0, 0, −1): to the player, not written. */
     public final Fn3 n = new Fn3(0f, 0f, -1f);
+    /** Its own turn about its origin, degrees about x, y and z, default (0, 0, 0): none, not written. */
+    public final Fn3 R = new Fn3(0f, 0f, 0f);
     /** Origin, default (0, 0, 0); the constructor sets x. */
     public final Fn3 v = new Fn3(0f, 0f, 0f);
     /** Base width (default 240) and length in depth (default 240). */
@@ -67,14 +74,19 @@ public final class Lane7 {
 
     /**
      * Its axes at {@code beat} into {@code out}, as the game turns it ({@link LaneLayout#turn}, facing {@link #n} when
-     * {@link #facing}): across, up and depth, three floats each.
+     * {@link #facing}, then by its own turn {@link #R}): across, up and depth, three floats each, in the axes it is
+     * in (the chart's, or its group's).
      *
      * @return true when it is turned (its axes are not the chart's)
      */
     public boolean axes(float beat, float[] out) {
         boolean f = facing();
-        return LaneLayout.turn(u.x.at(beat), u.y.at(beat), u.z.at(beat),
+        boolean t = LaneLayout.turn(u.x.at(beat), u.y.at(beat), u.z.at(beat),
             f ? n.x.at(beat) : 0f, f ? n.y.at(beat) : 0f, f ? n.z.at(beat) : 0f, out);
+        float rx = R.x.at(beat), ry = R.y.at(beat), rz = R.z.at(beat);
+        if (rx == 0f && ry == 0f && rz == 0f) return t;
+        Group7.turn(rx, ry, rz, out, 0, 3);
+        return Math.abs(out[0] - 1f) > 1e-6f || Math.abs(out[4] - 1f) > 1e-6f || Math.abs(out[8] - 1f) > 1e-6f;
     }
 
     private static boolean written(Fn f) {

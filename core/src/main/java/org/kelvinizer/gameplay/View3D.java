@@ -37,7 +37,8 @@ import org.kelvinizer.ui.Theme;
  * (whole at {@link #FULL_DEPTH_DEG}). Facing straight, a press lands where its ray crosses the front plane (the flat
  * picture's own judging); turned, it goes to the column its ray meets first (the front one wins), or in a gap or beside
  * the columns to the point it crosses the middle of the columns' depth (the nearer lane). The hit effects are spheres
- * round the middle of the keys' depth ({@link #project}). A turned lane or sea (Kelvin 2026-11-08 23:10 – 11-09 00:13,
+ * round points of the plane through the point the camera looks at, facing it ({@link #project}; facing straight the
+ * middle of the keys' depth). A turned lane or sea (Kelvin 2026-11-08 23:10 – 11-09 00:13,
  * {@link LaneLayout#turn}) is drawn as if it fell straight down, then turned about its origin: its column, boxes and
  * sheets here through its frame ({@link #laneFrame}, {@link #seaFrame}), its flat picture through
  * {@link #frameCombined}.
@@ -104,6 +105,8 @@ public final class View3D implements HitFx.Projection {
     private float viewH;
     private float cx;
     private float cy;
+    /** The point the camera looks at, world units: the hit effects' plane goes through it ({@link #project}). */
+    private float lookX, lookY, lookZ;
     private float[] boxes = new float[0];
     private int boxCount;
     /** Boxes recorded this frame with a sync frame ({@link #box(float, float, float, float, float, Color, float,
@@ -304,7 +307,10 @@ public final class View3D implements HitFx.Projection {
             -shift + mz + r * cp * MathUtils.cosDeg(yaw));
         cam.direction.set(0f, 0f, -1f);
         cam.up.set(0f, 1f, 0f);
-        cam.lookAt(cx + mx, cy + my, -shift + mz);
+        lookX = cx + mx;
+        lookY = cy + my;
+        lookZ = -shift + mz;
+        cam.lookAt(lookX, lookY, lookZ);
         cam.near = Math.max(1f, d * 0.05f);
         cam.far = r + SEEN * d;
         cam.update();
@@ -333,11 +339,6 @@ public final class View3D implements HitFx.Projection {
      */
     public float sink(float z) {
         return sinkTo(z, 0f);
-    }
-
-    /** {@link #sink} onto the plane through the middle of the keys' depth, where the hit effects are placed. */
-    public float sinkMiddle(float z) {
-        return sinkTo(z, shift);
     }
 
     private float sinkTo(float z, float plane) {
@@ -404,17 +405,23 @@ public final class View3D implements HitFx.Projection {
 
     /**
      * Where a hit effect's point shows (Kelvin 2026-11-07 17:04 「和原来的同心圆一样的东西只不过3维化」): the effects are
-     * spheres round the middle of the keys' depth, so the point (x, y) of the flat picture, {@code dz} nearer than that
-     * middle (scaled with the depth), is projected to the screen, with the size one unit shows at there.
+     * spheres round points of their plane, the plane through the point the camera looks at, facing the camera, its axes
+     * the screen's (facing straight the flat picture at the middle of the keys' depth; Kelvin 2026-11-15 06:08
+     * 「328拍粒子特效有纵深错位问题」: a camera turned 90° saw that middle edge on). The point (x, y) of that plane,
+     * {@code dz} nearer (scaled with the depth), is projected to the screen, with the size one unit shows at there.
      */
     @Override
     public boolean project(float x, float y, float dz, float[] out) {
-        float z = -shift + dz * depth / (DEPTH * Field.ky());
+        float[] v = cam.view.val; // its rows: the screen's right, up and towards the eye in the world
+        float a = x - lookX, b = y - lookY, c = dz * depth / (DEPTH * Field.ky());
+        float wx = lookX + a * v[Matrix4.M00] + b * v[Matrix4.M10] + c * v[Matrix4.M20];
+        float wy = lookY + a * v[Matrix4.M01] + b * v[Matrix4.M11] + c * v[Matrix4.M21];
+        float wz = lookZ + a * v[Matrix4.M02] + b * v[Matrix4.M12] + c * v[Matrix4.M22];
         float[] m = cam.combined.val;
-        float w = m[Matrix4.M30] * x + m[Matrix4.M31] * y + m[Matrix4.M32] * z + m[Matrix4.M33];
+        float w = m[Matrix4.M30] * wx + m[Matrix4.M31] * wy + m[Matrix4.M32] * wz + m[Matrix4.M33];
         if (!(w > cam.near)) return false;
-        float px = m[Matrix4.M00] * x + m[Matrix4.M01] * y + m[Matrix4.M02] * z + m[Matrix4.M03];
-        float py = m[Matrix4.M10] * x + m[Matrix4.M11] * y + m[Matrix4.M12] * z + m[Matrix4.M13];
+        float px = m[Matrix4.M00] * wx + m[Matrix4.M01] * wy + m[Matrix4.M02] * wz + m[Matrix4.M03];
+        float py = m[Matrix4.M10] * wx + m[Matrix4.M11] * wy + m[Matrix4.M12] * wz + m[Matrix4.M13];
         out[0] = cx + 0.5f * viewW * px / w;
         out[1] = cy + 0.5f * viewH * py / w;
         out[2] = 0.5f * viewH * cam.projection.val[Matrix4.M11] / w;
@@ -839,15 +846,16 @@ public final class View3D implements HitFx.Projection {
     }
 
     /**
-     * Where the hit effect of a key at (x, y) of frame f, {@code z} reference units deep in it, shows: the middle of
-     * its depth through the frame, on the effects' plane ({@link #sinkPoint}) into {@code out[0..1]}.
+     * Where the hit effect of a key at (x, y) of frame f (−1: none, the flat picture), {@code z} reference units deep
+     * in it, shows: the middle of its depth through the frame, on the effects' plane ({@link #sinkPoint}) into
+     * {@code out[0..1]}.
      *
-     * @return the factor sizes shrink by there
+     * @return the factor sizes shrink by there (0: not in front of the eye)
      */
     public float frameFx(int f, float x, float y, float z, float[] out) {
         framePoint(f, x, y, worldZ(z) - shift, fxTmp);
         float t = sinkPoint(fxTmp[0], fxTmp[1], fxTmp[2], out);
-        return frameK[f] != 1f ? t * frameK[f] : t; // a lane its groups size: its effects too
+        return f >= 0 && frameK[f] != 1f ? t * frameK[f] : t; // a lane its groups size: its effects too
     }
 
     private final float[] fxTmp = new float[3];
@@ -948,21 +956,29 @@ public final class View3D implements HitFx.Projection {
     }
 
     /**
-     * Where world point (x, y, z) shows on the plane through the middle of the keys' depth, as {@link #sinkMiddle}
-     * puts a deeper key: into {@code out[0..1]} the point of that plane on the eye's ray through it.
+     * Where world point (x, y, z) shows on the hit effects' plane ({@link #project}): into {@code out[0..1]} the point
+     * of that plane on the eye's ray through it, in the plane's axes.
      *
-     * @return the factor sizes shrink by there (1 on that plane; 0 when the eye is between)
+     * @return the factor sizes shrink by there (1 on that plane); 0 when it is not in front of the eye, {@code out}
+     *         then NaN, which {@link #project} never shows
      */
     public float sinkPoint(float x, float y, float z, float[] out) {
         out[0] = x;
         out[1] = y;
         if (!active) return 1f;
-        float ez = cam.position.z;
-        float d = z - ez;
-        float t = Math.abs(d) > 1f ? (-shift - ez) / d : 0f;
-        if (!(t > 0f)) return 0f;
-        out[0] = cam.position.x + (x - cam.position.x) * t;
-        out[1] = cam.position.y + (y - cam.position.y) * t;
+        float[] v = cam.view.val;
+        Vector3 e = cam.position;
+        float qx = x - e.x, qy = y - e.y, qz = z - e.z;
+        float w = -(v[Matrix4.M20] * qx + v[Matrix4.M21] * qy + v[Matrix4.M22] * qz); // how far in front of the eye
+        if (!(w > cam.near)) {
+            out[0] = out[1] = Float.NaN;
+            return 0f;
+        }
+        float lx = lookX - e.x, ly = lookY - e.y, lz = lookZ - e.z;
+        float t = -(v[Matrix4.M20] * lx + v[Matrix4.M21] * ly + v[Matrix4.M22] * lz) / w;
+        float px = qx * t - lx, py = qy * t - ly, pz = qz * t - lz; // from the look point
+        out[0] = lookX + v[Matrix4.M00] * px + v[Matrix4.M01] * py + v[Matrix4.M02] * pz;
+        out[1] = lookY + v[Matrix4.M10] * px + v[Matrix4.M11] * py + v[Matrix4.M12] * pz;
         return t;
     }
 
